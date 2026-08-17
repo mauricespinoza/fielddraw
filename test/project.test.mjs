@@ -91,7 +91,7 @@ console.log('== acepta un GeoJSON pelado ==');
   ok('carga solo la geometría dibujable', project.features.length === 1);
   ok('les asigna id', !!project.features[0].properties.id);
   ok('les pone certeza por defecto', project.features[0].properties.certainty === 'observed');
-  ok('avisa de lo descartado', warnings.some((w) => /no soportada/.test(w)));
+  ok('avisa de lo descartado', warnings.some((w) => /unsupported/.test(w)));
   ok('avisa de que era un GeoJSON', warnings.some((w) => /GeoJSON/.test(w)));
 }
 

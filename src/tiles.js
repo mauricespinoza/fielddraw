@@ -91,7 +91,7 @@ async function registerProtocols() {
 
   maplibregl.addProtocol('mbtiles', async (params) => {
     const m = /^mbtiles:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
-    if (!m) throw new Error(`URL mbtiles inválida: ${params.url}`);
+    if (!m) throw new Error(`Invalid mbtiles URL: ${params.url}`);
     const bytes = await readMbtilesTile(m[1], Number(m[2]), Number(m[3]), Number(m[4]));
     return { data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) };
   });

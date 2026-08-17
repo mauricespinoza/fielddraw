@@ -14,6 +14,7 @@ import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { MBTILES_WARN_BYTES, openTileFile } from './tiles.js';
 import { applyCut, applyMerge, applyTopology } from './editOps.js';
 import { openProject, parseProject, saveProject } from './project.js';
+import { initStraboPanel } from './strabo/panel.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -69,9 +70,9 @@ function chip({ label, title, color, dash, swatch, glyph, active, onClick, cls =
 
 /** Modos de la herramienta Nodos, con su glifo y su ayuda. */
 const VERTEX_MODES = [
-  { id: 'move', label: 'Mover', glyph: '✥', help: 'Arrastra una manija; el punto medio inserta' },
-  { id: 'add', label: 'Añadir', glyph: '＋', help: 'Toca sobre el borde para insertar un vértice' },
-  { id: 'delete', label: 'Borrar', glyph: '✕', help: 'Toca un vértice para borrarlo' },
+  { id: 'move', label: 'Move', glyph: '✥', help: 'Drag a handle; a midpoint inserts one' },
+  { id: 'add', label: 'Add', glyph: '＋', help: 'Tap the edge to insert a vertex' },
+  { id: 'delete', label: 'Delete', glyph: '✕', help: 'Tap a vertex to remove it' },
 ];
 
 function buildPalette() {
@@ -88,7 +89,7 @@ function buildPalette() {
     group.className = 'palette-group';
     const gl = document.createElement('span');
     gl.className = 'palette-label';
-    gl.textContent = 'Vértices';
+    gl.textContent = 'Vertices';
     group.appendChild(gl);
     for (const m of VERTEX_MODES) {
       group.appendChild(
@@ -164,7 +165,7 @@ function buildPalette() {
     group.className = 'palette-group';
     const gl = document.createElement('span');
     gl.className = 'palette-label';
-    gl.textContent = 'Unidades';
+    gl.textContent = 'Units';
     group.appendChild(gl);
     for (const u of s.units) {
       group.appendChild(
@@ -180,8 +181,8 @@ function buildPalette() {
     }
     const edit = document.createElement('button');
     edit.className = 'chip ghost';
-    edit.textContent = '+ Editar';
-    edit.title = 'Abrir el módulo de unidades';
+    edit.textContent = '+ Edit';
+    edit.title = 'Open the units module';
     edit.addEventListener('click', () => $('units-panel').classList.add('open'));
     group.appendChild(edit);
     scroll.appendChild(group);
@@ -203,14 +204,14 @@ function renderUnits() {
     const color = document.createElement('input');
     color.type = 'color';
     color.value = u.color;
-    color.setAttribute('aria-label', `Color de ${u.name}`);
+    color.setAttribute('aria-label', `Colour of ${u.name}`);
     color.addEventListener('input', () => store.updateUnit(u.id, { color: color.value }));
 
     const name = document.createElement('input');
     name.type = 'text';
     name.value = u.name;
     name.className = 'unit-name';
-    name.setAttribute('aria-label', 'Nombre');
+    name.setAttribute('aria-label', 'Name');
     name.addEventListener('change', () => store.updateUnit(u.id, { name: name.value }));
 
     const code = document.createElement('input');
@@ -218,13 +219,13 @@ function renderUnits() {
     code.value = u.code;
     code.className = 'unit-code';
     code.maxLength = 12;
-    code.setAttribute('aria-label', 'Código');
+    code.setAttribute('aria-label', 'Code');
     code.addEventListener('change', () => store.updateUnit(u.id, { code: code.value }));
 
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '✕';
-    del.title = 'Eliminar unidad';
+    del.title = 'Remove unit';
     del.disabled = s.units.length <= 1;
     del.addEventListener('click', () => store.removeUnit(u.id));
 
@@ -236,10 +237,10 @@ function renderUnits() {
 /* ---------- módulo de simbología de ornamentos ---------- */
 
 const SYMB_FIELDS = [
-  { key: 'size', label: 'Tamaño', fmt: (v) => `${v.toFixed(2)}×` },
-  { key: 'spacing', label: 'Espaciado', fmt: (v) => `${v} px` },
-  { key: 'offset', label: 'Posición', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
-  { key: 'minzoom', label: 'Zoom mín.', fmt: (v) => `z${v}` },
+  { key: 'size', label: 'Size', fmt: (v) => `${v.toFixed(2)}×` },
+  { key: 'spacing', label: 'Spacing', fmt: (v) => `${v} px` },
+  { key: 'offset', label: 'Position', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
+  { key: 'minzoom', label: 'Min zoom', fmt: (v) => `z${v}` },
 ];
 
 function symbField(type, field, value) {
@@ -256,7 +257,7 @@ function symbField(type, field, value) {
   range.max = String(lim.max);
   range.step = String(lim.step);
   range.value = String(value);
-  range.setAttribute('aria-label', `${field.label} de ${LINE_TYPE_BY_ID.get(type).label}`);
+  range.setAttribute('aria-label', `${field.label} of ${LINE_TYPE_BY_ID.get(type).label}`);
 
   const num = document.createElement('span');
   num.className = 'num';
@@ -327,8 +328,8 @@ function layerRow(layer) {
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '✕';
-    del.title = layer.kind === 'tiles' ? 'Quitar mapa offline' : 'Quitar capa importada';
-    del.setAttribute('aria-label', `Quitar ${layer.label}`);
+    del.title = layer.kind === 'tiles' ? 'Remove offline map' : 'Remove imported layer';
+    del.setAttribute('aria-label', `Remove ${layer.label}`);
     del.addEventListener('click', () =>
       layer.kind === 'tiles' ? store.removeTileSet(layer.id) : store.removeImported(layer.id),
     );
@@ -337,12 +338,12 @@ function layerRow(layer) {
   const up = document.createElement('button');
   up.className = 'icon-btn';
   up.textContent = '▲';
-  up.setAttribute('aria-label', `Subir ${layer.label}`);
+  up.setAttribute('aria-label', `Move ${layer.label} up`);
   up.addEventListener('click', () => store.moveLayer(layer.id, -1));
   const down = document.createElement('button');
   down.className = 'icon-btn';
   down.textContent = '▼';
-  down.setAttribute('aria-label', `Bajar ${layer.label}`);
+  down.setAttribute('aria-label', `Move ${layer.label} down`);
   down.addEventListener('click', () => store.moveLayer(layer.id, 1));
   move.append(up, down);
 
@@ -356,7 +357,7 @@ function layerRow(layer) {
   range.max = '1';
   range.step = '0.02';
   range.value = String(layer.opacity);
-  range.setAttribute('aria-label', `Opacidad de ${layer.label}`);
+  range.setAttribute('aria-label', `Opacity of ${layer.label}`);
   const pct = document.createElement('span');
   pct.className = 'opacity-value';
   pct.textContent = `${Math.round(layer.opacity * 100)}%`;
@@ -424,12 +425,12 @@ export function openPropsMenu(screen) {
 
   const polys = sel.filter((f) => f.geometry.type === 'Polygon');
   $('props-title').textContent =
-    sel.length === 1 ? '1 elemento seleccionado' : `${sel.length} elementos seleccionados`;
+    sel.length === 1 ? '1 feature selected' : `${sel.length} features selected`;
 
   // Editar nodos: el atajo natural desde aquí, ya que la selección ya acota
   // sobre qué geometrías se muestran las manijas. Los tres modos entran por la
   // misma puerta, para poder ir directo a añadir o a borrar un vértice.
-  const acciones = section(body, 'Vértices');
+  const acciones = section(body, 'Vertices');
   const nodosRow = document.createElement('div');
   nodosRow.className = 'palette-row';
   for (const m of VERTEX_MODES) {
@@ -451,16 +452,16 @@ export function openPropsMenu(screen) {
   // Flip del ornamento: solo tiene sentido en las fallas que llevan símbolo.
   const conOrnamento = sel.filter((f) => ORNAMENT_TYPES.includes(f.properties.type));
   if (conOrnamento.length > 0) {
-    const simb = section(body, 'Simbología');
+    const simb = section(body, 'Symbology');
     const flip = document.createElement('button');
     flip.className = 'pill wide';
-    flip.textContent = `Invertir símbolo (${conOrnamento.length})`;
+    flip.textContent = `Flip symbol (${conOrnamento.length})`;
     flip.title =
-      'Pasa los dientes o los tics al otro lado de la traza, sin tener que redibujar la falla al revés';
+      'Moves the teeth or ticks to the other side of the trace, with no need to redraw the fault backwards';
     flip.addEventListener('click', () => {
       const n = store.flipSelectedOrnament();
       showBanner(
-        n ? `Símbolo invertido en ${n} elemento(s).` : 'No hay líneas con ornamento que invertir.',
+        n ? `Symbol flipped on ${n} feature(s).` : 'No ornamented lines to flip.',
         n ? 'info' : 'warn',
       );
       openPropsMenu(screen);
@@ -469,7 +470,7 @@ export function openPropsMenu(screen) {
 
     const abrir = document.createElement('button');
     abrir.className = 'chip';
-    abrir.textContent = 'Ajustar tamaño y espaciado…';
+    abrir.textContent = 'Adjust size and spacing…';
     abrir.addEventListener('click', () => {
       closePropsMenu();
       openPanel('symbology-panel');
@@ -478,7 +479,7 @@ export function openPropsMenu(screen) {
   }
 
   // Certeza
-  const cert = section(body, 'Certeza');
+  const cert = section(body, 'Certainty');
   const certRow = document.createElement('div');
   certRow.className = 'palette-row';
   const currentCert = sel.every((f) => f.properties.certainty === sel[0].properties.certainty)
@@ -502,7 +503,7 @@ export function openPropsMenu(screen) {
 
   // Unidad, solo si hay polígonos en la selección
   if (polys.length > 0) {
-    const uni = section(body, `Unidad (${polys.length} polígono${polys.length === 1 ? '' : 's'})`);
+    const uni = section(body, `Unit (${polys.length} polygon${polys.length === 1 ? '' : 's'})`);
     const row = document.createElement('div');
     row.className = 'palette-row';
     const currentUnit = polys.every((f) => f.properties.type === polys[0].properties.type)
@@ -527,7 +528,7 @@ export function openPropsMenu(screen) {
   }
 
   // Opacidad
-  const op = section(body, 'Opacidad');
+  const op = section(body, 'Opacity');
   const opRow = document.createElement('label');
   opRow.className = 'layer-opacity';
   const range = document.createElement('input');
@@ -547,22 +548,22 @@ export function openPropsMenu(screen) {
   op.appendChild(opRow);
 
   // Geometría
-  const geo = section(body, 'Geometría');
+  const geo = section(body, 'Geometry');
   const geoRow = document.createElement('div');
   geoRow.className = 'palette-row';
 
   const suavizar = document.createElement('button');
   suavizar.className = 'chip';
-  suavizar.textContent = 'Suavizar';
-  suavizar.title = 'Redondear los quiebres (Chaikin)';
+  suavizar.textContent = 'Smooth';
+  suavizar.title = 'Round off the corners (Chaikin)';
   suavizar.addEventListener('click', () => {
     store.transformSelectedGeometry((g) => smoothGeometry(g));
   });
 
   const simplificar = document.createElement('button');
   simplificar.className = 'chip';
-  simplificar.textContent = 'Simplificar';
-  simplificar.title = 'Quitar vértices redundantes (Douglas-Peucker)';
+  simplificar.textContent = 'Simplify';
+  simplificar.title = 'Drop redundant vertices (Douglas-Peucker)';
   simplificar.addEventListener('click', () => {
     store.transformSelectedGeometry((g) => simplifyGeometry(g));
   });
@@ -573,7 +574,7 @@ export function openPropsMenu(screen) {
   // Borrar
   const del = document.createElement('button');
   del.className = 'pill danger wide';
-  del.textContent = `Borrar ${sel.length} elemento${sel.length === 1 ? '' : 's'}`;
+  del.textContent = `Delete ${sel.length} feature${sel.length === 1 ? '' : 's'}`;
   del.addEventListener('click', () => {
     store.deleteSelected();
     closePropsMenu();
@@ -596,9 +597,9 @@ export function closePropsMenu() {
 /* ---------- paneles ---------- */
 
 /** Cajones laterales: solo uno abierto a la vez. */
-const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel'];
+const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu'];
+const POPOVERS = ['settings', 'project-menu', 'topo-menu'];
 
 function openPanel(id) {
   closeOverlays();
@@ -669,7 +670,7 @@ function simplifyGeometry(g) {
 
 const POINTER_LABEL = {
   pen: 'Apple Pencil / stylus',
-  touch: 'Dedo',
+  touch: 'Finger',
   mouse: 'Mouse / trackpad',
 };
 
@@ -678,7 +679,7 @@ export function renderPointerInfo(info) {
   const detail = $('pen-detail');
   box.classList.toggle('live', !!info);
   if (!info) {
-    $('pen-kind').textContent = 'Sin contacto';
+    $('pen-kind').textContent = 'No contact';
     detail.hidden = true;
     return;
   }
@@ -688,7 +689,7 @@ export function renderPointerInfo(info) {
   $('pen-pressure-bar').style.width = `${Math.round(info.pressure * 100)}%`;
   $('pen-tilt').textContent = `${info.tiltX.toFixed(0)}° / ${info.tiltY.toFixed(0)}°`;
   $('pen-alt').textContent =
-    info.altitudeAngle === null ? 'n/d' : `${((info.altitudeAngle * 180) / Math.PI).toFixed(0)}°`;
+    info.altitudeAngle === null ? 'n/a' : `${((info.altitudeAngle * 180) / Math.PI).toFixed(0)}°`;
   $('pen-coalesced').textContent = String(info.coalesced);
 }
 
@@ -714,7 +715,7 @@ function setBusy(text) {
 async function doExportGeoPackage() {
   const features = store.getState().features;
   if (!features.length) return;
-  setBusy('Generando GeoPackage…');
+  setBusy('Building GeoPackage…');
   try {
     const bytes = await exportGeoPackage(features, store.getState().units);
     const stamp = new Date().toISOString().slice(0, 10);
@@ -723,11 +724,11 @@ async function doExportGeoPackage() {
       `fielddraw-${stamp}.gpkg`,
     );
     showBanner(
-      `GeoPackage exportado con ${features.length} elemento(s) y su simbología QGIS.`,
+      `GeoPackage exported with ${features.length} feature(s) and their QGIS symbology.`,
       'info',
     );
   } catch (err) {
-    showBanner(`No se pudo exportar el GeoPackage: ${err.message}`);
+    showBanner(`Could not export the GeoPackage: ${err.message}`);
   } finally {
     setBusy(null);
   }
@@ -739,26 +740,26 @@ async function doOpenTiles(file) {
   const isMbtiles = file.name.toLowerCase().endsWith('.mbtiles');
   if (isMbtiles && file.size > MBTILES_WARN_BYTES) {
     const proceed = confirm(
-      `${file.name} pesa ${fmtMB(file.size)}. Un MBTiles se carga entero en memoria, ` +
-        `así que uno de este tamaño puede agotar la RAM del iPad. Convertirlo a PMTiles ` +
-        `lo haría funcionar por lecturas parciales.\n\n¿Abrirlo igual?`,
+      `${file.name} is ${fmtMB(file.size)}. An MBTiles is loaded entirely into memory, ` +
+        `so one this size may exhaust the iPad's RAM. Converting it to PMTiles ` +
+        `would make it work through range reads.\n\nOpen it anyway?`,
     );
     if (!proceed) return;
   }
-  setBusy(`Abriendo ${file.name}…`);
+  setBusy(`Opening ${file.name}…`);
   try {
     const id = `tiles-${Date.now().toString(36)}`;
     const descriptor = await openTileFile(file, id);
     store.addTileSet(descriptor);
-    const kind = descriptor.tileKind === 'vector' ? 'vectorial' : 'raster';
+    const kind = descriptor.tileKind === 'vector' ? 'vector' : 'raster';
     const zooms = `z${descriptor.minzoom}–${descriptor.maxzoom}`;
     const extra =
       descriptor.tileKind === 'vector' && descriptor.vectorLayers.length
-        ? ` · ${descriptor.vectorLayers.length} capa(s): estilo genérico, el formato no trae simbología`
+        ? ` · ${descriptor.vectorLayers.length} layer(s): generic style, the format carries no symbology`
         : '';
     showBanner(`${descriptor.label}: ${kind} ${descriptor.format}, ${zooms}${extra}.`, 'info');
   } catch (err) {
-    showBanner(`No se pudo abrir el mapa: ${err.message}`);
+    showBanner(`Could not open the map: ${err.message}`);
   } finally {
     setBusy(null);
   }
@@ -774,20 +775,20 @@ async function runCut(cut) {
   // omisión es demasiado destructivo para un gesto tan fácil de disparar.
   if (store.getState().selection.length === 0) {
     showBanner(
-      'Selecciona primero el elemento que quieres cortar: herramienta Elegir, tócalo, y vuelve a Cortar.',
+      'Select what you want to split first: Select tool, tap it, then come back to Split.',
     );
     store.clearPendingCut();
     return;
   }
   editBusy = true;
-  setBusy('Cortando…');
+  setBusy('Splitting…');
   try {
     const { cortados, piezas } = await applyCut(cut);
-    const conQue = cut.type === 'feature' ? 'El elemento cortador' : 'La línea de corte';
-    if (cortados === 0) showBanner(`${conQue} no cruzó ningún otro elemento.`);
-    else showBanner(`${cortados} elemento(s) cortado(s) en ${piezas} piezas.`, 'info');
+    const conQue = cut.type === 'feature' ? 'The cutting feature' : 'The split line';
+    if (cortados === 0) showBanner(`${conQue} did not cross any other feature.`);
+    else showBanner(`${cortados} feature(s) split into ${piezas} pieces.`, 'info');
   } catch (err) {
-    showBanner(`No se pudo cortar: ${err.message}`);
+    showBanner(`Could not split: ${err.message}`);
   } finally {
     store.clearPendingCut();
     setBusy(null);
@@ -800,25 +801,46 @@ async function runCut(cut) {
  * son milisegundos, y meterla en un worker obligaría a serializar todo el
  * conjunto de features de ida y de vuelta.
  */
+/** Abre el desplegable del botón Topología, con el alcance ya calculado. */
+function openTopoMenu() {
+  const s = store.getState();
+  const n = s.selection.length || s.features.length;
+  $('topo-scope').textContent = s.selection.length
+    ? `Will run on the ${s.selection.length} selected feature(s).`
+    : `Nothing selected: will run on all ${n} feature(s).`;
+  syncTopoTolerance(s.topoTolerance);
+  openPanel('topo-menu');
+}
+
+/** Mantiene alineados los dos controles de tolerancia y el store. */
+function syncTopoTolerance(value, from) {
+  const v = Math.max(0.1, Number(value) || 0.1);
+  for (const id of ['opt-topo-tol', 'topo-menu-range', 'opt-topo-tol-num', 'topo-menu-num']) {
+    const el = $(id);
+    if (el && id !== from) el.value = String(id.endsWith('range') || id === 'opt-topo-tol' ? Math.min(v, 200) : v);
+  }
+  store.setTopoTolerance(v);
+}
+
 function runTopology() {
   try {
     const r = applyTopology();
     const alcance = store.getState().selection.length
-      ? `${r.revisados} elemento(s) seleccionados`
-      : `${r.revisados} elemento(s)`;
+      ? `${r.revisados} selected feature(s)`
+      : `${r.revisados} feature(s)`;
     if (!r.cambio) {
       showBanner(
-        `Topología ya consistente en ${alcance}: ${r.compartidos} vértice(s) compartidos.`,
+        `Topology already consistent across ${alcance}: ${r.compartidos} shared vertex/vertices.`,
         'info',
       );
       return;
     }
     const extra = r.degenerados
-      ? ` ${r.degenerados} geometría(s) se dejaron como estaban para no degenerarlas.`
+      ? ` ${r.degenerados} geometry/geometries were left alone so they would not degenerate.`
       : '';
     showBanner(
-      `Topología confirmada en ${alcance}: ${r.fusionados} vértice(s) fundidos, ` +
-        `${r.insertados} insertado(s), ${r.compartidos} nodo(s) compartidos.${extra}`,
+      `Topology applied to ${alcance}: ${r.fusionados} vertex/vertices fused, ` +
+        `${r.insertados} inserted, ${r.compartidos} shared node(s).${extra}`,
       'info',
     );
   } catch (err) {
@@ -836,13 +858,13 @@ function doSaveProject() {
   const name = $('project-name').value.trim();
   const data = saveProject(name);
   setProjectStatus(
-    `Guardado a las ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} elemento(s).`,
+    `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s).`,
   );
-  showBanner('Proyecto guardado. En iPadOS queda en la app Archivos.', 'info');
+  showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
 }
 
 async function doOpenProject(file) {
-  setBusy(`Abriendo ${file.name}…`);
+  setBusy(`Opening ${file.name}…`);
   try {
     const text = await file.text();
     const { project, warnings } = parseProject(text);
@@ -850,43 +872,43 @@ async function doOpenProject(file) {
     // perder el dibujo si el archivo ni siquiera era un proyecto.
     if (
       store.getState().features.length &&
-      !confirm('Abrir este proyecto reemplaza el dibujo actual. ¿Continuar?')
+      !confirm('Opening this project replaces the current drawing. Continue?')
     ) {
       return;
     }
     const n = openProject(project);
     if (project.name) $('project-name').value = project.name;
-    setProjectStatus(`Abierto ${file.name} · ${n} elemento(s).`);
+    setProjectStatus(`Opened ${file.name} · ${n} feature(s).`);
     showBanner(
-      [`Proyecto abierto: ${n} elemento(s).`, ...warnings].join(' '),
+      [`Project opened: ${n} feature(s).`, ...warnings].join(' '),
       warnings.length ? 'warn' : 'info',
     );
   } catch (err) {
-    showBanner(`No se pudo abrir el proyecto: ${err.message}`);
+    showBanner(`Could not open the project: ${err.message}`);
   } finally {
     setBusy(null);
   }
 }
 
 function doNewProject() {
-  if (store.getState().features.length && !confirm('¿Empezar un proyecto nuevo? Se borra el dibujo actual.')) {
+  if (store.getState().features.length && !confirm('Start a new project? The current drawing is deleted.')) {
     return;
   }
   store.loadProject({ features: [] });
   $('project-name').value = '';
-  setProjectStatus('Proyecto nuevo, sin guardar.');
+  setProjectStatus('New project, not saved yet.');
 }
 
 async function runMerge() {
   if (editBusy) return;
   editBusy = true;
-  setBusy('Uniendo…');
+  setBusy('Merging…');
   try {
     const { desde, hasta, puenteadas } = await applyMerge();
     showBanner(
       puenteadas
-        ? `${desde} elementos unidos en ${hasta}; ${puenteadas} tramo(s) no se tocaban y se enlazaron por sus extremos más próximos.`
-        : `${desde} elementos unidos en ${hasta}.`,
+        ? `${desde} features merged into ${hasta}; ${puenteadas} segment(s) did not touch and were joined by their nearest endpoints.`
+        : `${desde} features merged into ${hasta}.`,
       'info',
     );
   } catch (err) {
@@ -898,25 +920,25 @@ async function runMerge() {
 }
 
 async function doImportGeoPackage(file) {
-  setBusy(`Leyendo ${file.name}…`);
+  setBusy(`Reading ${file.name}…`);
   try {
     const buf = await file.arrayBuffer();
     const { layers, warnings } = await importGeoPackage(buf);
     if (!layers.length) {
-      showBanner('El GeoPackage no trae capas de features utilizables.');
+      showBanner('The GeoPackage has no usable feature layers.');
       return;
     }
     store.addImportedLayers(layers);
     const total = layers.reduce((n, l) => n + l.geojson.features.length, 0);
     const styled = layers.filter((l) => l.style).length;
     const parts = [
-      `${layers.length} capa(s), ${total} elemento(s).`,
-      styled ? `${styled} con simbología QGIS aplicada.` : 'Sin estilos QGIS: se usa el estilo por defecto.',
+      `${layers.length} layer(s), ${total} feature(s).`,
+      styled ? `${styled} with QGIS symbology applied.` : 'No QGIS styles: the default style is used.',
     ];
     if (warnings.length) parts.push(warnings.join(' '));
     showBanner(parts.join(' '), warnings.length ? 'warn' : 'info');
   } catch (err) {
-    showBanner(`No se pudo leer el GeoPackage: ${err.message}`);
+    showBanner(`Could not read the GeoPackage: ${err.message}`);
   } finally {
     setBusy(null);
   }
@@ -949,62 +971,62 @@ function renderToolbar() {
   const alcance = sel.length || s.features.length;
   $('t-topo').disabled = alcance < 2;
   $('t-topo').title = sel.length
-    ? `Hacer que los ${sel.length} elementos seleccionados compartan vértices`
-    : 'Hacer que todos los elementos contiguos compartan vértices';
+    ? `Make the ${sel.length} selected features share vertices`
+    : 'Make all adjacent features share vertices';
 
   $('t-undo').disabled = !hasDraft;
   $('t-finish').disabled = !hasDraft;
   $('t-cancel').disabled = !hasDraft;
   $('t-delete').disabled = s.features.length === 0;
   $('t-delete').title = s.selection.length
-    ? `Borrar ${s.selection.length} elemento(s) seleccionado(s)`
-    : 'Borrar el último elemento guardado';
+    ? `Delete ${s.selection.length} selected feature(s)`
+    : 'Delete the last saved feature';
   $('btn-export').disabled = s.features.length === 0;
 }
 
 function renderStatus() {
   const s = store.getState();
   const n = s.draft ? s.draft.coords.length : 0;
-  $('status-count').textContent = `${s.features.length} elemento${s.features.length === 1 ? '' : 's'}`;
+  $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
   if (s.tool === 'navigate') {
-    $('status-text').textContent = 'Modo navegación — elige Línea o Polígono para dibujar';
+    $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
   } else if (s.tool === 'select') {
     $('status-text').textContent = s.selection.length
-      ? `${s.selection.length} seleccionado(s) · toca otro para añadirlo, o fuera para limpiar`
-      : 'Toca un elemento para seleccionarlo';
+      ? `${s.selection.length} selected · tap another to add it, or outside to clear`
+      : 'Tap a feature to select it';
   } else if (s.tool === 'vertices') {
     const base =
       s.vertexMode === 'add'
-        ? 'Modo añadir · toca sobre el borde para insertar un vértice y arrástralo para colocarlo'
+        ? 'Add mode · tap an edge to insert a vertex, drag to place it'
         : s.vertexMode === 'delete'
-          ? 'Modo borrar · toca un vértice para eliminarlo'
-          : 'Arrastra un vértice para moverlo · un punto medio para insertar · doble toque para borrar';
+          ? 'Delete mode · tap a vertex to remove it'
+          : 'Drag a vertex to move it · a midpoint to insert · double tap to delete';
     $('status-text').textContent = s.topoEdit
-      ? `${base} · topología activa: los magenta se mueven en bloque`
+      ? `${base} · topological editing on: magenta ones move together`
       : base;
   } else if (s.tool === 'cut') {
     if (s.cutSource === 'feature') {
       $('status-text').textContent = s.selection.length
-        ? `Toca el elemento que hará de cuchilla · cortará solo los ${s.selection.length} seleccionados`
-        : 'Toca el elemento que hará de cuchilla · cortará todo lo que cruce';
+        ? `Tap the feature to use as the blade · it will only cut the ${s.selection.length} selected`
+        : 'Tap the feature to use as the blade · it will cut everything it crosses';
     } else {
       $('status-text').textContent =
         n > 0
-          ? `Línea de corte con ${n} vértices · ciérrala para aplicar el corte`
+          ? `Split line with ${n} vertices · close it to apply the split`
           : (s.selection.length
-              ? `Dibuja la línea de corte · afectará solo a los ${s.selection.length} elementos seleccionados`
-              : 'Dibuja la línea de corte · afectará a todo lo que cruce');
+              ? `Draw the split line · it will only affect the ${s.selection.length} selected features`
+              : 'Draw the split line · it will affect everything it crosses');
     }
   } else if (s.traceEnabled) {
     $('status-text').textContent =
       n > 0
-        ? `${n} vértices · Trace activo: toca sobre otro elemento y el trazo seguirá su borde`
-        : 'Trace activo · toca sobre un elemento existente para empezar a seguir su borde';
+        ? `${n} vertices · Trace on: tap another feature and the stroke will follow its edge`
+        : 'Trace on · tap an existing feature to start following its edge';
   } else if (n > 0) {
-    $('status-text').textContent = `${n} vértice${n === 1 ? '' : 's'} · toca para añadir, mantén presionado para trazo libre, doble toque para cerrar`;
+    $('status-text').textContent = `${n} vertex${n === 1 ? '' : 'es'} · tap to add, press and hold for freehand, double tap to close`;
   } else {
     $('status-text').textContent =
-      'Toca para el primer vértice · mantén presionado para trazo libre';
+      'Tap for the first vertex · press and hold for freehand';
   }
 }
 
@@ -1022,7 +1044,10 @@ const SETTING_INPUTS = [
   { key: 'tolerance', id: 'opt-tol', out: 'tol-value', fmt: (v) => `${v.toFixed(1)} px` },
   { key: 'snapTolerance', id: 'opt-snap-tol', out: 'snap-tol-value', fmt: (v) => `${v} px` },
   { key: 'traceTolerance', id: 'opt-trace-tol', out: 'trace-tol-value', fmt: (v) => `${v} px` },
-  { key: 'topoTolerance', id: 'opt-topo-tol', out: 'topo-tol-value', fmt: (v) => `${v} m` },
+  // La tolerancia topológica tiene dos controles (deslizador y número) que se
+  // sincronizan en syncTopoTolerance; aquí solo se refresca su valor.
+  { key: 'topoTolerance', id: 'opt-topo-tol' },
+  { key: 'topoTolerance', id: 'opt-topo-tol-num' },
 ];
 
 function syncSettingsUI() {
@@ -1058,7 +1083,31 @@ export function initUI() {
   $('t-vertices').addEventListener('click', () => store.setTool('vertices'));
   $('t-cut').addEventListener('click', () => store.setTool('cut'));
   $('t-merge').addEventListener('click', runMerge);
-  $('t-topo').addEventListener('click', runTopology);
+  // El botón abre el desplegable en vez de aplicar a ciegas: el umbral es el
+  // parámetro que decide el resultado y tiene que verse antes de tocarlo.
+  $('t-topo').addEventListener('click', () => {
+    if (!$('topo-menu').classList.contains('hidden')) closeOverlays();
+    else openTopoMenu();
+  });
+  $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
+  $('topo-apply').addEventListener('click', () => {
+    closeOverlays();
+    runTopology();
+  });
+  $('topo-menu-range').addEventListener('input', (e) =>
+    syncTopoTolerance(e.target.value, 'topo-menu-range'),
+  );
+  $('topo-menu-num').addEventListener('input', (e) =>
+    syncTopoTolerance(e.target.value, 'topo-menu-num'),
+  );
+  $('opt-topo-tol-num').addEventListener('input', (e) =>
+    syncTopoTolerance(e.target.value, 'opt-topo-tol-num'),
+  );
+
+  $('btn-strabo').addEventListener('click', () => togglePanel('strabo-panel'));
+  $('btn-close-strabo').addEventListener('click', () =>
+    $('strabo-panel').classList.remove('open'),
+  );
   $('t-delete').addEventListener('click', () => {
     if (store.getState().selection.length) store.deleteSelected();
     else store.deleteLastFeature();
@@ -1074,7 +1123,7 @@ export function initUI() {
   );
   $('btn-reset-symbology').addEventListener('click', () => {
     store.resetOrnaments();
-    showBanner('Simbología de fallas restaurada a los valores por defecto.', 'info');
+    showBanner('Fault symbology reset to defaults.', 'info');
   });
 
   $('btn-project').addEventListener('click', () => togglePanel('project-menu'));
@@ -1139,14 +1188,16 @@ export function initUI() {
     $('trace-tol-value').textContent = `${v} px`;
     store.setTraceTolerance(v);
   });
-  $('opt-topo-tol').addEventListener('input', (e) => {
-    const v = Number(e.target.value);
-    $('topo-tol-value').textContent = `${v} m`;
-    store.setTopoTolerance(v);
-  });
+  $('opt-topo-tol').addEventListener('input', (e) =>
+    syncTopoTolerance(e.target.value, 'opt-topo-tol'),
+  );
   $('btn-clear').addEventListener('click', () => {
-    if (confirm('¿Borrar todos los elementos dibujados?')) store.clearFeatures();
+    if (confirm('Delete every drawn feature?')) store.clearFeatures();
   });
+
+  // StraboSpot vive en su propio módulo: la API, el aplanado de spots y su
+  // simbología no tienen por qué mezclarse con el resto de la interfaz.
+  initStraboPanel({ message: showBanner, busy: setBusy });
 
   buildPalette();
   renderLayers();

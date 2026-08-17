@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 const TILES = `fielddraw-tiles-${VERSION}`;
 
@@ -56,6 +56,11 @@ const SHELL = [
   './src/ui.js',
   './src/vendorPaths.js',
   './src/vertexEdit.js',
+  './src/strabo/api.js',
+  './src/strabo/spots.js',
+  './src/strabo/layers.js',
+  './src/strabo/upload.js',
+  './src/strabo/panel.js',
   './src/styles/app.css',
   './src/gpkg/index.js',
   './src/gpkg/qml.js',
@@ -71,6 +76,13 @@ const SHELL = [
   './vendor/jsts.min.js',
   './vendor/sql-wasm.js',
   './vendor/sql-wasm.wasm',
+  './vendor/strabo-svg/bedding.svg',
+  './vendor/strabo-svg/falla-dextral-punto-azul.svg',
+  './vendor/strabo-svg/falla-indeterminada.svg',
+  './vendor/strabo-svg/falla-inversa.svg',
+  './vendor/strabo-svg/falla-normal-punto.svg',
+  './vendor/strabo-svg/falla-sinestral-punto-azul.svg',
+  './vendor/strabo-svg/joint_inclined.svg',
   './vendor/fonts/Noto Sans Regular/0-255.pbf',
   './vendor/fonts/Noto Sans Regular/256-511.pbf',
 ];

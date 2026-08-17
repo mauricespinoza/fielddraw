@@ -21,13 +21,13 @@ export async function applyCut(cut) {
   let cutterId = null;
   if (cut && cut.type === 'feature') {
     const f = st.features.find((x) => x.properties.id === cut.id);
-    if (!f) throw new Error('El elemento cortador ya no existe');
+    if (!f) throw new Error('The cutting feature no longer exists');
     // Un polígono corta por su borde; de eso se encarga geometryOps.
     cutter = f.geometry;
     cutterId = cut.id;
   } else {
     if (!cut || !Array.isArray(cut.coords) || cut.coords.length < 2) {
-      throw new Error('Línea de corte inválida: se esperaba {type:"coords", coords:[...]}');
+      throw new Error('Invalid split line: expected {type:"coords", coords:[...]}');
     }
     cutter = { type: 'LineString', coordinates: cut.coords };
   }
@@ -62,7 +62,7 @@ export function applyTopology() {
   const st = store.getState();
   const targets = st.selection.length ? store.selectedFeatures() : st.features;
   if (targets.length < 2) {
-    throw new Error('La confirmación topológica necesita al menos dos elementos.');
+    throw new Error('The topology check needs at least two features.');
   }
 
   const result = confirmTopology(targets, { toleranceMeters: st.topoTolerance });
@@ -83,10 +83,10 @@ export function applyTopology() {
 /** Une los elementos seleccionados; todos deben ser del mismo tipo. */
 export async function applyMerge() {
   const sel = store.selectedFeatures();
-  if (sel.length < 2) throw new Error('Selecciona al menos dos elementos para unir');
+  if (sel.length < 2) throw new Error('Select at least two features to merge');
 
   const kinds = new Set(sel.map((f) => f.geometry.type));
-  if (kinds.size > 1) throw new Error('No se pueden unir líneas con polígonos');
+  if (kinds.size > 1) throw new Error('Lines and polygons cannot be merged together');
 
   const esPoligono = kinds.has('Polygon');
   // Antes de unir polígonos se fuerza la topología entre ellos: dos bordes
@@ -100,7 +100,7 @@ export async function applyMerge() {
     : sel.map((f) => f.geometry);
 
   let result = esPoligono ? await unionPolygons(geoms) : await mergeLines(geoms);
-  if (!result || result.length === 0) throw new Error('La unión no produjo geometría');
+  if (!result || result.length === 0) throw new Error('The merge produced no geometry');
 
   // Líneas que no se tocan: en vez de rendirse, se encadenan por sus extremos
   // más próximos, que es lo que uno haría a mano.

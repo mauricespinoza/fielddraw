@@ -31,8 +31,8 @@ function newId() {
  */
 function defaultLayers() {
   return [
-    { id: 'geology', kind: 'geology', label: 'Geología (dibujo)', visible: true, opacity: 1 },
-    { id: 'contours', kind: 'contours', label: 'Curvas de nivel', visible: true, opacity: 0.85 },
+    { id: 'geology', kind: 'geology', label: 'Geology (drawing)', visible: true, opacity: 1 },
+    { id: 'contours', kind: 'contours', label: 'Contour lines', visible: true, opacity: 0.85 },
     ...BASEMAPS.map((b) => ({
       id: b.id,
       kind: 'basemap',
@@ -94,6 +94,12 @@ let state = {
   units: defaultUnits(),
   /** Línea que se va a continuar en cuanto se ponga el primer vértice. */
   extendFrom: null,
+
+  /**
+   * Datos traídos de StraboSpot: {datasetId, datasetName, estructuras,
+   * observacion, lineas} con las tres colecciones ya en GeoJSON.
+   */
+  strabo: null,
 };
 
 /* ---------- historial ---------- */
@@ -593,6 +599,31 @@ export function setLayerVisible(id, visible) {
 
 export function setLayerOpacity(id, opacity) {
   set({ layers: state.layers.map((l) => (l.id === id ? { ...l, opacity } : l)) });
+}
+
+/* ---------- StraboSpot ---------- */
+
+/**
+ * Publica un dataset descargado y le añade su entrada en el panel de capas,
+ * justo debajo del dibujo propio para no taparlo.
+ */
+export function setStraboData(data) {
+  const layers = state.layers.filter((l) => l.kind !== 'strabo');
+  if (data) {
+    const at = layers.findIndex((l) => l.kind === 'geology') + 1;
+    layers.splice(at, 0, {
+      id: 'strabo',
+      kind: 'strabo',
+      label: `StraboSpot · ${data.datasetName}`,
+      visible: true,
+      opacity: 1,
+    });
+  }
+  set({ strabo: data, layers });
+}
+
+export function clearStraboData() {
+  setStraboData(null);
 }
 
 /* ---------- capas importadas ---------- */

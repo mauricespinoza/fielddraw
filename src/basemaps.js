@@ -10,28 +10,28 @@ const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 export const BASEMAPS = [
   {
     id: 'esri-imagery',
-    label: 'Esri — Satélite',
+    label: 'Esri — Imagery',
     tiles: [`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`],
     attribution: 'Esri, Maxar, Earthstar Geographics',
     maxzoom: 19,
   },
   {
     id: 'esri-topo',
-    label: 'Esri — Topográfico',
+    label: 'Esri — Topographic',
     tiles: [`${ESRI}/World_Topo_Map/MapServer/tile/{z}/{y}/{x}`],
     attribution: 'Esri, HERE, Garmin, USGS, INTERMAP',
     maxzoom: 19,
   },
   {
     id: 'esri-terrain',
-    label: 'Esri — Terreno',
+    label: 'Esri — Terrain',
     tiles: [`${ESRI}/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}`],
     attribution: 'Esri, USGS, NOAA',
     maxzoom: 13,
   },
   {
     id: 'esri-hillshade',
-    label: 'Esri — Sombreado',
+    label: 'Esri — Hillshade',
     tiles: [`${ESRI}/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}`],
     attribution: 'Esri, Airbus DS, USGS, NGA, NASA',
     maxzoom: 16,

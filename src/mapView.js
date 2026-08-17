@@ -32,6 +32,15 @@ import {
   ornamentLayers,
 } from './ornaments.js';
 import {
+  STRABO_LAYER_IDS,
+  STRABO_LINES_SOURCE,
+  STRABO_OBSERVATIONS_SOURCE,
+  STRABO_SOURCES,
+  STRABO_STRUCTURES_SOURCE,
+  addStraboImages,
+  straboLayers,
+} from './strabo/layers.js';
+import {
   buildCoincidence,
   collectHandles,
   collectMidpoints,
@@ -65,6 +74,7 @@ function mlIdsFor(layer) {
   if (layer.kind === 'contours') return CONTOUR_LAYER_IDS;
   if (layer.kind === 'imported') return importedLayerIds.get(layer.id) || [];
   if (layer.kind === 'tiles') return tileLayerIds.get(layer.id) || [];
+  if (layer.kind === 'strabo') return STRABO_LAYER_IDS;
   // Los ornamentos van al final para dibujarse sobre la traza de la falla.
   return [...GEOLOGY_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
 }
@@ -294,6 +304,15 @@ export function createMapView({
     });
     for (const l of draftLayers()) map.addLayer(l);
 
+    // StraboSpot: fuentes vacías y capas listas desde el arranque, para que
+    // descargar un dataset sea solo un setData y no una recomposición del
+    // estilo. Los iconos se rasterizan aparte y pueden llegar después.
+    for (const src of STRABO_SOURCES) {
+      map.addSource(src, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+    for (const l of straboLayers()) map.addLayer(l);
+    addStraboImages(map).then(() => map.triggerRepaint());
+
     map.addSource(EDIT_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -303,6 +322,7 @@ export function createMapView({
     ready = true;
     applyLayerStack(map, store.getState().layers);
     syncGeology();
+    syncStrabo();
     syncDraft();
     collectSnapSources();
     rebuildHandles();
@@ -354,6 +374,36 @@ export function createMapView({
       out.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } });
     }
     src.setData({ type: 'FeatureCollection', features: out });
+  }
+
+  const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+  /** Vuelca las tres colecciones del dataset de StraboSpot a sus fuentes. */
+  function syncStrabo() {
+    if (!ready) return;
+    const data = store.getState().strabo;
+    const put = (id, fc) => {
+      const src = map.getSource(id);
+      if (src) src.setData(fc || EMPTY_FC);
+    };
+    put(STRABO_STRUCTURES_SOURCE, data && data.estructuras);
+    put(STRABO_OBSERVATIONS_SOURCE, data && data.observacion);
+    put(STRABO_LINES_SOURCE, data && data.lineas);
+  }
+
+  /** Encuadra el mapa sobre lo que se acaba de traer de StraboSpot. */
+  function fitToStrabo() {
+    const data = store.getState().strabo;
+    if (!data) return;
+    const fc = {
+      type: 'FeatureCollection',
+      features: [
+        ...((data.estructuras && data.estructuras.features) || []),
+        ...((data.observacion && data.observacion.features) || []),
+        ...((data.lineas && data.lineas.features) || []),
+      ],
+    };
+    if (fc.features.length) fitToGeoJSON(fc);
   }
 
   function syncImported() {
@@ -723,7 +773,7 @@ export function createMapView({
       }
       const ins = findInsertion(editableFeatures(), projectLngLat, screen, 26);
       if (ins) insertAndDrag(ins, toLngLat(ins.screen));
-      else onEditMessage('Toca sobre el borde de un elemento para añadir un vértice.', 'warn');
+      else onEditMessage('Tap the edge of a feature to add a vertex.', 'warn');
       return;
     }
 
@@ -836,7 +886,7 @@ export function createMapView({
   function deleteHandleAt(screen, tolerance = 18) {
     const handle = findHandle(handles, screen, tolerance);
     if (!handle) {
-      onEditMessage('Toca sobre un vértice para borrarlo.', 'warn');
+      onEditMessage('Tap a vertex to delete it.', 'warn');
       return;
     }
     const result = deleteVertices(store.getState().features, targetsFor(handle));
@@ -846,8 +896,8 @@ export function createMapView({
     }
     onEditMessage(
       result.borrados === 0
-        ? 'No se puede borrar: la geometría quedaría degenerada.'
-        : `${result.borrados} vértice(s) borrado(s)${result.omitidos ? `, ${result.omitidos} omitido(s) para no romper la geometría` : ''}.`,
+        ? 'Cannot delete: the geometry would degenerate.'
+        : `${result.borrados} vertex/vertices deleted${result.omitidos ? `, ${result.omitidos} skipped to keep the geometry valid` : ''}.`,
       result.borrados === 0 ? 'warn' : 'info',
     );
   }
@@ -902,9 +952,9 @@ export function createMapView({
 
     onMultiTap: (n) => {
       if (n === 2) {
-        if (!store.undo()) onEditMessage('No queda nada por deshacer.', 'warn');
+        if (!store.undo()) onEditMessage('Nothing left to undo.', 'warn');
       } else if (n >= 3) {
-        if (!store.redo()) onEditMessage('No queda nada por rehacer.', 'warn');
+        if (!store.redo()) onEditMessage('Nothing left to redo.', 'warn');
       }
     },
 
@@ -916,7 +966,7 @@ export function createMapView({
       if (st.tool === 'cut' && st.cutSource === 'feature') {
         const hit = pickFeature(st.features, screen, projectLngLat, 16);
         if (hit) store.requestCutByFeature(hit.properties.id);
-        else onEditMessage('Toca sobre la línea o el polígono que quieres usar para cortar.', 'warn');
+        else onEditMessage('Tap the line or polygon you want to split with.', 'warn');
         return;
       }
 
@@ -1042,6 +1092,11 @@ export function createMapView({
   store.subscribe(() => {
     if (store.changed('units')) applyUnitColors();
     if (store.changed('ornaments')) applyOrnamentStyle(map, store.getState().ornaments);
+    if (store.changed('strabo')) {
+      syncStrabo();
+      applyLayerStack(map, store.getState().layers);
+      if (store.getState().strabo) fitToStrabo();
+    }
     if (store.changed('imported')) syncImported();
     else if (store.changed('tileSets')) syncTileSets();
     else if (store.changed('layers')) applyLayerStack(map, store.getState().layers);

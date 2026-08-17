@@ -6,33 +6,33 @@
 
 /** `short` es lo que se ve en la paleta compacta; `label` va en tooltips. */
 export const LINE_TYPES = [
-  { id: 'stratigraphic-contact', short: 'Estrat.', label: 'Contacto estratigráfico', group: 'Contactos', color: '#212121', weight: 1 },
-  { id: 'intrusive-contact', short: 'Intrus.', label: 'Contacto intrusivo', group: 'Contactos', color: '#C2185B', weight: 1 },
-  { id: 'structural-contact', short: 'Estruct.', label: 'Contacto estructural', group: 'Contactos', color: '#2E7D32', weight: 1 },
-  { id: 'thrust-fault', short: 'Inversa', label: 'Falla inversa / cabalgamiento', group: 'Fallas', color: '#D32F2F', weight: 1.35 },
-  { id: 'normal-fault', short: 'Normal', label: 'Falla normal', group: 'Fallas', color: '#F57C00', weight: 1.25 },
-  { id: 'dextral-fault', short: 'Dextral', label: 'Falla dextral', group: 'Fallas', color: '#7B1FA2', weight: 1.25 },
-  { id: 'sinistral-fault', short: 'Sinestr.', label: 'Falla sinestral', group: 'Fallas', color: '#00838F', weight: 1.25 },
-  { id: 'undefined-fault', short: 'Indif.', label: 'Falla indiferenciada', group: 'Fallas', color: '#546E7A', weight: 1.15 },
-  { id: 'dike', short: 'Dique', label: 'Dique', group: 'Diques', color: '#6D4C41', weight: 1.1 },
+  { id: 'stratigraphic-contact', short: 'Strat.', label: 'Stratigraphic contact', group: 'Contacts', color: '#212121', weight: 1 },
+  { id: 'intrusive-contact', short: 'Intrus.', label: 'Intrusive contact', group: 'Contacts', color: '#C2185B', weight: 1 },
+  { id: 'structural-contact', short: 'Struct.', label: 'Structural contact', group: 'Contacts', color: '#2E7D32', weight: 1 },
+  { id: 'thrust-fault', short: 'Thrust', label: 'Reverse fault / thrust', group: 'Faults', color: '#D32F2F', weight: 1.35 },
+  { id: 'normal-fault', short: 'Normal', label: 'Normal fault', group: 'Faults', color: '#F57C00', weight: 1.25 },
+  { id: 'dextral-fault', short: 'Dextral', label: 'Dextral fault', group: 'Faults', color: '#7B1FA2', weight: 1.25 },
+  { id: 'sinistral-fault', short: 'Sinistr.', label: 'Sinistral fault', group: 'Faults', color: '#00838F', weight: 1.25 },
+  { id: 'undefined-fault', short: 'Undiff.', label: 'Undifferentiated fault', group: 'Faults', color: '#546E7A', weight: 1.15 },
+  { id: 'dike', short: 'Dyke', label: 'Dyke', group: 'Dykes', color: '#6D4C41', weight: 1.1 },
 ];
 
-export const LINE_GROUPS = ['Contactos', 'Fallas', 'Diques'];
+export const LINE_GROUPS = ['Contacts', 'Faults', 'Dykes'];
 
 export const POLYGON_TYPES = [
-  { id: 'intrusive-unit', label: 'Unidad intrusiva', color: '#E57373' },
-  { id: 'volcanic-unit', label: 'Unidad volcánica', color: '#BA68C8' },
-  { id: 'sedimentary-unit', label: 'Unidad sedimentaria', color: '#FFB74D' },
-  { id: 'metamorphic-unit', label: 'Unidad metamórfica', color: '#4DB6AC' },
-  { id: 'quaternary-cover', label: 'Cobertura cuaternaria', color: '#FFF176' },
-  { id: 'alteration-zone', label: 'Zona de alteración', color: '#A1887F' },
+  { id: 'intrusive-unit', label: 'Intrusive unit', color: '#E57373' },
+  { id: 'volcanic-unit', label: 'Volcanic unit', color: '#BA68C8' },
+  { id: 'sedimentary-unit', label: 'Sedimentary unit', color: '#FFB74D' },
+  { id: 'metamorphic-unit', label: 'Metamorphic unit', color: '#4DB6AC' },
+  { id: 'quaternary-cover', label: 'Quaternary cover', color: '#FFF176' },
+  { id: 'alteration-zone', label: 'Alteration zone', color: '#A1887F' },
 ];
 
 /** `dash` va en múltiplos del ancho de línea, que es como lo lee MapLibre. */
 export const CERTAINTIES = [
-  { id: 'observed', short: 'Obs', label: 'Observado', dash: null, cap: 'round' },
-  { id: 'inferred', short: 'Inf', label: 'Inferido', dash: [2.6, 1.7], cap: 'butt' },
-  { id: 'covered', short: 'Cub', label: 'Cubierto', dash: [0.1, 1.9], cap: 'round' },
+  { id: 'observed', short: 'Obs', label: 'Observed', dash: null, cap: 'round' },
+  { id: 'inferred', short: 'Inf', label: 'Inferred', dash: [2.6, 1.7], cap: 'butt' },
+  { id: 'covered', short: 'Cov', label: 'Concealed', dash: [0.1, 1.9], cap: 'round' },
 ];
 
 export const LINE_TYPE_BY_ID = new Map(LINE_TYPES.map((t) => [t.id, t]));

@@ -521,6 +521,7 @@
         const { geologyLayers, draftLayers, editLayers } = await import('../src/geologyStyle.js');
         const { ornamentLayers } = await import('../src/ornaments.js');
         const { defaultOrnaments } = await import('../src/symbology.js');
+        const straboMod = await import('../src/strabo/layers.js');
         const imported = buildImportedLayers({
           id: 'imp', sourceId: 'imp-src', kind: 'line',
           style: { rules: [
@@ -534,12 +535,18 @@
         const style = {
           version: 8,
           glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-          sources: { 'geology-src': emptySrc, 'draft-src': emptySrc, 'edit-src': emptySrc, 'imp-src': emptySrc, 'ip-src': emptySrc, 'pt-src': emptySrc },
+          sources: {
+            'geology-src': emptySrc, 'draft-src': emptySrc, 'edit-src': emptySrc,
+            'imp-src': emptySrc, 'ip-src': emptySrc, 'pt-src': emptySrc,
+            'strabo-structures-src': emptySrc, 'strabo-observations-src': emptySrc,
+            'strabo-lines-src': emptySrc,
+          },
           layers: [
             ...geologyLayers(),
             ...draftLayers(),
             ...editLayers(),
             ...ornamentLayers(defaultOrnaments()),
+            ...straboMod.straboLayers(),
             ...imported,
             ...impPoly,
             ...impPt,
@@ -570,6 +577,18 @@
            JSON.stringify(flip.layout['icon-offset']) === '[0,-14]' &&
            flip.layout['icon-rotate'] === 180,
            JSON.stringify([normal.layout['icon-offset'], flip.layout['icon-offset']]));
+        // StraboSpot: el icono se elige por expresión sobre `Type` y el símbolo
+        // se rota con `Strike`. Si el spec rechazara la expresión, la capa se
+        // dibujaría con el icono por defecto y nadie se enteraría.
+        const estructuras = straboMod.straboLayers().find((l) => l.id === 'strabo-structures');
+        ok('la rotación estructural viene de Strike',
+           JSON.stringify(estructuras.layout['icon-rotate']).includes('Strike') &&
+           estructuras.layout['icon-rotation-alignment'] === 'map',
+           JSON.stringify(estructuras.layout['icon-rotate']));
+        ok('el icono se elige por Type con un match válido',
+           validate({ ...style, layers: [estructuras] }).length === 0,
+           validate({ ...style, layers: [estructuras] }).map((e) => e.message).join(' | '));
+
         ok('los filtros de flip son mutuamente excluyentes',
            JSON.stringify(normal.filter[3]) === '["!=",["get","flip"],true]' &&
            JSON.stringify(flip.filter[3]) === '["==",["get","flip"],true]',

@@ -646,6 +646,73 @@ input[type='radio'] {
   background: transparent;
 }
 
+/* ---------- tolerancia con deslizador + número ---------- */
+.tol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tol-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.tol-row input[type='number'] {
+  width: 76px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tol-row .unit {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------- panel de StraboSpot ---------- */
+.layer-panel .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.layer-panel .field input,
+.layer-panel .field select {
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 14px;
+  width: 100%;
+}
+
+.field-row {
+  display: flex;
+  gap: 8px;
+}
+
+.field-row .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.sep {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
 /* ---------- simbología de ornamentos ---------- */
 .symb-row {
   display: flex;

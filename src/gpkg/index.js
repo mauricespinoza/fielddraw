@@ -288,14 +288,14 @@ async function makeReprojector(db, srsId, warnings) {
     const fwd = proj4(source, 'EPSG:4326');
     // Prueba de humo: si la transformación no produce números, no sirve.
     const probe = fwd.forward([0, 0]);
-    if (!Number.isFinite(probe[0]) || !Number.isFinite(probe[1])) throw new Error('transformación inválida');
+    if (!Number.isFinite(probe[0]) || !Number.isFinite(probe[1])) throw new Error('invalid transformation');
     return (c) => {
       const r = fwd.forward([c[0], c[1]]);
       return [r[0], r[1]];
     };
   } catch (err) {
     warnings.push(
-      `No se pudo reproyectar desde EPSG:${srsId} (${err.message}). La capa se cargará con sus coordenadas originales y probablemente no calce con el mapa.`,
+      `Could not reproject from EPSG:${srsId} (${err.message}). The layer is loadedrá con sus coordenadas originales y probablemente no calce con el mapa.`,
     );
     return null;
   }
@@ -337,7 +337,7 @@ export async function importGeoPackage(arrayBuffer) {
         [table],
       )[0];
       if (!gc) {
-        warnings.push(`La tabla "${table}" no declara columna de geometría; se omite.`);
+        warnings.push(`Table "${table}" declares no geometry column; skipped.`);
         continue;
       }
 
@@ -371,7 +371,7 @@ export async function importGeoPackage(arrayBuffer) {
         }
         features.push({ type: 'Feature', properties, geometry });
       }
-      if (badGeoms > 0) warnings.push(`"${table}": ${badGeoms} geometría(s) ilegibles omitidas.`);
+      if (badGeoms > 0) warnings.push(`"${table}": ${badGeoms} unreadable geometry/geometries skipped.`);
 
       let style = null;
       if (hasStyles) {
@@ -385,10 +385,10 @@ export async function importGeoPackage(arrayBuffer) {
             style = parseQML(st.styleQML);
             for (const w of style.warnings) warnings.push(`"${table}": ${w}`);
           } catch (err) {
-            warnings.push(`"${table}": no se pudo leer el QML (${err.message}); se usará el estilo por defecto.`);
+            warnings.push(`"${table}": could not read the QML (${err.message}); the default style will beefecto.`);
           }
         } else if (st && st.styleSLD) {
-          warnings.push(`"${table}": la capa solo trae SLD; aún no se interpreta, se usa el estilo por defecto.`);
+          warnings.push(`"${table}": the layer only carries SLD; not interpreted yet, using the default defecto.`);
         }
       }
 

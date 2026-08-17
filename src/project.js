@@ -22,7 +22,7 @@ export function serializeProject(name = '') {
   return {
     format: PROJECT_FORMAT,
     version: PROJECT_VERSION,
-    name: name || 'Proyecto FieldDraw',
+    name: name || 'FieldDraw project',
     savedAt: new Date().toISOString(),
     features: st.features,
     units: st.units,
@@ -61,9 +61,9 @@ export function parseProject(text) {
   try {
     raw = JSON.parse(text);
   } catch (err) {
-    throw new Error(`El archivo no es JSON válido (${err.message}).`);
+    throw new Error(`The file is not valid JSON (${err.message}).`);
   }
-  if (!raw || typeof raw !== 'object') throw new Error('El archivo no contiene un proyecto.');
+  if (!raw || typeof raw !== 'object') throw new Error('The file does not contain a project.');
 
   const warnings = [];
 
@@ -71,19 +71,19 @@ export function parseProject(text) {
   if (raw.type === 'FeatureCollection' && Array.isArray(raw.features)) {
     return {
       project: { features: sanitizeFeatures(raw.features, warnings) },
-      warnings: [...warnings, 'Era un GeoJSON, no un proyecto: se cargó solo la geometría.'],
+      warnings: [...warnings, 'That was a GeoJSON, not a project: only the geometry was loaded.'],
     };
   }
 
   if (raw.format !== PROJECT_FORMAT) {
-    throw new Error('El archivo no es un proyecto de FieldDraw.');
+    throw new Error('This file is not a FieldDraw project.');
   }
   if (Number(raw.version) > PROJECT_VERSION) {
     warnings.push(
-      `El proyecto viene de una versión más nueva (v${raw.version}); puede que algo no se cargue.`,
+      `This project comes from a newer version (v${raw.version}); something may not load.`,
     );
   }
-  if (!Array.isArray(raw.features)) throw new Error('El proyecto no trae elementos.');
+  if (!Array.isArray(raw.features)) throw new Error('The project has no features.');
 
   return {
     project: {
@@ -121,8 +121,8 @@ function sanitizeFeatures(list, warnings) {
     if (!props.certainty) props.certainty = 'observed';
     out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });
   }
-  if (descartados) warnings.push(`${descartados} elemento(s) con geometría no soportada se omitieron.`);
-  if (sinId) warnings.push(`${sinId} elemento(s) sin id: se les asignó uno nuevo.`);
+  if (descartados) warnings.push(`${descartados} feature(s) with unsupported geometry were skipped.`);
+  if (sinId) warnings.push(`${sinId} feature(s) had no id: a new one was assigned.`);
   return out;
 }
 

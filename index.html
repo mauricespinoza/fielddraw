@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- user-scalable=no: el zoom lo maneja el mapa, no Safari -->
+    <!-- user-scalable=no: zoom is the map's job, not Safari's -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="FieldDraw" />
     <meta name="theme-color" content="#0d1117" />
-    <title>FieldDraw — mapeo geológico</title>
+    <title>FieldDraw — geological field mapping</title>
 
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
@@ -52,67 +52,67 @@
       </div>
 
       <div class="toolbar" id="toolbar">
-        <button class="tool active" id="t-nav" title="Navegar">
+        <button class="tool active" id="t-nav" title="Pan and zoom">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path
               d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12m0-1.5a1.5 1.5 0 0 1 3 0V12m0-1a1.5 1.5 0 0 1 3 0v1m0 0v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5v-3l-1.2.6a1.6 1.6 0 0 0-.6 2.3"
               fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
             />
           </svg>
-          <span>Navegar</span>
+          <span>Navigate</span>
         </button>
-        <button class="tool" id="t-line" title="Dibujar línea">
+        <button class="tool" id="t-line" title="Draw a line">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 19 20 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             <circle cx="4" cy="19" r="2" fill="currentColor" />
             <circle cx="20" cy="5" r="2" fill="currentColor" />
             <circle cx="12" cy="12" r="1.7" fill="currentColor" />
           </svg>
-          <span>Línea</span>
+          <span>Line</span>
         </button>
-        <button class="tool" id="t-poly" title="Dibujar polígono">
+        <button class="tool" id="t-poly" title="Draw a polygon">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M12 3.5 20.5 10l-3.2 9.5H6.7L3.5 10z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
           </svg>
-          <span>Polígono</span>
+          <span>Polygon</span>
         </button>
 
-        <button class="tool" id="t-select" title="Seleccionar elementos">
+        <button class="tool" id="t-select" title="Select features">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M5 3.5 18.5 11 12.5 12.8 10 19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
           </svg>
-          <span>Elegir</span>
+          <span>Select</span>
         </button>
 
-        <button class="tool" id="t-vertices" title="Editar vértices">
+        <button class="tool" id="t-vertices" title="Edit vertices">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 18 10 7l5 6 5-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
             <rect x="7.4" y="4.4" width="5.2" height="5.2" fill="none" stroke="currentColor" stroke-width="1.8" />
             <rect x="12.4" y="10.4" width="5.2" height="5.2" fill="none" stroke="currentColor" stroke-width="1.8" />
           </svg>
-          <span>Nodos</span>
+          <span>Vertices</span>
         </button>
 
         <div class="tool-sep"></div>
 
-        <button class="tool" id="t-cut" title="Cortar elementos con una línea o con otro elemento">
+        <button class="tool" id="t-cut" title="Split features with a drawn line or an existing feature">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M6.5 3 17 15M17.5 3 7 15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             <circle cx="6" cy="18.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7" />
             <circle cx="18" cy="18.5" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7" />
           </svg>
-          <span>Cortar</span>
+          <span>Split</span>
         </button>
-        <button class="tool" id="t-merge" title="Unir los elementos seleccionados" disabled>
+        <button class="tool" id="t-merge" title="Merge the selected features" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 6h5a5 5 0 0 1 5 5v2a5 5 0 0 0 5 5h1M4 18h5a5 5 0 0 0 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
-          <span>Unir</span>
+          <span>Merge</span>
         </button>
         <button
           class="tool"
           id="t-topo"
-          title="Confirmación topológica: que los elementos contiguos compartan todos sus vértices"
+          title="Topology check: make adjacent features share every vertex"
         >
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M3.5 5h8v14h-8zM11.5 5h9v14h-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
@@ -120,19 +120,19 @@
             <circle cx="11.5" cy="12" r="2" fill="currentColor" />
             <circle cx="11.5" cy="19" r="2" fill="currentColor" />
           </svg>
-          <span>Topología</span>
+          <span>Topology</span>
         </button>
 
         <div class="tool-sep"></div>
 
-        <button class="tool" id="t-snap" title="Enganchar a la geometría existente">
+        <button class="tool" id="t-snap" title="Snap to existing geometry">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 20 20 4M9 15l6-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
             <rect x="8.5" y="8.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.8" />
           </svg>
           <span>Snap</span>
         </button>
-        <button class="tool" id="t-trace" title="Seguir el borde de un elemento existente">
+        <button class="tool" id="t-trace" title="Follow the edge of an existing feature">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M3 17c4 0 5-10 9-10s5 5 9 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             <circle cx="3" cy="17" r="2" fill="currentColor" />
@@ -143,204 +143,284 @@
 
         <div class="tool-sep"></div>
 
-        <button class="tool" id="t-undo" title="Deshacer vértice" disabled>
+        <button class="tool" id="t-undo" title="Undo vertex" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 9h11a5 5 0 0 1 0 10H9M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-          <span>Deshacer</span>
+          <span>Undo</span>
         </button>
-        <button class="tool accent" id="t-finish" title="Terminar elemento" disabled>
+        <button class="tool accent" id="t-finish" title="Finish feature" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 12.5 9.5 18 20 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-          <span>Listo</span>
+          <span>Done</span>
         </button>
-        <button class="tool" id="t-cancel" title="Descartar elemento" disabled>
+        <button class="tool" id="t-cancel" title="Discard feature" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
-          <span>Descartar</span>
+          <span>Discard</span>
         </button>
 
         <div class="tool-sep"></div>
 
-        <button class="tool danger" id="t-delete" title="Borrar el último elemento guardado" disabled>
+        <button class="tool danger" id="t-delete" title="Delete the last saved feature" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-          <span>Borrar</span>
+          <span>Delete</span>
         </button>
       </div>
 
       <div class="pen-readout" id="pen-readout">
-        <div class="pen-title"><span class="dot"></span><span id="pen-kind">Sin contacto</span></div>
+        <div class="pen-title"><span class="dot"></span><span id="pen-kind">No contact</span></div>
         <div id="pen-detail" hidden>
           <div class="pen-row">
-            <span>Presión</span>
+            <span>Pressure</span>
             <div class="bar"><div id="pen-pressure-bar"></div></div>
             <span class="num" id="pen-pressure">0.00</span>
           </div>
-          <div class="pen-row"><span>Inclinación</span><span class="num" id="pen-tilt">0° / 0°</span></div>
-          <div class="pen-row"><span>Altitud</span><span class="num" id="pen-alt">n/d</span></div>
-          <div class="pen-row"><span>Muestras/evento</span><span class="num" id="pen-coalesced">0</span></div>
+          <div class="pen-row"><span>Tilt</span><span class="num" id="pen-tilt">0° / 0°</span></div>
+          <div class="pen-row"><span>Altitude</span><span class="num" id="pen-alt">n/d</span></div>
+          <div class="pen-row"><span>Samples/event</span><span class="num" id="pen-coalesced">0</span></div>
         </div>
       </div>
 
       <div class="palette hidden" id="palette"></div>
 
       <div class="top-right">
-        <button class="pill" id="btn-project">Proyecto</button>
-        <button class="pill" id="btn-layers">Capas</button>
-        <button class="pill" id="btn-units">Unidades</button>
-        <button class="pill" id="btn-symbology">Símbolos</button>
-        <button class="pill" id="btn-settings">Ajustes</button>
-        <button class="pill" id="btn-import">Importar</button>
-        <button class="pill" id="btn-export" disabled>Exportar</button>
+        <button class="pill" id="btn-project">Project</button>
+        <button class="pill" id="btn-layers">Layers</button>
+        <button class="pill" id="btn-units">Units</button>
+        <button class="pill" id="btn-symbology">Symbols</button>
+        <button class="pill" id="btn-strabo">StraboSpot</button>
+        <button class="pill" id="btn-settings">Settings</button>
+        <button class="pill" id="btn-import">Import</button>
+        <button class="pill" id="btn-export" disabled>Export</button>
         <input type="file" id="file-gpkg" accept=".gpkg,.geopackage,.mbtiles,.pmtiles" hidden />
         <input type="file" id="file-project" accept=".json,.fdproj,.geojson" hidden />
       </div>
 
       <div class="dropdown hidden" id="project-menu">
         <header>
-          <h2>Proyecto</h2>
-          <button class="icon-btn" id="btn-close-project" aria-label="Cerrar">✕</button>
+          <h2>Project</h2>
+          <button class="icon-btn" id="btn-close-project" aria-label="Close">✕</button>
         </header>
         <label class="field">
-          <span>Nombre</span>
-          <input type="text" id="project-name" placeholder="Mapa Cerro Colorado" />
+          <span>Name</span>
+          <input type="text" id="project-name" placeholder="Cerro Colorado map" />
         </label>
-        <button class="pill wide" id="btn-save-project">Guardar proyecto…</button>
-        <button class="pill wide" id="btn-open-project">Abrir proyecto…</button>
-        <button class="pill danger wide" id="btn-new-project">Proyecto nuevo</button>
+        <button class="pill wide" id="btn-save-project">Save project…</button>
+        <button class="pill wide" id="btn-open-project">Open project…</button>
+        <button class="pill danger wide" id="btn-new-project">New project</button>
         <p class="hint">
-          Un <code>.fdproj.json</code> con el dibujo, las unidades, la simbología y los ajustes. Las
-          capas importadas y los mapas offline no van dentro: se vuelven a abrir con
-          <strong>Importar</strong>.
+          A <code>.fdproj.json</code> holding the drawing, units, symbology and settings. Imported
+          layers and offline maps are not included: reopen those with <strong>Import</strong>.
         </p>
-        <p class="hint footnote" id="project-status">Sin guardar todavía en esta sesión.</p>
+        <p class="hint footnote" id="project-status">Not saved yet in this session.</p>
+      </div>
+
+      <!-- Colgado del botón Topología: el umbral se decide al aplicarlo, no
+           enterrado en Ajustes, que es donde no se encontraba. -->
+      <div class="dropdown hidden" id="topo-menu">
+        <header>
+          <h2>Topology check</h2>
+          <button class="icon-btn" id="btn-close-topo" aria-label="Close">✕</button>
+        </header>
+        <p class="hint" id="topo-scope"></p>
+        <label class="field">
+          <span>Snap tolerance (metres on the ground)</span>
+          <span class="tol-row">
+            <input type="range" id="topo-menu-range" min="0.1" max="200" step="0.1" value="5" />
+            <input type="number" id="topo-menu-num" min="0.1" max="1000" step="0.1" value="5" />
+            <span class="unit">m</span>
+          </span>
+        </label>
+        <p class="hint footnote">
+          Vertices closer than this are fused into one, and a vertex lying on a neighbour's segment
+          is inserted there. Undoable in one step.
+        </p>
+        <button class="pill wide" id="topo-apply">Apply</button>
       </div>
 
       <div class="props-menu hidden" id="props-menu">
         <header>
-          <h2 id="props-title">Propiedades</h2>
-          <button class="icon-btn" id="btn-close-props" aria-label="Cerrar">✕</button>
+          <h2 id="props-title">Properties</h2>
+          <button class="icon-btn" id="btn-close-props" aria-label="Close">✕</button>
         </header>
         <div id="props-body"></div>
       </div>
 
       <aside class="layer-panel" id="units-panel">
         <header>
-          <h2>Unidades geológicas</h2>
-          <button class="icon-btn" id="btn-close-units" aria-label="Cerrar">✕</button>
+          <h2>Geological units</h2>
+          <button class="icon-btn" id="btn-close-units" aria-label="Close">✕</button>
         </header>
         <p class="hint">
-          Nombre y código se exportan como campos <code>unit</code> y <code>code</code> del
-          GeoPackage.
+          Name and code are exported as the GeoPackage fields <code>unit</code> and <code>code</code>.
         </p>
         <ul id="unit-list"></ul>
         <div class="unit-new">
-          <input type="text" id="new-unit-name" placeholder="Nombre de la unidad" />
-          <input type="text" id="new-unit-code" placeholder="Código" maxlength="12" />
-          <input type="color" id="new-unit-color" value="#8d6e63" aria-label="Color" />
-          <button class="pill" id="btn-add-unit">Añadir</button>
+          <input type="text" id="new-unit-name" placeholder="Unit name" />
+          <input type="text" id="new-unit-code" placeholder="Code" maxlength="12" />
+          <input type="color" id="new-unit-color" value="#8d6e63" aria-label="Colour" />
+          <button class="pill" id="btn-add-unit">Add</button>
+        </div>
+      </aside>
+
+      <aside class="layer-panel" id="strabo-panel">
+        <header>
+          <h2>StraboSpot</h2>
+          <button class="icon-btn" id="btn-close-strabo" aria-label="Close">✕</button>
+        </header>
+
+        <div id="strabo-auth">
+          <p class="hint">
+            Sign in with your StraboSpot account. Credentials are kept in memory for this session
+            only — never written to the device.
+          </p>
+          <label class="field"><span>Email</span>
+            <input type="email" id="strabo-email" autocomplete="username" placeholder="you@university.cl" />
+          </label>
+          <label class="field"><span>Password</span>
+            <input type="password" id="strabo-password" autocomplete="current-password" />
+          </label>
+          <button class="pill wide" id="strabo-signin">Sign in</button>
+        </div>
+
+        <div id="strabo-session" class="hidden">
+          <p class="hint">Signed in as <strong id="strabo-user"></strong>
+            <button class="icon-btn" id="strabo-signout" title="Sign out">⏻</button>
+          </p>
+
+          <label class="field"><span>Project</span>
+            <select id="strabo-project"><option value="">Select a project…</option></select>
+          </label>
+          <label class="field"><span>Dataset</span>
+            <select id="strabo-dataset"><option value="">Select a dataset…</option></select>
+          </label>
+
+          <div class="field-row">
+            <label class="field"><span>Field</span><input type="text" id="strabo-field" placeholder="Campaign" /></label>
+            <label class="field"><span>Geologist</span><input type="text" id="strabo-geologist" placeholder="Name" /></label>
+          </div>
+
+          <button class="pill wide" id="strabo-download" disabled>Load spots into the map</button>
+
+          <div id="strabo-loaded" class="hidden">
+            <p class="hint footnote" id="strabo-loaded-text"></p>
+            <button class="pill wide" id="strabo-clear">Remove StraboSpot layers</button>
+          </div>
+
+          <hr class="sep" />
+
+          <p class="hint">
+            Upload always creates a <strong>new</strong> dataset in the selected project. StraboSpot
+            replaces every spot in a dataset on upload, so existing ones are never written to.
+          </p>
+          <button class="pill wide" id="strabo-upload" disabled>Nothing to upload</button>
         </div>
       </aside>
 
       <aside class="layer-panel" id="symbology-panel">
         <header>
-          <h2>Simbología de fallas</h2>
-          <button class="icon-btn" id="btn-close-symbology" aria-label="Cerrar">✕</button>
+          <h2>Fault symbology</h2>
+          <button class="icon-btn" id="btn-close-symbology" aria-label="Close">✕</button>
         </header>
         <p class="hint">
-          Tamaño, espaciado y posición de los ornamentos. La posición es la distancia perpendicular
-          a la traza: el signo elige el lado, y el <strong>flip</strong> del menú de propiedades lo
-          invierte elemento por elemento.
+          Size, spacing and position of the ornaments. Position is the perpendicular distance to
+          the trace: the sign picks the side, and <strong>flip</strong> in the properties menu
+          reverses it per feature.
         </p>
         <ul id="symbology-list"></ul>
-        <button class="pill wide" id="btn-reset-symbology">Restaurar valores por defecto</button>
+        <button class="pill wide" id="btn-reset-symbology">Reset to defaults</button>
       </aside>
 
       <aside class="layer-panel" id="layer-panel">
         <header>
-          <h2>Capas</h2>
-          <button class="icon-btn" id="btn-close-layers" aria-label="Cerrar panel de capas">✕</button>
+          <h2>Layers</h2>
+          <button class="icon-btn" id="btn-close-layers" aria-label="Close layers panel">✕</button>
         </header>
-        <p class="hint">De arriba hacia abajo, tal como se dibujan sobre el mapa.</p>
+        <p class="hint">Top to bottom, exactly as they are drawn on the map.</p>
         <ul id="layer-list"></ul>
-        <p class="hint footnote">MBTiles y GeoPackage entran a esta misma lista en la siguiente fase.</p>
+        <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
       </aside>
 
       <div class="settings hidden" id="settings">
         <header>
-          <h2>Ajustes de digitalización</h2>
-          <button class="icon-btn" id="btn-close-settings" aria-label="Cerrar">✕</button>
+          <h2>Digitising settings</h2>
+          <button class="icon-btn" id="btn-close-settings" aria-label="Close">✕</button>
         </header>
 
         <fieldset>
-          <legend>Activación del trazo libre</legend>
-          <label><input type="radio" name="fh" id="fh-hold" checked /> Mantener presionado (~0,3 s) y arrastrar</label>
-          <label><input type="radio" name="fh" id="fh-drag" /> Arrastrar directamente</label>
+          <legend>Freehand activation</legend>
+          <label><input type="radio" name="fh" id="fh-hold" checked /> Press and hold (~0.3 s), then drag</label>
+          <label><input type="radio" name="fh" id="fh-drag" /> Drag straight away</label>
         </fieldset>
 
         <label class="row">
           <input type="checkbox" id="opt-finger" checked />
-          Permitir dibujar con el dedo
-          <span class="sub">Se ignora en cuanto se detecta un Apple Pencil: desde ahí el lápiz dibuja y los dedos navegan.</span>
+          Allow drawing with a finger
+          <span class="sub">Ignored once an Apple Pencil is detected: from then on the pen draws and fingers navigate.</span>
         </label>
 
-        <label class="row"><input type="checkbox" id="opt-smooth" checked /> Suavizar trazo (Chaikin)</label>
+        <label class="row"><input type="checkbox" id="opt-smooth" checked /> Smooth stroke (Chaikin)</label>
 
         <label class="row column">
-          <span>Tolerancia de simplificación: <strong id="tol-value">2.0 px</strong></span>
+          <span>Simplification tolerance: <strong id="tol-value">2.0 px</strong></span>
           <input type="range" id="opt-tol" min="0.5" max="6" step="0.5" value="2" />
         </label>
 
         <label class="row column">
-          <span>Radio de enganche: <strong id="snap-tol-value">14 px</strong></span>
+          <span>Snap radius: <strong id="snap-tol-value">14 px</strong></span>
           <input type="range" id="opt-snap-tol" min="4" max="32" step="1" value="14" />
         </label>
 
         <label class="row column">
-          <span>Radio del trace: <strong id="trace-tol-value">22 px</strong></span>
+          <span>Trace radius: <strong id="trace-tol-value">22 px</strong></span>
           <input type="range" id="opt-trace-tol" min="6" max="60" step="2" value="22" />
           <span class="sub">
-            Va aparte del enganche: agarrar el borde por el que se va a trazar admite más holgura
-            que clavar un vértice. Si el trace no engancha, súbelo.
+            Kept separate from snapping: grabbing the edge you want to trace tolerates more slack
+            than pinning a vertex. If tracing will not catch, raise this.
           </span>
         </label>
 
         <label class="row">
           <input type="checkbox" id="opt-topo" checked />
-          Edición topológica
+          Topological editing
           <span class="sub">
-            Al mover o borrar un vértice compartido por polígonos contiguos, se aplica a todos a la
-            vez, así el borde común no se abre y no hay que rehacer el vecino. Los vértices
-            compartidos se marcan en magenta.
+            Moving or deleting a vertex shared by adjacent polygons applies to all of them at once,
+            so the common edge never opens and the neighbour needs no rework. Shared vertices are
+            drawn in magenta.
           </span>
         </label>
 
         <label class="row column">
-          <span>Tolerancia topológica: <strong id="topo-tol-value">5 m</strong></span>
-          <input type="range" id="opt-topo-tol" min="0.5" max="50" step="0.5" value="5" />
+          <span>Topology tolerance</span>
+          <span class="tol-row">
+            <input type="range" id="opt-topo-tol" min="0.1" max="200" step="0.1" value="5" />
+            <input type="number" id="opt-topo-tol-num" min="0.1" max="1000" step="0.1" value="5" />
+            <span class="unit">m</span>
+          </span>
           <span class="sub">
-            La usa el botón <strong>Topología</strong> y la unión de polígonos: vértices más
-            próximos que esto se funden en uno solo.
+            Used by the <strong>Topology</strong> button and by polygon merge: vertices closer than
+            this get fused into one. Type a number for values beyond the slider.
           </span>
         </label>
 
         <fieldset>
-          <legend>Cortar con</legend>
-          <label><input type="radio" name="cutsrc" id="cut-draw" checked /> Una línea que dibujo</label>
-          <label><input type="radio" name="cutsrc" id="cut-feature" /> Un elemento que ya existe</label>
+          <legend>Split using</legend>
+          <label><input type="radio" name="cutsrc" id="cut-draw" checked /> A line I draw</label>
+          <label><input type="radio" name="cutsrc" id="cut-feature" /> An existing feature</label>
         </fieldset>
 
-        <button class="pill wide" id="btn-export-geojson">Exportar también a GeoJSON</button>
-        <button class="pill danger wide" id="btn-clear">Borrar todo el dibujo</button>
+        <button class="pill wide" id="btn-export-geojson">Also export to GeoJSON</button>
+        <button class="pill danger wide" id="btn-clear">Delete the whole drawing</button>
       </div>
 
       <div class="statusbar">
-        <span id="status-text">Modo navegación — elige Línea o Polígono para dibujar</span>
-        <span class="count" id="status-count">0 elementos</span>
+        <span id="status-text">Navigation mode — pick Line or Polygon to draw</span>
+        <span class="count" id="status-count">0 features</span>
       </div>
 
       <div class="banner hidden" id="banner">
