@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>FieldDraw — pruebas de navegador</title>
+    <!-- Las mismas dependencias locales que usa la app; ver index.html. -->
+    <script src="../vendor/maplibre-gl.js"></script>
+    <script src="../vendor/maplibre-contour.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "maplibre-gl": "../vendor/esm/maplibre-gl.js",
+          "maplibre-contour": "../vendor/esm/maplibre-contour.js"
+        }
+      }
+    </script>
+    <style>
+      body { font: 14px/1.5 ui-monospace, Menlo, Consolas, monospace; background: #0d1117; color: #e6edf3; padding: 20px; }
+      h2 { font-size: 14px; color: #93a1b0; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+      .ok::before { content: 'ok   '; color: #2dd4bf; }
+      .fail { color: #f87171; }
+      .fail::before { content: 'FAIL '; }
+      #summary { margin-top: 20px; font-size: 16px; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h1 style="font-size:16px">Pruebas que necesitan navegador (DOMParser, wasm)</h1>
+    <div id="results"></div>
+    <div id="summary">ejecutando…</div>
+
+    <script type="module">
+      // Estas pruebas no pueden correr en Node: parseQML necesita DOMParser y
+      // el GeoPackage necesita el wasm de sql.js.
+      const results = document.getElementById('results');
+      let fails = 0;
+      const section = (t) => { const h = document.createElement('h2'); h.textContent = t; results.appendChild(h); };
+      const ok = (name, cond, extra = '') => {
+        const d = document.createElement('div');
+        d.className = cond ? 'ok' : 'fail';
+        d.textContent = cond ? name : `${name} ${extra}`;
+        if (!cond) fails++;
+        results.appendChild(d);
+      };
+      const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+      const { parseQML } = await import('../src/gpkg/qml.js');
+      const gpkg = await import('../src/gpkg/index.js');
+      const { buildImportedLayers } = await import('../src/importedStyle.js');
+
+      /* ---------------------------------------------- QML real de QGIS 3.34 */
+      section('QML categorizado de QGIS 3.34 (formato Option, cola rgb:)');
+      {
+        const qml = `<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.34.3-Prizren" styleCategories="Symbology">
+  <renderer-v2 attr="tipo" type="categorizedSymbol" forceraster="0" symbollevels="0" enableorderby="0" referencescale="-1">
+    <categories>
+      <category value="falla" symbol="0" label="Falla" render="true" type="QString"/>
+      <category value="contacto" symbol="1" label="Contacto" render="true" type="QString"/>
+      <category value="" symbol="2" label="Otros" render="true" type="QString"/>
+    </categories>
+    <symbols>
+      <symbol name="0" type="line" alpha="1" clip_to_extent="1" force_rhr="0" frame_rate="10" is_animated="0">
+        <data_defined_properties>
+          <Option type="Map">
+            <Option name="name" type="QString" value=""/>
+            <Option name="properties"/>
+            <Option name="type" type="QString" value="collection"/>
+          </Option>
+        </data_defined_properties>
+        <layer class="SimpleLine" enabled="1" locked="0" pass="0" id="{6f1c-aaa}">
+          <Option type="Map">
+            <Option name="capstyle" type="QString" value="square"/>
+            <Option name="line_color" type="QString" value="227,26,28,255,rgb:0.8901,0.1019,0.1098,1"/>
+            <Option name="line_style" type="QString" value="dash"/>
+            <Option name="line_width" type="QString" value="0.86"/>
+            <Option name="line_width_unit" type="QString" value="MM"/>
+          </Option>
+          <data_defined_properties>
+            <Option type="Map"><Option name="type" type="QString" value="collection"/></Option>
+          </data_defined_properties>
+        </layer>
+      </symbol>
+      <symbol name="1" type="line" alpha="1" clip_to_extent="1">
+        <layer class="SimpleLine" enabled="1" locked="0" pass="0">
+          <Option type="Map">
+            <Option name="line_color" type="QString" value="0,0,0,255"/>
+            <Option name="line_style" type="QString" value="solid"/>
+            <Option name="line_width" type="QString" value="0.26"/>
+            <Option name="line_width_unit" type="QString" value="MM"/>
+          </Option>
+        </layer>
+      </symbol>
+      <symbol name="2" type="line" alpha="1" clip_to_extent="1">
+        <layer class="SimpleLine" enabled="1" locked="0" pass="0">
+          <Option type="Map">
+            <Option name="line_color" type="QString" value="150,150,150,255"/>
+            <Option name="line_style" type="QString" value="dot"/>
+            <Option name="line_width" type="QString" value="0.4"/>
+          </Option>
+        </layer>
+      </symbol>
+    </symbols>
+  </renderer-v2>
+  <layerGeometryType>1</layerGeometryType>
+</qgis>`;
+        const s = parseQML(qml);
+        ok('renderer categorizado', s.rendererType === 'categorizedSymbol');
+        ok('3 reglas', s.rules.length === 3, `-> ${s.rules.length}`);
+        const falla = s.rules.find((r) => eq(r.filter, ['==', ['get', 'tipo'], 'falla']));
+        ok('filtro por categoría', !!falla, JSON.stringify(s.rules.map((r) => r.filter)));
+        ok('color con cola rgb: se lee bien', falla && falla.symbol.color === '#e31a1c', falla && falla.symbol.color);
+        ok('line_style dash => guiones', falla && eq(falla.symbol.dash, [4, 2]), JSON.stringify(falla && falla.symbol.dash));
+        ok('0.86 mm => ~3.25 px', falla && Math.abs(falla.symbol.width - 0.86 * 96 / 25.4) < 0.01, String(falla && falla.symbol.width));
+        ok('data_defined_properties no contamina', falla && falla.symbol.color !== undefined);
+        ok('la categoría comodín queda al final', s.rules[s.rules.length - 1].filter === null,
+           JSON.stringify(s.rules[s.rules.length - 1].filter));
+        const { layers } = buildImportedLayers({ id: 'x', sourceId: 's', kind: 'line', style: s });
+        ok('produce 3 capas (dash, solid, dot)', layers.length === 3, `-> ${layers.length}`);
+      }
+
+      /* -------------------------------------------- formato legado <prop> */
+      section('QML antiguo con <prop k= v=>');
+      {
+        const qml = `<qgis version="3.10">
+  <renderer-v2 type="singleSymbol">
+    <symbols>
+      <symbol name="0" type="fill">
+        <layer class="SimpleFill">
+          <prop k="color" v="255,127,0,128"/>
+          <prop k="outline_color" v="35,35,35,255"/>
+          <prop k="outline_style" v="dash"/>
+          <prop k="outline_width" v="0.26"/>
+          <prop k="style" v="solid"/>
+        </layer>
+      </symbol>
+    </symbols>
+  </renderer-v2>
+</qgis>`;
+        const s = parseQML(qml);
+        ok('singleSymbol => 1 regla sin filtro', s.rules.length === 1 && s.rules[0].filter === null);
+        ok('relleno naranja', s.rules[0].symbol.color === '#ff7f00', s.rules[0].symbol.color);
+        ok('alfa 128 => ~0.5', Math.abs(s.rules[0].symbol.opacity - 128 / 255) < 0.01);
+        ok('contorno segmentado', eq(s.rules[0].symbol.outlineDash, [4, 2]));
+      }
+
+      /* ------------------------------------------------ graduado por rangos */
+      section('QML graduado');
+      {
+        const qml = `<qgis version="3.34"><renderer-v2 attr="dip" type="graduatedSymbol">
+  <ranges>
+    <range lower="0" upper="30" symbol="0" label="0-30" render="true"/>
+    <range lower="30" upper="90" symbol="1" label="30-90" render="true"/>
+  </ranges>
+  <symbols>
+    <symbol name="0" type="line"><layer class="SimpleLine"><prop k="line_color" v="255,255,178,255"/><prop k="line_width" v="0.3"/></layer></symbol>
+    <symbol name="1" type="line"><layer class="SimpleLine"><prop k="line_color" v="189,0,38,255"/><prop k="line_width" v="0.9"/></layer></symbol>
+  </symbols>
+</renderer-v2></qgis>`;
+        const s = parseQML(qml);
+        ok('2 rangos', s.rules.length === 2);
+        ok('filtro de rango', eq(s.rules[0].filter, ['all', ['>=', ['get', 'dip'], 0], ['<=', ['get', 'dip'], 30]]),
+           JSON.stringify(s.rules[0].filter));
+      }
+
+      section('QML inválido');
+      {
+        let threw = false;
+        try { parseQML('<qgis><nada/></qgis>'); } catch { threw = true; }
+        ok('lanza error legible si no hay renderer', threw);
+      }
+
+      /* ------------------------------------------------ round-trip completo */
+      section('GeoPackage: exportar e importar de vuelta');
+      {
+        const features = [
+          { type: 'Feature', id: 'a', properties: { id: 'a', kind: 'line', type: 'thrust-fault', certainty: 'observed', createdAt: 1700000000000 },
+            geometry: { type: 'LineString', coordinates: [[-71.5, -37.2], [-71.4, -37.1], [-71.3, -37.35]] } },
+          { type: 'Feature', id: 'b', properties: { id: 'b', kind: 'line', type: 'dike', certainty: 'covered', createdAt: 1700000001000 },
+            geometry: { type: 'LineString', coordinates: [[-71.2, -37.0], [-71.1, -37.05]] } },
+          { type: 'Feature', id: 'c', properties: { id: 'c', kind: 'polygon', type: 'intrusive-unit', certainty: 'inferred', createdAt: 1700000002000 },
+            geometry: { type: 'Polygon', coordinates: [[[-71.6, -37.4], [-71.5, -37.4], [-71.5, -37.3], [-71.6, -37.4]]] } },
+        ];
+        const bytes = await gpkg.exportGeoPackage(features);
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        ok('cabecera SQLite', new TextDecoder().decode(bytes.slice(0, 15)) === 'SQLite format 3');
+        ok('application_id = "GPKG"', dv.getUint32(68, false) === 0x47504b47);
+        ok('user_version 10300', dv.getUint32(60, false) === 10300);
+
+        const res = await gpkg.importGeoPackage(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        ok('sin advertencias', res.warnings.length === 0, JSON.stringify(res.warnings));
+        ok('2 capas', res.layers.length === 2);
+        const lines = res.layers.find((l) => l.table === 'geol_lines');
+        const polys = res.layers.find((l) => l.table === 'geol_polygons');
+        ok('tipos de geometría', lines.kind === 'line' && polys.kind === 'polygon');
+        ok('conteos', lines.geojson.features.length === 2 && polys.geojson.features.length === 1);
+        const f0 = lines.geojson.features.find((f) => f.properties.type === 'thrust-fault');
+        ok('geometría idéntica', eq(f0.geometry.coordinates, features[0].geometry.coordinates));
+        ok('atributos conservados', f0.properties.certainty === 'observed');
+        ok('QML propio se relee', !!lines.style && lines.style.rendererType === 'RuleRenderer');
+        const r = lines.style.rules.find((x) => JSON.stringify(x.filter).includes('thrust-fault'));
+        ok('color de falla inversa', r.symbol.color === '#d32f2f', r.symbol.color);
+        ok('observado sin guiones', r.symbol.dash === null);
+        ok('filtro tipo+certeza reconstruido',
+           eq(r.filter, ['all', ['==', ['get', 'type'], 'thrust-fault'], ['==', ['get', 'certainty'], 'observed']]),
+           JSON.stringify(r.filter));
+        const rc = lines.style.rules.find((x) => JSON.stringify(x.filter).includes('dike'));
+        ok('cubierto => punteado', Array.isArray(rc.symbol.dash));
+        ok('polígono con relleno semitransparente',
+           polys.style.rules[0].symbol.kind === 'fill' && Math.abs(polys.style.rules[0].symbol.opacity - 115 / 255) < 0.01);
+      }
+
+      /* ------------------------------------------------- MBTiles / PMTiles */
+      section('MBTiles: se fabrica uno al vuelo y se leen sus teselas');
+      {
+        const tiles = await import('../src/tiles.js');
+        const SQL = await gpkg.loadSql();
+
+        const makeMbtiles = (format, tileBytes, z, col, rowTms) => {
+          const db = new SQL.Database();
+          db.run(`
+            CREATE TABLE metadata (name text, value text);
+            CREATE TABLE tiles (zoom_level integer, tile_column integer, tile_row integer, tile_data blob);
+            CREATE UNIQUE INDEX tile_index on tiles (zoom_level, tile_column, tile_row);
+          `);
+          const meta = db.prepare('INSERT INTO metadata VALUES (?,?)');
+          for (const [k, v] of [['name', 'Carta de prueba'], ['format', format],
+                                ['bounds', '-72.5,-37.5,-71.5,-36.5'], ['minzoom', '2'], ['maxzoom', '5']]) {
+            meta.run([k, v]);
+          }
+          meta.free();
+          const ins = db.prepare('INSERT INTO tiles VALUES (?,?,?,?)');
+          ins.run([z, col, rowTms, tileBytes]);
+          ins.free();
+          const out = db.export();
+          db.close();
+          return out;
+        };
+
+        // Raster: la tesela TMS (2,1,2) debe salir por la XYZ (2,1,1).
+        const payload = new Uint8Array([137, 80, 78, 71, 42, 42]);
+        const bytes = makeMbtiles('png', payload, 2, 1, 2);
+        const d = await tiles.openTileFile(new File([bytes], 'prueba.mbtiles'), 'test-r');
+        ok('detecta raster', d.tileKind === 'raster', d.tileKind);
+        ok('lee el nombre de metadata', d.label === 'Carta de prueba', d.label);
+        ok('lee el rango de zoom', d.minzoom === 2 && d.maxzoom === 5, `${d.minzoom}-${d.maxzoom}`);
+        ok('lee bounds', eq(d.bounds, [-72.5, -37.5, -71.5, -36.5]), JSON.stringify(d.bounds));
+        ok('la URL usa el protocolo mbtiles', d.url === 'mbtiles://test-r/{z}/{x}/{y}', d.url);
+
+        const got = await tiles.readMbtilesTile('test-r', 2, 1, 1);
+        ok('devuelve la tesela con el volteo TMS correcto', eq([...got], [...payload]), JSON.stringify([...got]));
+        const miss = await tiles.readMbtilesTile('test-r', 2, 1, 0);
+        ok('un hueco devuelve PNG transparente, no un error',
+           miss.length > 8 && miss[1] === 0x50 && miss[2] === 0x4e, `len=${miss.length}`);
+
+        // Vectorial: las teselas van gzipeadas y deben salir descomprimidas.
+        const pbf = new Uint8Array([26, 42, 120, 1, 2, 3]);
+        const gz = new Uint8Array(await new Response(
+          new Blob([pbf]).stream().pipeThrough(new CompressionStream('gzip')),
+        ).arrayBuffer());
+        ok('el dato de prueba está realmente gzipeado', gz[0] === 0x1f && gz[1] === 0x8b);
+        const vBytes = makeMbtiles('pbf', gz, 3, 2, 5);
+        const dv = await tiles.openTileFile(new File([vBytes], 'vector.mbtiles'), 'test-v');
+        ok('detecta vectorial', dv.tileKind === 'vector', dv.tileKind);
+        const vgot = await tiles.readMbtilesTile('test-v', 3, 2, (1 << 3) - 1 - 5);
+        ok('descomprime la tesela vectorial', eq([...vgot], [...pbf]), JSON.stringify([...vgot]));
+
+        tiles.disposeTileSet(d);
+        tiles.disposeTileSet(dv);
+        let threw = false;
+        try { await tiles.readMbtilesTile('test-r', 2, 1, 1); } catch { threw = true; }
+        ok('al cerrar deja de estar registrado', threw);
+      }
+
+      section('Capas generadas para mapas offline');
+      {
+        const tiles = await import('../src/tiles.js');
+        const raster = tiles.buildTileLayers({
+          id: 'a', url: 'mbtiles://a/{z}/{x}/{y}', tileKind: 'raster',
+          minzoom: 2, maxzoom: 5, bounds: [-72, -38, -71, -37], vectorLayers: [],
+        });
+        ok('raster => 1 capa', raster.layers.length === 1 && raster.layers[0].type === 'raster');
+        ok('la fuente conserva zoom y bounds',
+           raster.source.minzoom === 2 && raster.source.maxzoom === 5 && !!raster.source.bounds);
+
+        const vector = tiles.buildTileLayers({
+          id: 'b', url: 'pmtiles://b/{z}/{x}/{y}', tileKind: 'vector',
+          minzoom: 0, maxzoom: 14, bounds: null,
+          vectorLayers: [{ id: 'geologia' }, { id: 'fallas' }],
+        });
+        ok('vectorial => 3 capas por cada capa fuente', vector.layers.length === 6, `-> ${vector.layers.length}`);
+        ok('cada capa apunta a su source-layer',
+           vector.layers.filter((l) => l['source-layer'] === 'fallas').length === 3);
+        ok('color estable por nombre',
+           tiles.layerColor('fallas') === tiles.layerColor('fallas') &&
+           tiles.layerColor('fallas') !== tiles.layerColor('geologia'));
+        ok('sin bounds no se emite la clave', vector.source.bounds === undefined);
+      }
+
+      /* ---------------------------------------- cortar y unir con JSTS */
+      section('Cortar líneas y polígonos');
+      {
+        const ops = await import('../src/geometryOps.js');
+        const len = (ls) => {
+          let t = 0;
+          for (let i = 1; i < ls.coordinates.length; i++) {
+            const a = ls.coordinates[i - 1], b = ls.coordinates[i];
+            t += Math.hypot(b[0] - a[0], b[1] - a[1]);
+          }
+          return t;
+        };
+        const area = (p) => {
+          const r = p.coordinates[0];
+          let s = 0;
+          for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+            s += (r[j][0] + r[i][0]) * (r[j][1] - r[i][1]);
+          }
+          return Math.abs(s / 2);
+        };
+
+        const lineGeom = { type: 'LineString', coordinates: [[0, 0], [10, 0]] };
+        const cross = { type: 'LineString', coordinates: [[5, -1], [5, 1]] };
+        const pieces = await ops.splitLine(lineGeom, cross);
+        ok('la línea se parte en 2', pieces && pieces.length === 2, `-> ${pieces && pieces.length}`);
+        ok('se conserva la longitud total',
+           pieces && Math.abs(pieces.reduce((s, p) => s + len(p), 0) - 10) < 1e-9,
+           pieces && String(pieces.reduce((s, p) => s + len(p), 0)));
+        ok('solo quedan trozos de la línea original, no del cortador',
+           pieces && pieces.every((p) => p.coordinates.every((c) => c[1] === 0)),
+           JSON.stringify(pieces));
+
+        ok('sin cruce => null',
+           (await ops.splitLine(lineGeom, { type: 'LineString', coordinates: [[0, 5], [10, 5]] })) === null);
+
+        const dosCortes = await ops.splitLine(lineGeom, {
+          type: 'LineString', coordinates: [[3, -1], [3, 1], [7, 1], [7, -1]],
+        });
+        ok('dos cruces => 3 trozos', dosCortes && dosCortes.length === 3, `-> ${dosCortes && dosCortes.length}`);
+
+        const square = { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] };
+        const across = { type: 'LineString', coordinates: [[5, -1], [5, 11]] };
+        const halves = await ops.splitPolygon(square, across);
+        ok('el polígono se parte en 2', halves && halves.length === 2, `-> ${halves && halves.length}`);
+        ok('las áreas suman la original',
+           halves && Math.abs(halves.reduce((s, p) => s + area(p), 0) - 100) < 1e-9);
+        ok('cada mitad mide 50', halves && halves.every((p) => Math.abs(area(p) - 50) < 1e-9));
+
+        ok('línea que no atraviesa => null',
+           (await ops.splitPolygon(square, { type: 'LineString', coordinates: [[2, 2], [4, 4]] })) === null);
+        ok('línea que ni toca => null',
+           (await ops.splitPolygon(square, { type: 'LineString', coordinates: [[20, 20], [30, 30]] })) === null);
+
+        const conHueco = {
+          type: 'Polygon',
+          coordinates: [
+            [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+            [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]],
+          ],
+        };
+        const cortadoConHueco = await ops.splitPolygon(conHueco, across);
+        ok('respeta el hueco al cortar',
+           cortadoConHueco && Math.abs(cortadoConHueco.reduce((s, p) => s + area(p), 0) - 96) < 1e-9,
+           cortadoConHueco && String(cortadoConHueco.reduce((s, p) => s + area(p), 0)));
+      }
+
+      section('Unir líneas y polígonos');
+      {
+        const ops = await import('../src/geometryOps.js');
+        const contiguas = await ops.mergeLines([
+          { type: 'LineString', coordinates: [[0, 0], [5, 0]] },
+          { type: 'LineString', coordinates: [[5, 0], [10, 0]] },
+        ]);
+        ok('dos líneas contiguas => 1', contiguas && contiguas.length === 1, `-> ${contiguas && contiguas.length}`);
+        ok('la unión recorre de extremo a extremo',
+           contiguas && contiguas[0].coordinates.length === 3, JSON.stringify(contiguas));
+
+        const sueltas = await ops.mergeLines([
+          { type: 'LineString', coordinates: [[0, 0], [5, 0]] },
+          { type: 'LineString', coordinates: [[50, 0], [60, 0]] },
+        ]);
+        ok('líneas separadas siguen siendo 2', sueltas && sueltas.length === 2);
+
+        const solapados = await ops.unionPolygons([
+          { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] },
+          { type: 'Polygon', coordinates: [[[5, 0], [15, 0], [15, 10], [5, 10], [5, 0]]] },
+        ]);
+        ok('polígonos solapados => 1', solapados && solapados.length === 1, `-> ${solapados && solapados.length}`);
+
+        const disjuntos = await ops.unionPolygons([
+          { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },
+          { type: 'Polygon', coordinates: [[[50, 50], [51, 50], [51, 51], [50, 50]]] },
+        ]);
+        ok('polígonos disjuntos => 2 piezas', disjuntos && disjuntos.length === 2);
+      }
+
+      section('Cortar y unir a través del store');
+      {
+        const store = await import('../src/store.js');
+        const edit = await import('../src/editOps.js');
+        const mk = (id, geometry) => ({
+          type: 'Feature', id,
+          properties: { id, kind: geometry.type === 'Polygon' ? 'polygon' : 'line',
+                        type: 'thrust-fault', certainty: 'inferred', createdAt: 1 },
+          geometry,
+        });
+
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('l', { type: 'LineString', coordinates: [[0, 0], [10, 0]] }),
+          mk('lejos', { type: 'LineString', coordinates: [[0, 90], [10, 90]] }),
+        ]);
+        const r = await edit.applyCut({ type: 'coords', coords: [[5, -1], [5, 1]] });
+        ok('corta 1 elemento en 2 piezas', r.cortados === 1 && r.piezas === 2, JSON.stringify(r));
+        ok('el que no cruza queda intacto',
+           store.getState().features.some((f) => f.properties.id === 'lejos'));
+        ok('total de elementos = 3', store.getState().features.length === 3);
+        const piezas = store.getState().features.filter((f) => f.properties.id !== 'lejos');
+        ok('las piezas heredan tipo y certeza',
+           piezas.every((f) => f.properties.type === 'thrust-fault' && f.properties.certainty === 'inferred'));
+
+        const sinCruce = await edit.applyCut({ type: 'coords', coords: [[0, 40], [10, 40]] });
+        ok('corte que no cruza nada no cambia el mapa', sinCruce.cortados === 0);
+
+        // Con selección, el corte solo afecta a lo seleccionado.
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('a', { type: 'LineString', coordinates: [[0, 0], [10, 0]] }),
+          mk('b', { type: 'LineString', coordinates: [[0, 1], [10, 1]] }),
+        ]);
+        store.toggleSelection('a');
+        const soloA = await edit.applyCut({ type: 'coords', coords: [[5, -1], [5, 5]] });
+        ok('con selección solo corta lo elegido', soloA.cortados === 1, JSON.stringify(soloA));
+        ok('el no seleccionado sigue entero',
+           store.getState().features.some((f) => f.properties.id === 'b'));
+
+        // Unir de vuelta las dos piezas.
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('p', { type: 'LineString', coordinates: [[0, 0], [5, 0]] }),
+          mk('q', { type: 'LineString', coordinates: [[5, 0], [10, 0]] }),
+        ]);
+        store.toggleSelection('p');
+        store.toggleSelection('q');
+        const m = await edit.applyMerge();
+        ok('une 2 en 1', m.desde === 2 && m.hasta === 1, JSON.stringify(m));
+        ok('queda un solo elemento', store.getState().features.length === 1);
+        ok('la unión limpia la selección', store.getState().selection.length === 0);
+
+        // Mezclar tipos de geometría debe fallar con un mensaje claro.
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('L', { type: 'LineString', coordinates: [[0, 0], [1, 0]] }),
+          mk('P', { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }),
+        ]);
+        store.toggleSelection('L');
+        store.toggleSelection('P');
+        let msg = '';
+        try { await edit.applyMerge(); } catch (e) { msg = e.message; }
+        ok('no deja unir línea con polígono', /líneas con polígonos/.test(msg), msg);
+        store.clearFeatures();
+        store.clearSelection();
+      }
+
+      section('Cortar usando un elemento que ya existe');
+      {
+        const store = await import('../src/store.js');
+        const edit = await import('../src/editOps.js');
+        const mk = (id, geometry) => ({
+          type: 'Feature', id,
+          properties: { id, kind: geometry.type === 'Polygon' ? 'polygon' : 'line',
+                        type: 'normal-fault', certainty: 'observed', createdAt: 1 },
+          geometry,
+        });
+
+        store.clearSelection();
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('objetivo', { type: 'LineString', coordinates: [[0, 0], [10, 0]] }),
+          mk('cuchilla', { type: 'LineString', coordinates: [[5, -5], [5, 5]] }),
+        ]);
+        const r = await edit.applyCut({ type: 'feature', id: 'cuchilla' });
+        ok('una línea existente corta a otra', r.cortados === 1 && r.piezas === 2, JSON.stringify(r));
+        ok('la cuchilla queda intacta',
+           store.getState().features.some((f) => f.properties.id === 'cuchilla'));
+        ok('no se corta a sí misma', store.getState().features.length === 3,
+           String(store.getState().features.length));
+
+        // Un polígono corta por su BORDE, no por su área.
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('L', { type: 'LineString', coordinates: [[-5, 5], [15, 5]] }),
+          mk('caja', { type: 'Polygon', coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] }),
+        ]);
+        const r2 = await edit.applyCut({ type: 'feature', id: 'caja' });
+        ok('un polígono corta por su borde', r2.cortados === 1 && r2.piezas === 3, JSON.stringify(r2));
+
+        // Un polígono cortado por otro polígono.
+        store.clearFeatures();
+        store.loadFeatures([
+          mk('grande', { type: 'Polygon', coordinates: [[[0, 0], [20, 0], [20, 10], [0, 10], [0, 0]]] }),
+          mk('tajo', { type: 'Polygon', coordinates: [[[8, -5], [12, -5], [12, 15], [8, 15], [8, -5]]] }),
+        ]);
+        const r3 = await edit.applyCut({ type: 'feature', id: 'tajo' });
+        ok('polígono cortado por polígono => 3 piezas', r3.cortados === 1 && r3.piezas === 3, JSON.stringify(r3));
+
+        // Cortador inexistente: error claro, no excepción opaca.
+        let msg = '';
+        try { await edit.applyCut({ type: 'feature', id: 'no-existe' }); } catch (e) { msg = e.message; }
+        ok('cortador inexistente da un error legible', /ya no existe/.test(msg), msg);
+
+        store.clearFeatures();
+        store.clearSelection();
+      }
+
+      /* ------------------------------- validez de las capas contra el spec */
+      section('Todas las capas generadas validan contra el style-spec');
+      {
+        // Guardia de regresión: MapLibre descarta en silencio una propiedad
+        // inválida (p. ej. `zoom` anidado dentro de un `*`) y la capa se
+        // dibuja con el valor por defecto sin que nada falle a la vista.
+        const spec = await import('https://esm.sh/@maplibre/maplibre-gl-style-spec@26.2.1');
+        const { geologyLayers, draftLayers, editLayers } = await import('../src/geologyStyle.js');
+        const { ornamentLayers } = await import('../src/ornaments.js');
+        const { defaultOrnaments } = await import('../src/symbology.js');
+        const imported = buildImportedLayers({
+          id: 'imp', sourceId: 'imp-src', kind: 'line',
+          style: { rules: [
+            { filter: ['==', ['get', 't'], 'a'], symbol: { kind: 'line', color: '#ff0000', opacity: 1, width: 2, dash: null } },
+            { filter: ['==', ['get', 't'], 'b'], symbol: { kind: 'line', color: '#00ff00', opacity: 0.8, width: 3, dash: [4, 2] } },
+          ] },
+        }).layers;
+        const impPoly = buildImportedLayers({ id: 'ip', sourceId: 'ip-src', kind: 'polygon', style: null }).layers;
+        const impPt = buildImportedLayers({ id: 'pt', sourceId: 'pt-src', kind: 'point', style: null }).layers;
+        const emptySrc = { type: 'geojson', data: { type: 'FeatureCollection', features: [] } };
+        const style = {
+          version: 8,
+          glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+          sources: { 'geology-src': emptySrc, 'draft-src': emptySrc, 'edit-src': emptySrc, 'imp-src': emptySrc, 'ip-src': emptySrc, 'pt-src': emptySrc },
+          layers: [
+            ...geologyLayers(),
+            ...draftLayers(),
+            ...editLayers(),
+            ...ornamentLayers(defaultOrnaments()),
+            ...imported,
+            ...impPoly,
+            ...impPt,
+          ],
+        };
+        const validate = spec.validateStyleMin || spec.validateStyle;
+        const errors = validate(style);
+        ok(`${style.layers.length} capas sin errores de spec`, errors.length === 0,
+           errors.map((e) => e.message).join(' | '));
+        const w = geologyLayers().find((l) => l.id === 'geology-line-observed').paint['line-width'];
+        ok('el ancho de línea usa interpolate de zoom en la raíz',
+           w[0] === 'interpolate' && JSON.stringify(w[2]) === '["zoom"]', JSON.stringify(w).slice(0, 90));
+
+        // Los ornamentos con tamaño y espaciado editables: el riesgo es emitir
+        // un `icon-size` que el spec rechace y que la falla quede sin símbolo.
+        const grandes = ornamentLayers({
+          ...defaultOrnaments(),
+          'thrust-fault': { size: 2.5, spacing: 200, offset: 14, minzoom: 0 },
+        });
+        const styleGrande = { ...style, layers: grandes };
+        ok('los ornamentos con parámetros al máximo también validan',
+           validate(styleGrande).length === 0,
+           validate(styleGrande).map((e) => e.message).join(' | '));
+        const normal = grandes.find((l) => l.id === 'orn-thrust-fault-layer');
+        const flip = grandes.find((l) => l.id === 'orn-thrust-fault-flip-layer');
+        ok('la capa volteada cruza la traza y gira 180°',
+           JSON.stringify(normal.layout['icon-offset']) === '[0,14]' &&
+           JSON.stringify(flip.layout['icon-offset']) === '[0,-14]' &&
+           flip.layout['icon-rotate'] === 180,
+           JSON.stringify([normal.layout['icon-offset'], flip.layout['icon-offset']]));
+        ok('los filtros de flip son mutuamente excluyentes',
+           JSON.stringify(normal.filter[3]) === '["!=",["get","flip"],true]' &&
+           JSON.stringify(flip.filter[3]) === '["==",["get","flip"],true]',
+           JSON.stringify([normal.filter[3], flip.filter[3]]));
+      }
+
+      document.getElementById('summary').textContent = fails === 0 ? 'TODO OK' : `${fails} FALLOS`;
+      document.getElementById('summary').style.color = fails === 0 ? '#2dd4bf' : '#f87171';
+    </script>
+  </body>
+</html>

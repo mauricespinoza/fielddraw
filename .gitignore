@@ -1,0 +1,13 @@
+# Archivos que genera el sincronizador de Google Drive y el sistema.
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Nada de node_modules: el proyecto no usa npm a propósito (ver README).
+node_modules/
+
+# Proyectos y exportaciones de prueba: son datos, no código.
+*.gpkg
+*.mbtiles
+*.pmtiles
+*.fdproj.json

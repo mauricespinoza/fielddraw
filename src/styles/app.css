@@ -1,0 +1,951 @@
+:root {
+  --bg: #0d1117;
+  --panel: rgba(22, 27, 34, 0.92);
+  --panel-solid: #161b22;
+  --border: rgba(255, 255, 255, 0.14);
+  --text: #e6edf3;
+  --muted: #93a1b0;
+  --accent: #2dd4bf;
+  --danger: #f87171;
+  --radius: 14px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Sin selección ni callout: el long-press es nuestro, no de Safari. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+/* ---------- mapa ---------- */
+.map-host {
+  position: absolute;
+  inset: 0;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+}
+
+.map-host.is-drawing .map-container,
+.map-host.is-drawing canvas {
+  touch-action: none;
+}
+
+.maplibregl-ctrl-bottom-right {
+  margin-bottom: calc(var(--safe-b) + 46px);
+}
+
+.maplibregl-ctrl-bottom-left {
+  margin-bottom: calc(var(--safe-b) + 46px);
+}
+
+/* Retículo de hover del Apple Pencil (iPad Pro M2+). */
+.pen-hover,
+.longpress-ring,
+.snap-marker {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+}
+
+/* Marcador de enganche, en magenta como el de QGIS: cruz sobre segmento,
+   cuadrado sobre vértice. */
+.snap-marker {
+  width: 16px;
+  height: 16px;
+  z-index: 6;
+  background:
+    linear-gradient(#ff2fd0, #ff2fd0) center/100% 2px no-repeat,
+    linear-gradient(#ff2fd0, #ff2fd0) center/2px 100% no-repeat;
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.7));
+}
+
+.lasso {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+  border: 1.5px dashed var(--accent);
+  background: rgba(45, 212, 191, 0.12);
+  border-radius: 2px;
+}
+
+.snap-marker.vertex {
+  width: 15px;
+  height: 15px;
+  background: none;
+  border: 2.5px solid #ff2fd0;
+  border-radius: 2px;
+}
+
+.pen-hover {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(45, 212, 191, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.pen-hover::after {
+  content: '';
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  background: rgba(45, 212, 191, 0.9);
+}
+
+.longpress-ring {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(45, 212, 191, 0.95);
+  animation: arm 320ms ease-out forwards;
+}
+
+@keyframes arm {
+  from {
+    transform: translate(-50%, -50%) scale(0.25);
+    opacity: 0.15;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* ---------- barra de herramientas ---------- */
+.toolbar {
+  position: absolute;
+  top: calc(var(--safe-t) + 12px);
+  left: calc(var(--safe-l) + 12px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Con todas las herramientas la barra puede no caber en un iPad apaisado. */
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 60px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 62px;
+  min-height: 50px;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.tool span {
+  line-height: 1.1;
+}
+
+.tool:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool.active {
+  background: rgba(45, 212, 191, 0.18);
+  color: var(--accent);
+}
+
+.tool.accent:not(:disabled) {
+  color: var(--accent);
+}
+
+.tool.danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.tool:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.tool-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 6px;
+}
+
+/* ---------- paleta de tipos ---------- */
+/* Columna estrecha junto a la barra: deja el mapa casi entero a la vista. */
+.palette {
+  position: absolute;
+  left: calc(var(--safe-l) + 100px);
+  top: calc(var(--safe-t) + 12px);
+  z-index: 10;
+  width: 106px;
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 60px);
+  padding: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette-scroll {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: none;
+}
+
+.palette-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.palette-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.palette .certainty-row {
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+
+.palette-label {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-left: 2px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* En la paleta los chips son de ancho completo y más bajos. */
+.palette .chip {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  gap: 6px;
+  border-radius: 8px;
+  font-size: 11.5px;
+}
+
+.palette .certainty-row .chip {
+  width: auto;
+  flex: 1;
+  min-height: 30px;
+  padding: 3px 4px;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 9.5px;
+}
+
+.palette .certainty-row .dash-preview {
+  width: 24px;
+}
+
+.chip.ghost {
+  border-style: dashed;
+  color: var(--muted);
+  justify-content: center;
+}
+
+.chip.active {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.16);
+}
+
+.chip .glyph {
+  width: 18px;
+  flex: none;
+  text-align: center;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.chip .swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.dash-preview {
+  flex: none;
+}
+
+/* ---------- botones flotantes ---------- */
+.top-right {
+  position: absolute;
+  top: calc(var(--safe-t) + 12px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 12;
+  display: flex;
+  gap: 8px;
+  /* Con siete botones ya no caben en una fila en el iPad en vertical. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 24px);
+}
+
+/* Panel colgado de un botón de la fila superior (Proyecto). */
+.dropdown {
+  position: absolute;
+  top: calc(var(--safe-t) + 66px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 22;
+  width: min(320px, 88vw);
+  padding: 14px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropdown header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dropdown h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dropdown .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dropdown .field input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.pill {
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pill.danger {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.pill.wide {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.icon-btn {
+  min-width: 34px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.icon-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* ---------- panel de capas ---------- */
+.layer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 86vw);
+  z-index: 20;
+  padding: calc(var(--safe-t) + 14px) 14px calc(var(--safe-b) + 14px);
+  background: var(--panel-solid);
+  border-left: 1px solid var(--border);
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+  overflow-y: auto;
+}
+
+.layer-panel.open {
+  transform: none;
+}
+
+.layer-panel header,
+.settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.layer-panel h2,
+.settings h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.hint {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.footnote {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.layer-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-panel li {
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.layer-panel li.off {
+  opacity: 0.5;
+}
+
+.layer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.layer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  min-height: 34px;
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-name {
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-move {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+
+.layer-opacity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 0;
+}
+
+.layer-opacity input {
+  flex: 1;
+}
+
+.opacity-value {
+  font-size: 11px;
+  color: var(--muted);
+  width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  accent-color: var(--accent);
+  height: 28px;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--accent);
+  width: 19px;
+  height: 19px;
+}
+
+/* ---------- unidades geológicas ---------- */
+.unit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px !important;
+}
+
+.unit-row input[type='color'] {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  flex: none;
+}
+
+.unit-row input[type='text'] {
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.unit-name {
+  flex: 1;
+}
+
+.unit-code {
+  width: 62px;
+  flex: none;
+  text-transform: uppercase;
+}
+
+.unit-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.unit-new input[type='text'] {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+#new-unit-name {
+  flex: 1;
+  min-width: 110px;
+}
+
+#new-unit-code {
+  width: 82px;
+}
+
+.unit-new input[type='color'] {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+}
+
+/* ---------- simbología de ornamentos ---------- */
+.symb-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.symb-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.symb-head .swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  flex: none;
+}
+
+.symb-field {
+  display: grid;
+  grid-template-columns: 74px 1fr 54px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.symb-field input[type='range'] {
+  width: 100%;
+}
+
+.symb-field .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---------- menú de propiedades ---------- */
+.props-menu {
+  position: absolute;
+  z-index: 25;
+  width: min(320px, 84vw);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.props-menu header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.props-menu h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.props-menu #props-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.props-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.props-menu .chip {
+  min-height: 34px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+/* ---------- ajustes ---------- */
+.settings {
+  position: absolute;
+  top: calc(var(--safe-t) + 66px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 21;
+  width: min(360px, 88vw);
+  padding: 14px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings legend {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.settings label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13.5px;
+  min-height: 38px;
+  cursor: pointer;
+}
+
+.settings label.column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.settings .row {
+  flex-wrap: wrap;
+}
+
+.settings .sub {
+  flex-basis: 100%;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding-left: 28px;
+}
+
+/* ---------- diagnóstico del lápiz ---------- */
+/* Abajo a la izquierda: la columna de la paleta ocupa el borde superior. */
+.pen-readout {
+  position: absolute;
+  left: calc(var(--safe-l) + 100px);
+  bottom: calc(var(--safe-b) + 34px);
+  z-index: 9;
+  width: 190px;
+  padding: 9px 11px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.pen-readout.live {
+  opacity: 1;
+  border-color: rgba(45, 212, 191, 0.5);
+}
+
+.pen-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+
+.pen-title .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #4b5563;
+}
+
+.pen-readout.live .pen-title .dot {
+  background: var(--accent);
+}
+
+.pen-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: space-between;
+  min-height: 18px;
+}
+
+.pen-row .bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.pen-row .bar div {
+  height: 100%;
+  background: var(--accent);
+}
+
+.pen-row .num {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---------- barra de estado y avisos ---------- */
+.statusbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 8;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px calc(var(--safe-r) + 14px) calc(var(--safe-b) + 7px) calc(var(--safe-l) + 14px);
+  background: linear-gradient(to top, rgba(13, 17, 23, 0.94), rgba(13, 17, 23, 0));
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.statusbar .count {
+  color: var(--text);
+  flex: none;
+}
+
+.banner {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-t) + 12px);
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(70vw, 620px);
+  padding: 9px 10px 9px 14px;
+  border-radius: 10px;
+  background: rgba(120, 53, 15, 0.95);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  color: #fde68a;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.banner.info {
+  background: rgba(6, 78, 59, 0.95);
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #ccfbf1;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- indicador de trabajo en curso ---------- */
+.busy {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.spinner {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
