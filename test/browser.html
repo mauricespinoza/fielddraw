@@ -188,7 +188,7 @@
 
         const res = await gpkg.importGeoPackage(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
         ok('sin advertencias', res.warnings.length === 0, JSON.stringify(res.warnings));
-        ok('2 capas', res.layers.length === 2);
+        ok('3 capas: líneas, polígonos y medidas', res.layers.length === 3, String(res.layers.length));
         const lines = res.layers.find((l) => l.table === 'geol_lines');
         const polys = res.layers.find((l) => l.table === 'geol_polygons');
         ok('tipos de geometría', lines.kind === 'line' && polys.kind === 'polygon');
@@ -520,7 +520,9 @@
         const spec = await import('https://esm.sh/@maplibre/maplibre-gl-style-spec@26.2.1');
         const { geologyLayers, draftLayers, editLayers } = await import('../src/geologyStyle.js');
         const { ornamentLayers } = await import('../src/ornaments.js');
-        const { defaultOrnaments } = await import('../src/symbology.js');
+        const sym = await import('../src/symbology.js');
+        const { defaultOrnaments } = sym;
+        const estructural = await import('../src/structureSymbols.js');
         const straboMod = await import('../src/strabo/layers.js');
         const imported = buildImportedLayers({
           id: 'imp', sourceId: 'imp-src', kind: 'line',
@@ -547,6 +549,7 @@
             ...editLayers(),
             ...ornamentLayers(defaultOrnaments()),
             ...straboMod.straboLayers(),
+            ...estructural.structureLayers(),
             ...imported,
             ...impPoly,
             ...impPt,
@@ -572,11 +575,21 @@
            validate(styleGrande).map((e) => e.message).join(' | '));
         const normal = grandes.find((l) => l.id === 'orn-thrust-fault-layer');
         const flip = grandes.find((l) => l.id === 'orn-thrust-fault-flip-layer');
-        ok('la capa volteada cruza la traza y gira 180°',
+        /*
+         * Las dos capas llevan el MISMO offset a propósito, y esta prueba
+         * llegó a esperar lo contrario: se quedó anclada al comportamiento
+         * anterior al arreglo del espejo y nadie lo vio, porque la suite de
+         * navegador no se podía abrir. MapLibre hornea el desplazamiento en
+         * las esquinas del icono y recién después aplica `icon-rotate`, así
+         * que el giro de 180° arrastra también el offset y deja el símbolo al
+         * otro lado de la traza. Negarlo además lo devolvía al lado de
+         * partida: el diente se daba vuelta sin cambiar de bloque.
+         */
+        ok('la capa volteada conserva el offset y gira 180°',
            JSON.stringify(normal.layout['icon-offset']) === '[0,14]' &&
-           JSON.stringify(flip.layout['icon-offset']) === '[0,-14]' &&
+           JSON.stringify(flip.layout['icon-offset']) === '[0,14]' &&
            flip.layout['icon-rotate'] === 180,
-           JSON.stringify([normal.layout['icon-offset'], flip.layout['icon-offset']]));
+           JSON.stringify([normal.layout['icon-offset'], flip.layout['icon-offset'], flip.layout['icon-rotate']]));
         // StraboSpot: el icono se elige por expresión sobre `Type` y el símbolo
         // se rota con `Strike`. Si el spec rechazara la expresión, la capa se
         // dibujaría con el icono por defecto y nadie se enteraría.
@@ -588,6 +601,43 @@
         ok('el icono se elige por Type con un match válido',
            validate({ ...style, layers: [estructuras] }).length === 0,
            validate({ ...style, layers: [estructuras] }).map((e) => e.message).join(' | '));
+
+        /*
+         * Rumbo y manteo. Dos riesgos concretos, y los dos silenciosos: que el
+         * `concat` que arma el nombre del icono no valide —y todas las
+         * medidas queden sin símbolo— y que la rotación deje de salir de
+         * `strike`, con lo que apuntarían todas al norte sin fallar nada.
+         */
+        const simbolos = estructural.structureLayers().find((l) => l.id === 'structure-symbols');
+        ok('el símbolo estructural rota con el rumbo',
+           JSON.stringify(simbolos.layout['icon-rotate']).includes('strike') &&
+           simbolos.layout['icon-rotation-alignment'] === 'map',
+           JSON.stringify(simbolos.layout['icon-rotate']));
+        ok('el nombre del icono se arma con un concat válido',
+           validate({ ...style, layers: [simbolos] }).length === 0,
+           validate({ ...style, layers: [simbolos] }).map((e) => e.message).join(' | '));
+
+        // Toda combinación tipo × variante tiene que existir como imagen
+        // registrada: si falta una, MapLibre no dibuja ese símbolo y no avisa.
+        const esperadas = [];
+        for (const t of sym.STRUCTURE_TYPES) {
+          for (const v of sym.STRUCTURE_VARIANTS) esperadas.push(estructural.structureImageName(t.id, v));
+        }
+        const mapaFalso = {
+          imgs: new Set(),
+          hasImage(name) { return this.imgs.has(name); },
+          addImage(name) { this.imgs.add(name); },
+        };
+        estructural.addStructureImages(mapaFalso);
+        const faltan = esperadas.filter((name) => !mapaFalso.hasImage(name));
+        ok(esperadas.length + ' imágenes de rumbo/manteo registradas', faltan.length === 0, faltan.join(', '));
+
+        // El estilo es editable: con los parámetros al máximo tampoco puede
+        // producir capas que el spec rechace.
+        const grandesEstr = estructural.structureLayers({ size: 2.5, showLabels: false, minzoom: 0 });
+        ok('los símbolos con el tamaño al máximo validan',
+           validate({ ...style, layers: grandesEstr }).length === 0,
+           validate({ ...style, layers: grandesEstr }).map((e) => e.message).join(' | '));
 
         ok('los filtros de flip son mutuamente excluyentes',
            JSON.stringify(normal.filter[3]) === '["!=",["get","flip"],true]' &&

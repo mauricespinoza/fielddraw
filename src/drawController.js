@@ -306,10 +306,19 @@ export class DrawController {
     const g = this.gesture;
 
     if (!g || e.pointerId !== g.pointerId) {
-      // Hover del Pencil: el lápiz está cerca pero no ha tocado la pantalla.
-      if (this.cb.isDrawing() && e.pointerType === 'pen' && e.buttons === 0) {
+      /*
+       * Hover: el puntero está sobre el mapa pero sin tocarlo. Es lo que
+       * previsualiza a qué se va a enganchar y por dónde iría el trace.
+       *
+       * Vale para el Pencil —que reporta posición en el aire— y para el ratón,
+       * que en un PC está SIEMPRE en hover: sin esto, desde un escritorio no
+       * había ninguna previsualización y el snapping era un salto a ciegas que
+       * solo se descubría después de hacer clic. El dedo no entra: un dedo que
+       * no toca la pantalla no existe.
+       */
+      if (this.cb.isDrawing() && this.esHover(e)) {
         if (!this.rect) this.rect = this.mapContainer.getBoundingClientRect();
-        this.cb.onHover(this.toLocal(e));
+        this.cb.onHover(this.toLocal(e), e.pointerType);
         this.emitInfo(e, 0);
       }
       const obs = this.observed.get(e.pointerId);
@@ -506,8 +515,24 @@ export class DrawController {
     if (this.gesture && this.gesture.pointerId === e.pointerId) this.abort();
   }
 
+  /**
+   * ¿Este movimiento es un hover del que se puede previsualizar?
+   *
+   * El ratón solo cuenta mientras no se haya visto un Pencil: con lápiz
+   * presente él manda, y el cursor del ratón —que en una tablet híbrida puede
+   * quedarse quieto en una esquina— no debe seguir pintando un marcador de
+   * enganche que no corresponde a nada.
+   */
+  esHover(e) {
+    if (e.buttons !== 0) return false;
+    if (e.pointerType === 'pen') return true;
+    return e.pointerType === 'mouse' && !this.penSeen;
+  }
+
   onPointerLeave(e) {
-    if (e.pointerType === 'pen' && !this.gesture) this.cb.onHover(null);
+    if (!this.gesture && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
+      this.cb.onHover(null);
+    }
   }
 
   abort() {

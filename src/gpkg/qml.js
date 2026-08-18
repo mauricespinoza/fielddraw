@@ -141,6 +141,189 @@ export function buildPolygonQML(combos, units) {
   });
 }
 
+/**
+ * Marcador simple de QGIS con forma de línea. Es la pieza con la que se arma
+ * el símbolo de rumbo/manteo: una línea larga para el rumbo y una corta,
+ * girada 90° y desplazada, para el tic de manteo.
+ */
+function lineMarkerLayer({ color, sizeMm, angle, offset, widthMm = '0.4' }) {
+  return `        <layer class="SimpleMarker" enabled="1" locked="0" pass="0">
+          <Option type="Map">
+            <Option name="angle" type="QString" value="${angle}"/>
+            <Option name="color" type="QString" value="${hexToRgba(color)}"/>
+            <Option name="horizontal_anchor_point" type="QString" value="1"/>
+            <Option name="joinstyle" type="QString" value="bevel"/>
+            <Option name="name" type="QString" value="line"/>
+            <Option name="offset" type="QString" value="${offset}"/>
+            <Option name="offset_unit" type="QString" value="MM"/>
+            <Option name="outline_color" type="QString" value="${hexToRgba(color)}"/>
+            <Option name="outline_style" type="QString" value="solid"/>
+            <Option name="outline_width" type="QString" value="${widthMm}"/>
+            <Option name="outline_width_unit" type="QString" value="MM"/>
+            <Option name="size" type="QString" value="${sizeMm}"/>
+            <Option name="size_unit" type="QString" value="MM"/>
+            <Option name="vertical_anchor_point" type="QString" value="1"/>
+          </Option>
+        </layer>`;
+}
+
+/** Círculo hueco: el símbolo de un plano horizontal, que no tiene rumbo. */
+function circleMarkerLayer(color, sizeMm) {
+  return `        <layer class="SimpleMarker" enabled="1" locked="0" pass="0">
+          <Option type="Map">
+            <Option name="angle" type="QString" value="0"/>
+            <Option name="color" type="QString" value="0,0,0,0"/>
+            <Option name="name" type="QString" value="circle"/>
+            <Option name="offset" type="QString" value="0,0"/>
+            <Option name="outline_color" type="QString" value="${hexToRgba(color)}"/>
+            <Option name="outline_style" type="QString" value="solid"/>
+            <Option name="outline_width" type="QString" value="0.4"/>
+            <Option name="outline_width_unit" type="QString" value="MM"/>
+            <Option name="size" type="QString" value="${sizeMm}"/>
+            <Option name="size_unit" type="QString" value="MM"/>
+          </Option>
+        </layer>`;
+}
+
+/**
+ * Rotación por dato aplicada al SÍMBOLO entero y no a cada capa.
+ *
+ * Es la diferencia que hace que el símbolo funcione: QGIS, al rotar un símbolo
+ * de marcador por dato, gira también los desplazamientos de sus capas. Poner la
+ * rotación capa a capa giraría cada trazo sobre su propio centro y el tic se
+ * quedaría donde estaba, apuntando a cualquier lado.
+ */
+const ANGLE_FROM_STRIKE = `      <data_defined_properties>
+        <Option type="Map">
+          <Option name="name" type="QString" value=""/>
+          <Option name="properties" type="Map">
+            <Option name="angle" type="Map">
+              <Option name="active" type="bool" value="true"/>
+              <Option name="expression" type="QString" value="&quot;strike&quot;"/>
+              <Option name="type" type="int" value="3"/>
+            </Option>
+          </Option>
+          <Option name="type" type="QString" value="collection"/>
+        </Option>
+      </data_defined_properties>`;
+
+function markerSymbol(name, layersXml, rotate) {
+  return `      <symbol name="${name}" type="marker" alpha="1" clip_to_extent="1" force_rhr="0" frame_rate="10" is_animated="0">
+${rotate ? `${ANGLE_FROM_STRIKE}\n` : ''}${layersXml}
+      </symbol>`;
+}
+
+/**
+ * QML de las medidas estructurales: una regla por tipo de superficie × variante
+ * del símbolo, con los mismos umbrales que usa la app.
+ *
+ * Las variantes se separan en reglas y no en una sola con expresiones porque un
+ * plano horizontal no lleva tic —no hay dirección de manteo que dibujar— y uno
+ * vertical lo lleva a los dos lados. Son tres símbolos distintos, no uno con
+ * parámetros.
+ */
+export function buildPointQML(types, { horizontalMax = 3, verticalMin = 87 } = {}) {
+  const rules = [];
+  const symbols = [];
+  const push = (filtro, label, layersXml, rotate) => {
+    const i = symbols.length;
+    rules.push(
+      `      <rule key="${uuid()}" symbol="${i}" label="${xmlEscape(label)}" filter="${filtro}"/>`,
+    );
+    symbols.push(markerSymbol(String(i), layersXml, rotate));
+  };
+
+  const campoDip = '&quot;dip&quot;';
+  for (const t of types) {
+    const color = t.color;
+    const tipo = `&quot;type&quot; = '${t.id}'`;
+
+    push(
+      `${tipo} AND ${campoDip} <= ${horizontalMax}`,
+      `${t.label} — horizontal`,
+      [circleMarkerLayer(color, '2.4'), lineMarkerLayer({ color, sizeMm: '3.4', angle: '0', offset: '0,0' }), lineMarkerLayer({ color, sizeMm: '3.4', angle: '90', offset: '0,0' })].join('\n'),
+      false,
+    );
+    push(
+      `${tipo} AND ${campoDip} >= ${verticalMin}`,
+      `${t.label} — vertical`,
+      [
+        lineMarkerLayer({ color, sizeMm: '5', angle: '0', offset: '0,0', widthMm: '0.5' }),
+        lineMarkerLayer({ color, sizeMm: '1.6', angle: '90', offset: '0.8,0' }),
+        lineMarkerLayer({ color, sizeMm: '1.6', angle: '90', offset: '-0.8,0' }),
+      ].join('\n'),
+      true,
+    );
+    push(
+      `${tipo} AND ${campoDip} > ${horizontalMax} AND ${campoDip} < ${verticalMin}`,
+      `${t.label} — inclined`,
+      [
+        lineMarkerLayer({ color, sizeMm: '5', angle: '0', offset: '0,0' }),
+        lineMarkerLayer({ color, sizeMm: '1.8', angle: '90', offset: '0.9,0' }),
+      ].join('\n'),
+      true,
+    );
+  }
+
+  return `<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.34.0" styleCategories="Symbology|Labeling">
+  <renderer-v2 type="RuleRenderer" forceraster="0" symbollevels="0" enableorderby="0" referencescale="-1">
+    <rules key="${uuid()}">
+${rules.join('\n')}
+    </rules>
+    <symbols>
+${symbols.join('\n')}
+    </symbols>
+  </renderer-v2>
+  <labeling type="simple">
+    <settings>
+      <text-style fieldName="if(&quot;dip&quot; &lt;= ${horizontalMax}, '', format_number(&quot;dip&quot;, 0))" isExpression="1" fontFamily="Arial" fontSize="8" textColor="0,0,0,255">
+        <text-buffer bufferDraw="1" bufferSize="0.8" bufferColor="255,255,255,255"/>
+      </text-style>
+      <placement placement="1" dist="1.6" quadOffset="3"/>
+    </settings>
+  </labeling>
+  <layerGeometryType>0</layerGeometryType>
+</qgis>`;
+}
+
+/**
+ * SLD de las medidas. Es la red de seguridad del QML y por eso es más pobre:
+ * SLD no tiene un marcador con forma de línea, así que se usa una cruz rotada
+ * por el rumbo — se pierde el tic de manteo, pero la orientación se conserva.
+ */
+export function buildPointSLD(types) {
+  const reglas = types
+    .map(
+      (t) => `      <se:Rule>
+        <se:Name>${xmlEscape(t.label)}</se:Name>
+        <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+          <ogc:PropertyIsEqualTo>
+            <ogc:PropertyName>type</ogc:PropertyName>
+            <ogc:Literal>${xmlEscape(t.id)}</ogc:Literal>
+          </ogc:PropertyIsEqualTo>
+        </ogc:Filter>
+        <se:PointSymbolizer>
+          <se:Graphic>
+            <se:Mark>
+              <se:WellKnownName>cross</se:WellKnownName>
+              <se:Stroke>
+                <se:SvgParameter name="stroke">${t.color}</se:SvgParameter>
+                <se:SvgParameter name="stroke-width">1.2</se:SvgParameter>
+              </se:Stroke>
+            </se:Mark>
+            <se:Size>14</se:Size>
+            <se:Rotation>
+              <ogc:PropertyName>strike</ogc:PropertyName>
+            </se:Rotation>
+          </se:Graphic>
+        </se:PointSymbolizer>
+      </se:Rule>`,
+    )
+    .join('\n');
+  return sldDocument('geol_points', reglas);
+}
+
 const SLD_DASH = { observed: null, inferred: '6 3', covered: '1 3' };
 
 function sldRules(combos, symbolizer) {

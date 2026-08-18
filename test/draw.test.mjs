@@ -34,7 +34,7 @@ function harness(opts = {}) {
     onStrokeEnd: (pts) => log.push(['strokeEnd', pts.length]),
     onFinish: () => log.push(['finish']),
     onFingerTap: (p) => log.push(['fingerTap', p]),
-    onHover: () => {},
+    onHover: (p, tipo) => log.push(['hover', p, tipo]),
     onLongPressArm: (p) => log.push([p ? 'arm' : 'disarm']),
     onPointerInfo: () => {},
   };
@@ -370,6 +370,53 @@ console.log('== clic derecho => cierra ==');
   const h = harness();
   h.ev('contextmenu', { clientX: 100, clientY: 100 });
   ok('cierra el elemento', h.kinds().includes('finish'));
+}
+
+console.log('== hover: previsualización con lápiz y con ratón ==');
+{
+  // El Pencil flota sobre la pantalla: `buttons: 0` es el lápiz sin apoyar.
+  const h = harness();
+  h.ev('pointermove', { pointerType: 'pen', buttons: 0, clientX: 120, clientY: 90 });
+  const hov = h.log.find((l) => l[0] === 'hover' && l[1]);
+  ok('el lápiz en el aire previsualiza', !!hov, JSON.stringify(h.kinds()));
+  ok('con sus coordenadas locales', hov[1][0] === 120 && hov[1][1] === 90);
+  ok('y dice que es un lápiz', hov[2] === 'pen');
+}
+{
+  /*
+   * El ratón está SIEMPRE en hover: sin esto, desde un PC no había ninguna
+   * previsualización de enganche y el snapping era un salto a ciegas que solo
+   * se descubría después de hacer clic.
+   */
+  const h = harness();
+  h.ev('pointermove', { pointerType: 'mouse', buttons: 0, clientX: 200, clientY: 150 });
+  const hov = h.log.find((l) => l[0] === 'hover' && l[1]);
+  ok('el ratón también previsualiza', !!hov, JSON.stringify(h.kinds()));
+  ok('y se identifica como ratón', hov && hov[2] === 'mouse');
+}
+{
+  // Con un lápiz ya visto, el ratón deja de mandar: el cursor puede haberse
+  // quedado quieto en una esquina y no debe seguir pintando un enganche.
+  const h = harness();
+  h.ev('pointerdown', { pointerType: 'pen', clientX: 10, clientY: 10 });
+  h.ev('pointerup', { pointerType: 'pen', clientX: 10, clientY: 10 });
+  await sleep(10);
+  const antes = h.log.filter((l) => l[0] === 'hover' && l[1]).length;
+  h.ev('pointermove', { pointerId: 9, pointerType: 'mouse', buttons: 0, clientX: 400, clientY: 400 });
+  const despues = h.log.filter((l) => l[0] === 'hover' && l[1]).length;
+  ok('con lápiz presente el ratón no previsualiza', antes === despues);
+}
+{
+  // Un dedo que no toca la pantalla no existe: nada que previsualizar.
+  const h = harness();
+  h.ev('pointermove', { pointerId: 5, pointerType: 'touch', buttons: 0, clientX: 200, clientY: 150 });
+  ok('el dedo no genera hover', !h.log.some((l) => l[0] === 'hover' && l[1]));
+}
+{
+  // Con el botón apretado ya no es hover, es un arrastre.
+  const h = harness();
+  h.ev('pointermove', { pointerId: 7, pointerType: 'mouse', buttons: 1, clientX: 200, clientY: 150 });
+  ok('con el botón pulsado no hay hover', !h.log.some((l) => l[0] === 'hover' && l[1]));
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

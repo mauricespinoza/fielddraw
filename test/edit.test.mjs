@@ -167,6 +167,69 @@ console.log('== extender una línea seleccionada ==');
      JSON.stringify(store.getState().draft.coords));
 }
 {
+  /*
+   * Seleccionar estando YA en la herramienta Línea.
+   *
+   * Es el caso frecuente cartografiando —no se sale de Línea para nada— y
+   * antes no marcaba nada: había que volver a pulsar el botón. El siguiente
+   * clic empezaba una línea nueva, que es exactamente el síntoma de "extender
+   * no funciona".
+   */
+  store.clearFeatures();
+  store.clearSelection();
+  store.loadFeatures([line('base', [[0, 0], [10, 0]])]);
+  store.setTool('line');
+  store.setSelection(['base']);
+  ok('seleccionar estando ya en Línea la marca para continuar',
+     store.getState().extendFrom === 'base');
+  store.addVertex([13, 2]);
+  ok('y el primer vértice la continúa de verdad',
+     eq(store.getState().draft.coords, [[0, 0], [10, 0], [13, 2]]),
+     JSON.stringify(store.getState().draft.coords));
+}
+{
+  // Vaciar la selección desarma la continuación: si no, el clic siguiente
+  // resucitaría una línea que el usuario ya había soltado.
+  store.clearFeatures();
+  store.loadFeatures([line('base', [[0, 0], [10, 0]])]);
+  store.setTool('line');
+  store.setSelection(['base']);
+  store.clearSelection();
+  ok('vaciar la selección desarma la continuación', store.getState().extendFrom === null);
+  store.addVertex([13, 2]);
+  ok('y empieza una línea nueva',
+     store.getState().features.length === 1 && eq(store.getState().draft.coords, [[13, 2]]));
+}
+{
+  // Con un trazo a medias, seleccionar no debe secuestrarlo.
+  store.clearFeatures();
+  store.loadFeatures([line('base', [[0, 0], [10, 0]])]);
+  store.setTool('line');
+  store.addVertex([50, 50]);
+  store.setSelection(['base']);
+  ok('con un borrador abierto la selección no arma la continuación',
+     store.getState().extendFrom === null);
+  ok('y el borrador sigue intacto', eq(store.getState().draft.coords, [[50, 50]]));
+  store.cancelDraft();
+}
+{
+  // Borrar lo seleccionado no puede dejar la marca apuntando a un fantasma.
+  store.clearFeatures();
+  store.loadFeatures([line('base', [[0, 0], [10, 0]])]);
+  store.setTool('line');
+  store.setSelection(['base']);
+  store.deleteSelected();
+  ok('borrar la línea marcada limpia la marca', store.getState().extendFrom === null);
+}
+{
+  // Un polígono seleccionado no tiene extremos por los que seguir.
+  store.clearFeatures();
+  store.loadFeatures([poly('pp', [[[0, 0], [1, 0], [1, 1], [0, 0]]])]);
+  store.setTool('line');
+  store.setSelection(['pp']);
+  ok('un polígono no se puede continuar', store.getState().extendFrom === null);
+}
+{
   // Dos líneas seleccionadas: es ambiguo, así que no se extiende nada.
   store.clearFeatures();
   store.clearSelection();

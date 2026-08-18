@@ -2,6 +2,7 @@ import maplibregl from 'maplibre-gl';
 import mlcontour from 'maplibre-contour';
 
 import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
+import { DEM_MAX_ZOOM } from './dem.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
 import { DrawController } from './drawController.js';
@@ -34,6 +35,12 @@ import {
   ornamentLayers,
 } from './ornaments.js';
 import {
+  STRUCTURE_LAYER_IDS,
+  addStructureImages,
+  applyStructureStyle,
+  structureLayers,
+} from './structureSymbols.js';
+import {
   STRABO_INTERACTIVE_LAYER_IDS,
   STRABO_LAYER_IDS,
   STRABO_LINES_SOURCE,
@@ -58,6 +65,22 @@ import {
 
 const CONTOUR_LAYER_IDS = ['contour-lines', 'contour-index', 'contour-labels'];
 
+/**
+ * Terrain-RGB crudo, para el sombreado y para el relieve 3D.
+ *
+ * Es la MISMA URL que alimenta las curvas de nivel, pero declarada como
+ * `raster-dem` en vez de pasar por el protocolo de maplibre-contour: ese
+ * protocolo entrega teselas vectoriales de curvas, no alturas, así que no
+ * sirve ni para `hillshade` ni para `setTerrain`. Al compartir origen, el
+ * service worker cachea las mismas teselas una sola vez.
+ */
+const TERRAIN_SOURCE = 'terrain-dem-src';
+const HILLSHADE_LAYER_IDS = ['hillshade'];
+
+/** Traza del perfil topográfico y la muestra que señala el gráfico. */
+const PROFILE_SOURCE = 'profile-src';
+const PROFILE_LAYER_IDS = ['profile-casing', 'profile-line', 'profile-nodes', 'profile-cursor'];
+
 /** Un toque de dedo más lejos que esto del trazo en curso lo da por cerrado. */
 const OUTSIDE_TAP_PX = 36;
 
@@ -66,6 +89,9 @@ const BASE = {
   'contour-lines': 0.6,
   'contour-index': 0.85,
   'contour-labels': 0.95,
+  // El halo de una medida seleccionada es translúcido por diseño; sin esta
+  // entrada, el deslizador de la capa lo subiría a opaco y taparía el símbolo.
+  'structure-selected': 0.35,
 };
 
 const basemapLayerId = (id) => `bm-${id}`;
@@ -77,11 +103,14 @@ const tileLayerIds = new Map();
 function mlIdsFor(layer) {
   if (layer.kind === 'basemap') return [basemapLayerId(layer.id)];
   if (layer.kind === 'contours') return CONTOUR_LAYER_IDS;
+  if (layer.kind === 'hillshade') return HILLSHADE_LAYER_IDS;
   if (layer.kind === 'imported') return importedLayerIds.get(layer.id) || [];
   if (layer.kind === 'tiles') return tileLayerIds.get(layer.id) || [];
   if (layer.kind === 'strabo') return STRABO_LAYER_IDS;
-  // Los ornamentos van al final para dibujarse sobre la traza de la falla.
-  return [...GEOLOGY_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
+  // Los ornamentos van después para dibujarse sobre la traza de la falla, y
+  // los símbolos de rumbo/manteo al final: son puntos y no deben quedar
+  // tapados por el relleno del polígono sobre el que se midieron.
+  return [...GEOLOGY_LAYER_IDS, ...ORNAMENT_LAYER_IDS, ...STRUCTURE_LAYER_IDS];
 }
 
 function applyOpacity(map, id, opacity) {
@@ -108,6 +137,9 @@ function applyOpacity(map, id, opacity) {
     case 'circle':
       map.setPaintProperty(id, 'circle-opacity', dataDriven);
       break;
+    case 'hillshade':
+      map.setPaintProperty(id, 'hillshade-exaggeration', v);
+      break;
     default:
       break;
   }
@@ -127,8 +159,9 @@ function applyLayerStack(map, layers) {
       map.moveLayer(id);
     }
   }
-  // El elemento en construcción y las manijas de edición, siempre encima.
-  for (const id of [...DRAFT_LAYER_IDS, ...EDIT_LAYER_IDS]) {
+  // El elemento en construcción, la traza del perfil y las manijas de
+  // edición, siempre encima.
+  for (const id of [...PROFILE_LAYER_IDS, ...DRAFT_LAYER_IDS, ...EDIT_LAYER_IDS]) {
     if (map.getLayer(id)) map.moveLayer(id);
   }
 }
@@ -259,6 +292,33 @@ export function createMapView({
       });
     }
 
+    /*
+     * DEM crudo. La fuente se declara siempre, pero MapLibre no pide una sola
+     * tesela mientras nadie la use: con el sombreado apagado y sin relieve,
+     * esto no cuesta nada de red. Es lo que permite encender cualquiera de los
+     * dos sin recomponer el estilo.
+     */
+    map.addSource(TERRAIN_SOURCE, {
+      type: 'raster-dem',
+      tiles: [TERRARIUM_URL],
+      encoding: 'terrarium',
+      tileSize: 256,
+      maxzoom: DEM_MAX_ZOOM,
+      attribution: 'Elevation: AWS Terrain Tiles (public domain)',
+    });
+    map.addLayer({
+      id: 'hillshade',
+      type: 'hillshade',
+      source: TERRAIN_SOURCE,
+      layout: { visibility: 'none' },
+      paint: {
+        'hillshade-exaggeration': 0.5,
+        'hillshade-shadow-color': '#101820',
+        'hillshade-highlight-color': '#ffffff',
+        'hillshade-accent-color': '#2b2419',
+      },
+    });
+
     // Curvas generadas en el cliente desde terrain-RGB. Si la librería falla,
     // no debe tumbar el mapa entero.
     try {
@@ -339,6 +399,15 @@ export function createMapView({
     } catch (err) {
       console.warn('[ornamentos]', err);
     }
+
+    // Símbolos de rumbo y manteo. Comparten la fuente del dibujo: una medida
+    // es un elemento más del mapa geológico, no una capa aparte.
+    try {
+      addStructureImages(map);
+      for (const l of structureLayers(store.getState().structureStyle)) map.addLayer(l);
+    } catch (err) {
+      console.warn('[estructural]', err);
+    }
     applyUnitColors();
     applyLineColors();
 
@@ -364,21 +433,57 @@ export function createMapView({
     // Navegar, DrawController ya consume el puntero para dibujar o arrastrar,
     // así que este listener nunca compite con esas herramientas — recibe el
     // evento nativo de MapLibre solo cuando pasó libre.
-    if (onStraboFeatureTap) {
-      map.on('click', (e) => {
-        const hit = straboHitAt([e.point.x, e.point.y]);
-        if (hit) onStraboFeatureTap(hit, [e.point.x, e.point.y]);
-      });
-      // Cursor de mano al pasar por encima, como cualquier elemento con el que
-      // se puede interactuar: es la única pista de que ahí hay algo que tocar.
-      for (const id of STRABO_INTERACTIVE_LAYER_IDS) {
-        map.on('mouseenter', id, () => {
-          if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = 'pointer';
-        });
-        map.on('mouseleave', id, () => {
-          if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = '';
-        });
+    /*
+     * Clic en modo Navegar. Selecciona lo propio y, si no hay nada propio bajo
+     * el puntero, muestra los atributos de un spot importado.
+     *
+     * Que Navegar seleccione importa sobre todo desde un PC. En tablet el dedo
+     * ya selecciona en cualquier herramienta, pero ese camino pasa por
+     * `onFingerTap`, que solo existe para punteros `touch` no consumidos: con
+     * ratón nunca se dispara. Sin esto, desde escritorio había que entrar a
+     * **Elegir** para señalar cualquier cosa — incluido el paso previo a
+     * continuar una línea, que es donde más se nota.
+     *
+     * Con Shift se añade a la selección en vez de reemplazarla, como en
+     * cualquier escritorio.
+     */
+    map.on('click', (e) => {
+      if (store.getState().tool !== 'navigate') return;
+      const screen = [e.point.x, e.point.y];
+
+      const hit = pickAt(screen, 12);
+      if (hit) {
+        const id = hit.properties.id;
+        const shift = e.originalEvent && e.originalEvent.shiftKey;
+        if (shift) store.toggleSelection(id);
+        else store.setSelection([id]);
+        return;
       }
+
+      const spot = onStraboFeatureTap && straboHitAt(screen);
+      if (spot) {
+        onStraboFeatureTap(spot, screen);
+        return;
+      }
+      if (store.getState().selection.length) store.clearSelection();
+    });
+
+    // Cursor de mano al pasar por encima, como cualquier elemento con el que se
+    // puede interactuar: es la única pista de que ahí hay algo que tocar.
+    const CLICKABLE_LAYER_IDS = [
+      ...(onStraboFeatureTap ? STRABO_INTERACTIVE_LAYER_IDS : []),
+      'geology-fill',
+      ...GEOLOGY_LINE_LAYER_IDS,
+      'structure-symbols',
+    ];
+    for (const id of CLICKABLE_LAYER_IDS) {
+      if (!map.getLayer(id)) continue;
+      map.on('mouseenter', id, () => {
+        if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', id, () => {
+        if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = '';
+      });
     }
 
     map.addSource(EDIT_SOURCE, {
@@ -387,11 +492,64 @@ export function createMapView({
     });
     for (const l of editLayers()) map.addLayer(l);
 
+    /*
+     * Traza del perfil ya calculado. Se mantiene visible mientras el panel lo
+     * está: sin ella, el gráfico es una curva sin lugar — hay que poder mirar
+     * el mapa y saber por dónde va el corte. El ámbar la separa del dibujo
+     * geológico, que nunca usa ese color.
+     */
+    map.addSource(PROFILE_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'profile-casing',
+      type: 'line',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#1a1200', 'line-width': 7, 'line-opacity': 0.55 },
+    });
+    map.addLayer({
+      id: 'profile-line',
+      type: 'line',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#ffb300', 'line-width': 2.8 },
+    });
+    map.addLayer({
+      id: 'profile-nodes',
+      type: 'circle',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'node'],
+      paint: {
+        'circle-radius': 3.4,
+        'circle-color': '#ffb300',
+        'circle-stroke-color': '#1a1200',
+        'circle-stroke-width': 1.2,
+      },
+    });
+    map.addLayer({
+      id: 'profile-cursor',
+      type: 'circle',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'cursor'],
+      paint: {
+        'circle-radius': 7,
+        'circle-color': '#ffffff',
+        'circle-stroke-color': '#ffb300',
+        'circle-stroke-width': 3,
+      },
+    });
+
     ready = true;
     applyLayerStack(map, store.getState().layers);
     syncGeology();
     syncStrabo();
     syncDraft();
+    syncProfile();
+    applyTerrain();
     collectSnapSources();
     rebuildHandles();
   });
@@ -429,7 +587,35 @@ export function createMapView({
     if (!ready) return;
     const src = map.getSource(DRAFT_SOURCE);
     if (!src) return;
-    const d = store.getState().draft;
+    const st = store.getState();
+    const d = st.draft;
+
+    /*
+     * Línea marcada para continuarse: se pintan sus dos extremos como si ya
+     * fueran vértices del borrador.
+     *
+     * Antes no había ninguna señal de que "Línea" con una línea seleccionada
+     * fuese a CONTINUARLA en vez de empezar una nueva, y el primer clic caía a
+     * ciegas. Marcar los extremos dice además lo que de verdad hace falta
+     * saber: que se continúa por el más cercano al clic, así que apuntando a
+     * uno u otro se elige el sentido.
+     */
+    if (!d && st.extendFrom) {
+      const src2 = st.features.find((f) => f.properties.id === st.extendFrom);
+      const coords = src2 && src2.geometry.type === 'LineString' ? src2.geometry.coordinates : null;
+      if (coords && coords.length >= 2) {
+        src.setData({
+          type: 'FeatureCollection',
+          features: [coords[0], coords[coords.length - 1]].map((c) => ({
+            type: 'Feature',
+            properties: { kind: 'extend-end' },
+            geometry: { type: 'Point', coordinates: c },
+          })),
+        });
+        return;
+      }
+    }
+
     const committed = d ? d.coords : [];
     const all = [...committed, ...preview];
     const out = [];
@@ -457,6 +643,70 @@ export function createMapView({
   }
 
   const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+
+  /**
+   * Enciende o apaga el relieve real.
+   *
+   * Con `setTerrain` el dibujo se drapea solo sobre el terreno: MapLibre
+   * proyecta cada vértice a la altura del DEM, así que los contactos siguen la
+   * ladera sin que haya que tocar la geometría.
+   *
+   * La inclinación de cámara se mueve con el interruptor porque un terreno
+   * visto en planta se ve exactamente igual que sin terreno, y quien lo
+   * activara pensaría que no funcionó.
+   */
+  function applyTerrain() {
+    if (!ready || !map.getSource(TERRAIN_SOURCE)) return;
+    const { terrain3d, terrainExaggeration } = store.getState();
+    try {
+      if (terrain3d) {
+        map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: terrainExaggeration });
+        if (map.getPitch() < 20) map.easeTo({ pitch: 58, duration: 600 });
+      } else {
+        map.setTerrain(null);
+        if (map.getPitch() > 1) map.easeTo({ pitch: 0, duration: 400 });
+      }
+    } catch (err) {
+      // Un dispositivo sin el soporte de WebGL que pide el terreno no debe
+      // dejar la app en un estado a medias.
+      store.setTerrain3d(false);
+      onEditMessage(
+        `3D terrain could not be enabled on this device (${err && err.message ? err.message : err}).`,
+        'warn',
+      );
+    }
+  }
+
+  /** Traza del perfil y la muestra que el gráfico tiene señalada. */
+  function syncProfile() {
+    if (!ready) return;
+    const src = map.getSource(PROFILE_SOURCE);
+    if (!src) return;
+    const { profile, profileCursor } = store.getState();
+    if (!profile || !profile.coords) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    const out = [
+      {
+        type: 'Feature',
+        properties: { kind: 'trace' },
+        geometry: { type: 'LineString', coordinates: profile.coords },
+      },
+    ];
+    for (const c of profile.coords) {
+      out.push({ type: 'Feature', properties: { kind: 'node' }, geometry: { type: 'Point', coordinates: c } });
+    }
+    const m = Number.isInteger(profileCursor) ? profile.samples[profileCursor] : null;
+    if (m) {
+      out.push({
+        type: 'Feature',
+        properties: { kind: 'cursor' },
+        geometry: { type: 'Point', coordinates: m.lngLat },
+      });
+    }
+    src.setData({ type: 'FeatureCollection', features: out });
+  }
 
   /** Vuelca las tres colecciones del dataset de StraboSpot a sus fuentes. */
   function syncStrabo() {
@@ -773,7 +1023,10 @@ export function createMapView({
   /** Con selección se editan solo esos elementos; sin ella, todo el dibujo. */
   function editableFeatures() {
     const st = store.getState();
-    return st.selection.length ? store.selectedFeatures() : st.features;
+    const base = st.selection.length ? store.selectedFeatures() : st.features;
+    // Una medida estructural es un punto: no tiene vértices que mover, y darle
+    // una manija haría creer que se puede reformar.
+    return base.filter((f) => f.geometry && f.geometry.type !== 'Point');
   }
 
   function rebuildHandles() {
@@ -1038,9 +1291,16 @@ export function createMapView({
   const controller = new DrawController(host, container, {
     isDrawing: () => store.getState().tool !== 'navigate',
     fingerDrawEnabled: () => store.getState().fingerDraw,
-    // Seleccionar es solo tocar: el trazo libre ahí no tendría sentido.
-    freehandMode: () =>
-      store.getState().tool === 'select' ? 'none' : store.getState().freehandMode,
+    // Seleccionar es solo tocar: el trazo libre ahí no tendría sentido. Y en
+    // rumbo/manteo solo lo admite el ajuste a una traza — con brújula o con
+    // tres puntos, un trazo libre pondría cientos de puntos donde se esperan
+    // uno o tres.
+    freehandMode: () => {
+      const st = store.getState();
+      if (st.tool === 'select') return 'none';
+      if (st.tool === 'measure' && st.measureMethod !== 'plane-fit') return 'none';
+      return st.freehandMode;
+    },
     // Vértices arrastra manijas; Elegir arrastra el lazo rectangular. Los dos
     // necesitan el mismo modo de puntero, así que se despachan por herramienta.
     dragMode: () => ['vertices', 'select'].includes(store.getState().tool),
@@ -1070,6 +1330,21 @@ export function createMapView({
     onVertex: (screen) => {
       const st = store.getState();
       if (onMapTap) onMapTap();
+
+      /*
+       * Rumbo y manteo. No se engancha a nada: una medida se toma donde está
+       * el afloramiento, y pegarla al vértice más cercano de un contacto
+       * movería el punto donde se leyó la cota — que es de donde sale el
+       * número.
+       */
+      if (st.tool === 'measure') {
+        clearPreview();
+        store.addVertex(toLngLat(screen));
+        // Con brújula la medida ya existe: se abre el menú para escribir los
+        // números sin tener que buscarla y volver a tocarla.
+        if (st.measureMethod === 'manual') onOpenProps(screen);
+        return;
+      }
 
       // Cortar usando un elemento que ya existe: se toca y se usa como cuchilla.
       if (st.tool === 'cut' && st.cutSource === 'feature') {
@@ -1160,14 +1435,20 @@ export function createMapView({
       else if (st.selection.length) store.clearSelection();
     },
 
-    onHover: (p) => {
+    onHover: (p, pointerType) => {
       if (!p || store.getState().tool === 'navigate') {
         hoverEl.hidden = true;
         showSnapMarker(null);
         if (previewKind === 'trace') clearPreview();
         return;
       }
-      hoverEl.hidden = false;
+      /*
+       * El anillo de hover solo con lápiz. Existe porque el Pencil flota a un
+       * centímetro de la pantalla y hay que saber dónde va a aterrizar; con
+       * ratón el propio cursor ya lo dice, y superponerle un anillo solo
+       * duplica el indicador. El marcador de enganche sí se pinta en los dos.
+       */
+      hoverEl.hidden = pointerType !== 'pen';
       hoverEl.style.left = `${p[0]}px`;
       hoverEl.style.top = `${p[1]}px`;
       const snap = snapAt(p) || traceSnapAt(p);
@@ -1199,6 +1480,8 @@ export function createMapView({
   });
 
   store.subscribe(() => {
+    if (store.changed('terrain3d') || store.changed('terrainExaggeration')) applyTerrain();
+    if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
     if (store.changed('units')) applyUnitColors();
     if (store.changed('ornaments')) {
       applyOrnamentStyle(map, store.getState().ornaments);
@@ -1209,6 +1492,7 @@ export function createMapView({
       applyLayerStack(map, store.getState().layers);
       if (store.getState().strabo) fitToStrabo();
     }
+    if (store.changed('structureStyle')) applyStructureStyle(map, store.getState().structureStyle);
     if (store.changed('straboStyle')) applyStraboStyle(map, store.getState().straboStyle);
     if (store.changed('straboFilters')) {
       const filters = store.getState().straboFilters;
@@ -1220,7 +1504,9 @@ export function createMapView({
     else if (store.changed('tileSets')) syncTileSets();
     else if (store.changed('layers')) applyLayerStack(map, store.getState().layers);
     if (store.changed('features')) syncGeology();
-    if (store.changed('draft')) syncDraft();
+    // `extendFrom` también repinta el borrador: es lo que marca los extremos
+    // de la línea que se va a continuar.
+    if (store.changed('draft') || store.changed('extendFrom')) syncDraft();
 
     // Durante un arrastre de vértice el índice se gestiona a mano (con la
     // geometría editada excluida), así que no hay que rehacerlo en cada frame.
@@ -1246,11 +1532,18 @@ export function createMapView({
     }
 
     if (store.changed('selection') && map.getLayer('geology-selected')) {
-      map.setFilter('geology-selected', [
-        'in',
-        ['get', 'id'],
-        ['literal', store.getState().selection],
-      ]);
+      const seleccion = ['literal', store.getState().selection];
+      map.setFilter('geology-selected', ['in', ['get', 'id'], seleccion]);
+      if (map.getLayer('structure-selected')) {
+        // El halo de una medida es un círculo y no un trazo engrosado, así que
+        // tiene su propia capa y hay que reapuntarle el mismo filtro.
+        map.setFilter('structure-selected', [
+          'all',
+          ['==', ['geometry-type'], 'Point'],
+          ['==', ['get', 'geomKind'], 'measurement'],
+          ['in', ['get', 'id'], seleccion],
+        ]);
+      }
     }
 
     if (store.changed('tool')) {
@@ -1261,8 +1554,13 @@ export function createMapView({
        * destruye.
        */
       const herramienta = store.getState().tool;
-      const auxColor =
-        herramienta === 'cut' ? '#ff3b30' : herramienta === 'reshape' ? '#ffa726' : '#00E5FF';
+      const AUX_COLOR = {
+        cut: '#ff3b30',
+        reshape: '#ffa726',
+        profile: '#ffb300',
+        measure: '#b388ff',
+      };
+      const auxColor = AUX_COLOR[herramienta] || '#00E5FF';
       if (map.getLayer('draft-line')) {
         map.setPaintProperty('draft-line', 'line-color', auxColor);
         map.setPaintProperty('draft-fill', 'fill-color', auxColor);
@@ -1278,13 +1576,6 @@ export function createMapView({
       }
       if (!drawing) lassoEl.hidden = true;
     }
-  });
-
-  window.addEventListener('keydown', (e) => {
-    if (store.getState().tool === 'navigate') return;
-    if (e.key === 'Enter') store.finishDraft();
-    else if (e.key === 'Escape') store.cancelDraft();
-    else if (e.key === 'Backspace') store.undoVertex();
   });
 
   // Gancho de depuración: útil para inspeccionar el estilo desde la consola
@@ -1314,6 +1605,16 @@ export function createMapView({
   return {
     map,
     locateMe,
+    /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */
+    fitToCoords(coords) {
+      if (!Array.isArray(coords) || coords.length === 0) return;
+      fitToGeoJSON({
+        type: 'FeatureCollection',
+        features: [
+          { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } },
+        ],
+      });
+    },
     destroy() {
       controller.destroy();
       map.remove();

@@ -1,7 +1,18 @@
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
 const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
+const STRUCTURE_STYLE_KEY = 'fielddraw.structure-style.v1';
 const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
+
+/**
+ * Clave de OpenTopography.
+ *
+ * Vive en localStorage y NO dentro del proyecto, a diferencia del resto de los
+ * ajustes: un `.fdproj.json` se manda por correo o se sube a un repositorio
+ * como cualquier archivo del trabajo, y una credencial personal no tiene por
+ * qué viajar ahí. Es del dispositivo, no del mapa.
+ */
+const OPENTOPO_KEY = 'fielddraw.opentopo-key.v1';
 
 export function saveFeatures(features) {
   try {
@@ -60,6 +71,25 @@ export function loadSavedOrnaments() {
   }
 }
 
+export function saveStructureStyle(style) {
+  try {
+    localStorage.setItem(STRUCTURE_STYLE_KEY, JSON.stringify(style));
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedStructureStyle() {
+  try {
+    const raw = localStorage.getItem(STRUCTURE_STYLE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function saveStraboStyle(style) {
   try {
     localStorage.setItem(STRABO_STYLE_KEY, JSON.stringify(style));
@@ -77,6 +107,28 @@ export function loadSavedStraboStyle() {
   } catch {
     return null;
   }
+}
+
+export function saveOpenTopoKey(key) {
+  try {
+    if (key) localStorage.setItem(OPENTOPO_KEY, key);
+    else localStorage.removeItem(OPENTOPO_KEY);
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedOpenTopoKey() {
+  try {
+    return localStorage.getItem(OPENTOPO_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Texto plano listo para descargar; lo usa la exportación del perfil a CSV. */
+export function downloadText(text, filename, type = 'text/plain;charset=utf-8') {
+  downloadBlob(new Blob([text], { type }), filename);
 }
 
 export function downloadGeoJSON(features, filename = 'fielddraw.geojson') {

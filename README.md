@@ -1,8 +1,10 @@
 # FieldDraw — mapeo geológico en tablet
 
-Prototipo de fase 1: basemaps web, curvas de nivel generadas en el cliente,
-panel de capas con orden y transparencia, y digitalización con Apple Pencil
-(vértice a vértice + trazo libre por long-press).
+Basemaps web, curvas de nivel generadas en el cliente, panel de capas con orden
+y transparencia, y digitalización con Apple Pencil (vértice a vértice + trazo
+libre por long-press). Sobre eso: perfiles topográficos leídos del DEM, relieve
+3D como modo de visualización, y medidas de rumbo y manteo —manuales, por tres
+puntos o ajustadas a una traza— con su incertidumbre declarada.
 
 ## Ejecutar
 
@@ -25,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts; do node test/$f.test.mjs; done
 ```
 
-563 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+809 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -36,14 +38,19 @@ corte, edición de vértices (mover, insertar, borrar, buscar el punto de
 inserción y agrupar coincidentes), confirmación topológica, serialización de
 proyectos, parámetros de los ornamentos, historial de deshacer/rehacer,
 encadenado de líneas sueltas, extensión de líneas, el módulo de unidades y el
-aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot.
+aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot,
+decodificación de teselas terrarium, muestreo y estadística de perfiles,
+parseo de ASCII grid e interpolación bilineal, ajuste de plano por mínimos
+cuadrados, propagación de la incertidumbre del manteo, los avisos de calidad,
+la tabla de atajos de teclado y el hover del ratón.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
 `http://localhost:5174/test/browser.html`. Cubre el round-trip completo
 exportar→importar, QML real de QGIS, un MBTiles fabricado al vuelo, las
 operaciones de corte y unión, y la validación de todas las capas generadas
-contra el style-spec de MapLibre.
+contra el style-spec de MapLibre —incluidos los símbolos de rumbo y manteo y
+sus dieciséis imágenes.
 
 ## Publicar y usar sin señal
 
@@ -84,6 +91,9 @@ Las pesadas (JSTS, sql.js, PMTiles) se siguen pidiendo bajo demanda, ahora desde
 | Mapas offline PMTiles/MBTiles importados | ✅ |
 | Basemaps (Esri, OSM, OpenTopoMap) | ⚠️ solo lo ya visitado |
 | Curvas de nivel (DEM de AWS) | ⚠️ solo lo ya visitado |
+| Perfiles y rumbo/manteo sobre el DEM de AWS | ⚠️ solo lo ya visitado |
+| Perfiles vía OpenTopography (Copernicus) | ❌ necesita red y clave |
+| Relieve 3D y sombreado | ⚠️ solo lo ya visitado; fuera de eso se ve plano |
 
 Un service worker no puede precachear un basemap mundial: son teselas
 ilimitadas. Lo que hace es guardar en una caché aparte —con tope de 6000
@@ -118,7 +128,7 @@ carga.
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
 | Deshacer | doble toque con **dos dedos** |
 | Rehacer | doble toque con **tres dedos** |
-| Continuar una línea | seleccionarla y elegir **Línea** |
+| Continuar una línea | seleccionarla y pulsar `L` o **Línea**; o **Continue line** en el menú de propiedades |
 | Mover un vértice | herramienta **Nodos**, modo *Mover*, y arrastrar la manija |
 | Insertar un vértice | **Nodos** → *Añadir*, y tocar el borde; o arrastrar un punto medio |
 | Borrar un vértice | **Nodos** → *Borrar*, y tocar la manija; o doble toque en modo *Mover* |
@@ -126,6 +136,9 @@ carga.
 | Unir | seleccionar dos o más y pulsar **Unir** |
 | Compartir vértices | **Topología** (sobre la selección, o sobre todo el dibujo) |
 | Redibujar un contorno | seleccionar, luego **Reshape**: trazar una línea que entre y salga |
+| Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
+| Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
+| Relieve 3D | botón **3D**; con él puesto no se digitaliza |
 | Ir a mi posición | botón **Locate** |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
@@ -156,6 +169,107 @@ explican fallos que parecen aleatorios:
   no hay forma de arrastrar el lazo ni de agarrar una manija con el dedo. El
   precio es que en esas dos herramientas el paneo con un dedo no está
   disponible; se navega con dos, como en el resto de la app.
+
+## Desde un PC
+
+La app nació para tablet, y ese diseño desde un escritorio se vuelve lento:
+cambiar de herramienta obliga a ir hasta la barra y volver, cientos de veces por
+sesión. Sin renunciar a nada del modelo táctil, con teclado y ratón:
+
+- **Atajos de teclado** para todo lo que se usa seguido. La tabla vive en
+  `src/shortcuts.js` y es la **única** fuente de verdad: de ella salen el
+  despachador, la ayuda que abre `?` y los tooltips de la barra. Así no puede
+  pasar que la ayuda anuncie una tecla que ya no hace nada, que es como estas
+  listas se pudren.
+- **Clic fuera y clic secundario cierran** cualquier panel. En tablet eso ya lo
+  resolvía cualquier toque en el mapa; desde un PC se pulsa un botón de la barra
+  superior o el borde de la ventana y el panel se quedaba abierto tapando el
+  mapa.
+- **El ratón previsualiza el enganche.** Antes solo lo hacía el Pencil, que
+  flota sobre la pantalla y reporta posición sin tocar. Con ratón no había
+  ninguna previsualización: el snapping era un salto a ciegas que solo se veía
+  después de hacer clic. El anillo de hover sigue siendo solo del lápiz — con
+  ratón el propio cursor ya dice dónde está.
+- **En Navegar, un clic selecciona.** El camino táctil (`onFingerTap`) solo
+  existe para punteros `touch` no consumidos, así que con ratón nunca se
+  disparaba y había que entrar a **Elegir** para señalar cualquier cosa.
+  **Shift+clic** añade a la selección.
+- Cursor de mano sobre lo que responde al clic, y resalte al pasar por encima de
+  botones y chips (solo con `hover: hover`, para no dejar estados pegados en
+  táctil).
+
+Las teclas se ignoran mientras se escribe en un campo: sin eso, teclear "Lava"
+en el nombre de una unidad cambiaría a la herramienta Línea a mitad de palabra. La
+única excepción es `Esc`, que primero suelta el foco del campo y en la segunda
+pulsación cierra el panel — sin ella, con el cursor dentro de la clave de
+OpenTopography no había forma de cerrar Ajustes con el teclado.
+Y solo se le roban al navegador las combinaciones que él también usa
+(`Ctrl+S`, `Ctrl+Z`, `Ctrl+A`…); quitarle `Ctrl+P` sin necesitarlo sería una
+grosería.
+
+| Tecla | Acción |
+|---|---|
+| `H` | Navegar |
+| `V` | Elegir |
+| `L` | Línea — con una línea seleccionada, la **continúa** |
+| `P` | Polígono |
+| `N` | Nodos (vértices) |
+| `X` | Cortar |
+| `R` | Reshape |
+| `D` | Rumbo y manteo |
+| `F` | Perfil topográfico |
+| `S` · `T` | Snap · Trace |
+| `C` | Rotar la certeza: observado → inferido → cubierto |
+| `3` | Relieve 3D |
+| `G` | Centrar en mi posición |
+| `M` · `Y` | Unir · Topología |
+| `↵` · `⌫` | Cerrar el elemento · deshacer el último vértice |
+| `Esc` | En cascada: cierra panel → descarta el elemento → vacía la selección → vuelve a Navegar |
+| `Del` | Borrar lo seleccionado |
+| `Ctrl+Z` · `Ctrl+Shift+Z` | Deshacer · rehacer |
+| `Ctrl+A` | Seleccionar todo |
+| `Shift+L` · `Shift+U` · `Shift+Y` · `Shift+B` | Capas · Unidades · Símbolos · StraboSpot |
+| `Ctrl+,` | Ajustes |
+| `Ctrl+S` · `Ctrl+O` · `Ctrl+E` | Guardar proyecto · abrir · exportar GeoPackage |
+| `?` · `F1` | Esta lista |
+
+`Esc` va en cascada de lo más superficial a lo más profundo a propósito:
+pulsarlo varias veces desanda el estado sin sorpresas. Un solo `Esc` no debería
+descartar un trazo de veinte vértices solo porque había un panel abierto.
+
+En macOS el modificador es ⌘ y se normaliza al mismo combo, así que no hay dos
+tablas que mantener. Los símbolos ignoran `Shift` deliberadamente: en un teclado
+español `?` ya se escribe con `Shift`, y registrarlo como `Shift+?` lo haría
+inalcanzable en un teclado inglés.
+
+## Continuar una línea
+
+Seleccionar una línea y activar **Línea** no empieza otra: **continúa esa**, por
+el extremo más cercano al primer clic, heredando su tipo, certeza y demás
+atributos. Al cerrar vuelve como un solo elemento, no como dos trozos pegados.
+
+Tres formas de llegar:
+
+1. Seleccionar la línea (clic en **Navegar**, o con **Elegir**) y pulsar `L`.
+2. Seleccionar la línea y pulsar el botón **Línea** de la barra.
+3. Mantener pulsado sobre la línea → **Continue line** en el menú de
+   propiedades.
+
+Mientras está armada, la barra de estado lo dice y **los dos extremos de la
+línea aparecen marcados** en el mapa: el clic siguiente decide por cuál se
+sigue, así que apuntando a uno u otro se elige el sentido.
+
+Esto funcionaba desde el principio pero era invisible, y además fallaba en el
+caso más frecuente: **si ya se estaba en la herramienta Línea**, seleccionar
+otra línea no la marcaba —había que volver a pulsar el botón— y el clic
+siguiente empezaba una línea nueva. Cartografiando no se sale de Línea para
+nada, así que ese era justo el camino que uno recorre. Ahora la marca se rearma
+con cada cambio de selección, salvo si hay un trazo a medias: ahí la selección
+no debe secuestrar lo que se está dibujando.
+
+Se desarma sola al vaciar la selección, al seleccionar dos elementos (es
+ambiguo por cuál seguir), con un polígono (no tiene extremos) y al borrar la
+línea marcada.
 
 ## Snapping y trace
 
@@ -194,11 +308,170 @@ Dos fallos del trace que estaban y ya no:
   dibujado en vez de seguir el borde. Ahora sus segmentos se marcan y el grafo
   los ignora.
 
+## Perfiles topográficos
+
+Con **Perfil** se traza una línea —a toques o a mano alzada, con el mismo gesto
+que cualquier otra— y la app lee la cota del DEM a lo largo de ella. También se
+puede perfilar una línea **ya dibujada**: seleccionarla, mantener pulsado y
+usar *Topographic profile* en el menú de propiedades. Ese es el caso frecuente,
+porque el corte que interesa suele ser justo un contacto o una falla que ya se
+cartografió, y volver a trazarlo a mano introduciría un error propio.
+
+El gráfico se dibuja en una hoja inferior que **no** se cierra al tocar el mapa,
+a diferencia del resto de los paneles: se mira la curva mientras se navega. Al
+arrastrar sobre él, la muestra señalada se marca también en el mapa, que es lo
+que permite ver qué quiebre del perfil cae sobre qué contacto. **CSV** descarga
+distancia, coordenadas y cota de cada muestra.
+
+### De dónde salen las cotas
+
+| Fuente | Resolución | CORS | Sin señal |
+|---|---|---|---|
+| AWS Terrain Tiles (terrarium) | ~30 m | `Allow-Origin: *` | ✅ sobre lo ya cacheado |
+| Copernicus vía OpenTopography | 30 / 90 m | `Allow-Origin: *` | ❌ |
+| Copernicus 30 en S3 (`copernicus-dem-30m`) | 30 m | ❌ preflight 403 | — |
+
+La opción por omisión es la primera y no es pereza: son las **mismas** teselas
+que ya alimentan las curvas de nivel, así que el service worker las tiene
+cacheadas y un perfil sobre una zona que se miró antes de salir se calcula sin
+red. Además responden `Access-Control-Allow-Origin: *`, sin lo cual el canvas
+quedaría contaminado y `getImageData` no podría leer las alturas.
+
+El bucket de Copernicus en S3 se descartó tras comprobarlo: admite lecturas por
+rango —contesta 206— pero no manda cabeceras CORS y su preflight responde 403,
+así que el navegador no puede leerlo sin un proxy propio. Un proxy convertiría
+FieldDraw en una app con backend, que es lo contrario de lo que la hace
+publicable en cualquier hosting estático y usable en terreno. La vía limpia es
+**OpenTopography**, que sí manda CORS; el precio es una clave gratuita y
+depender de la red. Se pide en formato `AAIGrid` —el ASCII grid de ESRI— y no
+GeoTIFF a propósito: es texto plano y evita meter una librería de GeoTIFF de
+varios cientos de KB en `vendor/` para leer un recorte que cabe en memoria.
+
+La clave se guarda en `localStorage` y **no** viaja dentro del `.fdproj.json`:
+un proyecto se manda por correo o se sube a un repositorio como cualquier otro
+archivo del trabajo, y una credencial personal no tiene por qué ir ahí.
+
+### Lo que el perfil no puede decir
+
+La nota bajo el gráfico declara siempre la fuente, su resolución nominal y el
+paso de muestreo, porque un perfil sin eso invita a leer detalle que el dato no
+tiene: sobre un DEM de 30 m, un escalón de 40 m de ancho no existe. Subir el
+número de muestras suaviza la curva, no añade información.
+
+Los desniveles acumulados ignoran los saltos por debajo del error vertical del
+modelo (5 m). Sin ese filtro, un perfil sobre terreno llano acumularía cientos
+de metros de "subida" que solo son ruido. Y el eje vertical tiene un span mínimo
+de 20 m por el mismo motivo: estirar 3 m de ruido hasta llenar el gráfico lo
+haría parecer relieve.
+
+Un tramo sin dato **corta** la curva en vez de saltarlo con una recta: unir los
+dos extremos de un hueco dibujaría una ladera que nadie midió.
+
+## Vista 3D
+
+El botón **3D** enciende terreno real —`setTerrain` sobre el mismo DEM— y el
+dibujo se drapea solo sobre el relieve. La exageración vertical se ajusta en el
+panel de Capas, donde también está el **sombreado** (hillshade), apagado por
+omisión.
+
+Es un modo de **visualización**, y por eso con él puesto las herramientas de
+dibujo quedan deshabilitadas. No es una limitación técnica: sobre terreno
+inclinado, el punto que se toca y el punto del terreno dejan de coincidir como
+en planta, así que digitalizar en 3D produce geometría desplazada sin que se
+note al momento. Activarlo devuelve a **Navegar** y descarta lo que hubiera a
+medias; apagarlo devuelve el dibujo.
+
+Dos advertencias honestas: el terreno sube bastante el coste de render, así que
+conviene probarlo en la tablet real antes de darlo por bueno; y necesita las
+teselas DEM, de modo que fuera de lo ya cacheado el relieve se ve plano.
+
+*Street View no está y no va a estar*: la API de Google es de pago y sus
+términos prohíben este uso, y las alternativas libres (Mapillary, KartaView)
+tienen cobertura prácticamente nula en la cordillera de Ñuble y Biobío, además
+de exigir red — o sea, no funcionarían justo en terreno.
+
+## Rumbo y manteo
+
+**Dip** es la primera herramienta que produce geometría de **punto**: hasta
+aquí el modelo eran líneas y polígonos. Tres métodos, que se eligen en la
+paleta:
+
+| Método | Gesto | De dónde sale el número |
+|---|---|---|
+| **Manual** | un toque | de tu brújula; los valores se escriben en la paleta y se corrigen en el menú de propiedades |
+| **Tres puntos** | tres toques sobre la misma superficie | el problema clásico: tres cotas del DEM definen un plano exacto |
+| **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
+
+Se usa la **regla de la mano derecha**: el manteo cae 90° en sentido horario
+desde el rumbo. Es la misma convención con la que ya se rotan por `Strike` los
+símbolos importados de StraboSpot, así que un afloramiento propio y uno ajeno
+se leen igual, aquí y en QGIS.
+
+El símbolo cambia solo según el manteo: por debajo de 3°, el de **horizontal**
+—círculo con cruz, sin tic— porque un manteo tan bajo medido sobre un DEM de
+30 m no puede afirmar una dirección; por encima de 87°, el de **vertical**, con
+tic a los dos lados. La estratificación admite además **invertida**, que le pone
+un gancho al tic.
+
+### La parte que importa: cuánto vale el número
+
+La matemática es trivial. Lo que no lo es —y es la razón de que `structure.js`
+sea más largo de lo que parece necesario— es decir cuánta confianza merece el
+resultado.
+
+Sobre un DEM de 30 m con varios metros de error vertical, un manteo medido en
+una base de 100 m puede equivocarse en varios grados; en una base de 30 m, en
+decenas. Entregar "32°" sin más sería falsa precisión. Por eso cada medida
+calculada sobre el modelo viaja con:
+
+- **±rumbo y ±manteo**, propagados por Monte Carlo desde el error vertical del
+  DEM. Se hace por simulación y no por derivadas porque el manteo es
+  `atan(|∇z|)`, que deja de ser lineal cerca de la horizontal — justo donde el
+  problema es peor, en las capas de bajo ángulo. El generador es determinista:
+  la misma entrada da siempre el mismo margen, o el número dejaría de ser
+  comprobable.
+- **La base**: su longitud y, sobre todo, su anchura transversal. Si los puntos
+  quedan casi alineados, el plano puede pivotar sobre esa recta y el manteo no
+  está determinado, por muy limpio que salga el ajuste.
+- **El RMS** de los residuos, que delata cuándo los puntos sencillamente no
+  están sobre un mismo plano: superficie plegada, fallada, o la traza se salió
+  del contacto.
+
+Y avisa, en texto y no en un número escondido, cuando la base es más corta que
+dos celdas del DEM, cuando los puntos están casi alineados, cuando la
+incertidumbre pasa de 10°, o cuando el manteo es menor que su propio error —o
+sea, cuando no se puede distinguir de horizontal. Con puntos **exactamente**
+alineados no se entrega ninguna medida: se explica por qué.
+
+Corregir a mano el rumbo o el manteo de una medida calculada la marca como
+*editada* y **retira** las barras de error: eran del ajuste, y mantenerlas
+afirmaría una precisión que el número escrito a mano ya no tiene.
+
+### Exportación
+
+Las medidas salen en una tercera tabla del GeoPackage, `geol_points`, con los
+campos de calidad al lado del dato (`strike_sd`, `dip_sd`, `rms_m`, `n_points`,
+`base_m`, `spread_m`, `dem_source`) — no solo en pantalla: un manteo sacado de
+un DEM sin su incertidumbre termina citado como si fuera de brújula, y en QGIS
+ya no queda forma de saber cuál era cuál. El QML que se escribe en
+`layer_styles` arma el símbolo con dos marcadores de línea y una rotación por
+dato aplicada al **símbolo** entero —no a cada capa, que giraría cada trazo
+sobre su propio centro y dejaría el tic apuntando a cualquier lado.
+
+También se suben a StraboSpot como spots de punto, con `Type`, `Strike` y `Dip`
+en los nombres que espera el plugin de QGIS, más los campos de calidad.
+
+> El round-trip exportar→importar de `geol_points` está cubierto por
+> `test/browser.html`, pero el QML no se ha abierto en una instalación real de
+> QGIS: conviene comprobar ahí la rotación por dato la primera vez que se
+> exporte.
+
 ## GeoPackage
 
 **Exportar** produce un `.gpkg` válido (SQLite con `application_id` GPKG,
-geometrías en GeoPackageBinary + WKB, EPSG:4326) con dos tablas, `geol_lines` y
-`geol_polygons`, y —lo importante— una tabla `layer_styles` con el QML y el SLD
+geometrías en GeoPackageBinary + WKB, EPSG:4326) con tres tablas —`geol_lines`,
+`geol_polygons` y `geol_points` (las medidas de rumbo y manteo)— y —lo
+importante— una tabla `layer_styles` con el QML y el SLD
 generados a partir de la simbología. Al abrirlo en QGIS el mapa aparece ya
 simbolizado, con una regla por combinación tipo × certeza presente en los datos.
 
@@ -764,7 +1037,11 @@ manda, nunca se topó con esto.
 - ✅ Módulo de unidades geológicas, exportadas como `unit` y `code`.
 - ✅ Menú de propiedades: unidad, certeza, opacidad, suavizado y borrado.
 - ✅ Deshacer/rehacer con gestos de dos y tres dedos.
-- ✅ Continuación de una línea existente desde su extremo más cercano.
+- ✅ Continuación de una línea existente desde su extremo más cercano, con los
+  extremos marcados en el mapa y rearme al cambiar la selección.
+- ✅ Atajos de teclado con ayuda integrada (`?`), cierre por clic fuera o clic
+  secundario, previsualización de enganche con ratón y selección con clic en
+  Navegar.
 - ✅ Ornamentos de falla y de pliegue: dientes, tics, medias flechas y flechas
   de eje, con color, tamaño, espaciado y posición editables, y flip por
   elemento (reflejo especular respecto de la traza) en las fallas.
@@ -780,9 +1057,17 @@ manda, nunca se topó con esto.
   ajustable.
 - ✅ Reshape de polígonos y líneas, sin dependencias.
 - ✅ Botón de GPS para centrar el mapa en la posición propia.
+- ✅ Perfiles topográficos sobre el DEM ya cacheado o sobre Copernicus vía
+  OpenTopography, con gráfico interactivo ligado al mapa y exportación a CSV.
+- ✅ Relieve 3D y sombreado desde el mismo DEM, como modo de visualización con
+  el dibujo bloqueado.
+- ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
+  traza, con la incertidumbre propagada desde el error del DEM y los avisos de
+  calidad al lado del número.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
-  pulsar **Topología**), subtipos por categoría, y descarga dirigida de un área
-  de basemap para llevar al terreno (hoy se resuelve importando un PMTiles).
+  pulsar **Topología**), subtipos por categoría, descarga dirigida de un área
+  de basemap para llevar al terreno (hoy se resuelve importando un PMTiles), y
+  lineaciones (hoy solo hay superficies planares: rumbo y manteo, sin cabeceo).
 
 ## Limitaciones conocidas del iPad
 

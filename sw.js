@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v6';
+const VERSION = 'v7';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 const TILES = `fielddraw-tiles-${VERSION}`;
 
@@ -37,6 +37,7 @@ const SHELL = [
 
   './src/app.js',
   './src/basemaps.js',
+  './src/dem.js',
   './src/drawController.js',
   './src/editOps.js',
   './src/geologyStyle.js',
@@ -46,11 +47,15 @@ const SHELL = [
   './src/mapView.js',
   './src/ornaments.js',
   './src/persistence.js',
+  './src/profile.js',
   './src/project.js',
   './src/reshape.js',
+  './src/shortcuts.js',
   './src/simplify.js',
   './src/snapping.js',
   './src/store.js',
+  './src/structure.js',
+  './src/structureSymbols.js',
   './src/symbology.js',
   './src/tiles.js',
   './src/topology.js',

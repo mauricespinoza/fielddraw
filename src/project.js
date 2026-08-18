@@ -28,6 +28,7 @@ export function serializeProject(name = '') {
     features: st.features,
     units: st.units,
     ornaments: st.ornaments,
+    structureStyle: st.structureStyle,
     settings: store.currentSettings(),
     layers: store.currentLayerState(),
   };
@@ -92,6 +93,7 @@ export function parseProject(text) {
       features: sanitizeFeatures(raw.features, warnings),
       units: Array.isArray(raw.units) ? raw.units : null,
       ornaments: raw.ornaments || null,
+      structureStyle: raw.structureStyle || null,
       settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
       layers: Array.isArray(raw.layers) ? raw.layers : null,
     },
@@ -103,13 +105,16 @@ export function parseProject(text) {
  * Descarta lo que no sepamos dibujar y garantiza que cada elemento tenga id:
  * sin id, la selección y la edición de vértices no tienen a qué agarrarse.
  */
+const KIND_BY_GEOMETRY = { Polygon: 'polygon', LineString: 'line', Point: 'point' };
+
 function sanitizeFeatures(list, warnings) {
   const out = [];
   let descartados = 0;
   let sinId = 0;
+  let sinMedida = 0;
   for (const f of list) {
     const g = f && f.geometry;
-    if (!g || (g.type !== 'LineString' && g.type !== 'Polygon') || !Array.isArray(g.coordinates)) {
+    if (!g || !KIND_BY_GEOMETRY[g.type] || !Array.isArray(g.coordinates)) {
       descartados++;
       continue;
     }
@@ -118,11 +123,34 @@ function sanitizeFeatures(list, warnings) {
       props.id = `imp-${out.length}-${Math.random().toString(36).slice(2, 8)}`;
       sinId++;
     }
-    if (!props.kind) props.kind = g.type === 'Polygon' ? 'polygon' : 'line';
+    if (!props.kind) props.kind = KIND_BY_GEOMETRY[g.type];
+
+    /*
+     * Un punto sin rumbo ni manteo no es una medida estructural, y dibujarlo
+     * con el símbolo de estratificación afirmaría una orientación inventada.
+     * Se descarta en vez de admitirlo: es lo único que puede llegar aquí desde
+     * un GeoJSON ajeno con geometría de punto.
+     */
+    if (g.type === 'Point') {
+      if (!Number.isFinite(Number(props.strike)) || !Number.isFinite(Number(props.dip))) {
+        sinMedida++;
+        continue;
+      }
+      props.geomKind = 'measurement';
+      props.strike = Number(props.strike);
+      props.dip = Number(props.dip);
+      props.certainty = 'observed';
+      out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });
+      continue;
+    }
+
     // La certeza se normaliza contra el tipo: un eje de pliegue con "inferido"
     // —de un proyecto viejo o de otra herramienta— no tiene capa donde caer.
     props.certainty = certaintyFor(props.type, props.certainty || 'observed');
     out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });
+  }
+  if (sinMedida) {
+    warnings.push(`${sinMedida} point(s) with no strike/dip were skipped: they are not measurements.`);
   }
   if (descartados) warnings.push(`${descartados} feature(s) with unsupported geometry were skipped.`);
   if (sinId) warnings.push(`${sinId} feature(s) had no id: a new one was assigned.`);

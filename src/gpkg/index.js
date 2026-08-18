@@ -1,8 +1,17 @@
 import { loadVendorScript, vendorUrl } from '../vendorPaths.js';
+import {
+  HORIZONTAL_DIP_MAX,
+  STRUCTURE_TYPES,
+  STRUCTURE_TYPE_BY_ID,
+  VERTICAL_DIP_MIN,
+} from '../symbology.js';
+import { formatStrikeDip } from '../structure.js';
 import { decodeGeoPackageBinary, encodeGeoPackageBinary, envelopeOf } from './wkb.js';
 import {
   buildLineQML,
   buildLineSLD,
+  buildPointQML,
+  buildPointSLD,
   buildPolygonQML,
   buildPolygonSLD,
   comboLabel,
@@ -122,6 +131,27 @@ CREATE TABLE geol_polygons (
   note TEXT,
   created_at TEXT
 );
+
+CREATE TABLE geol_points (
+  fid INTEGER PRIMARY KEY AUTOINCREMENT,
+  geom POINT,
+  type TEXT,
+  strike REAL,
+  dip REAL,
+  dip_dir REAL,
+  overturned INTEGER,
+  method TEXT,
+  strike_sd REAL,
+  dip_sd REAL,
+  rms_m REAL,
+  n_points INTEGER,
+  base_m REAL,
+  spread_m REAL,
+  dem_source TEXT,
+  label TEXT,
+  note TEXT,
+  created_at TEXT
+);
 `;
 
 function combosPresent(features, units) {
@@ -175,12 +205,23 @@ export async function exportGeoPackage(features, units, ornaments) {
 
     const lines = features.filter((f) => f.geometry.type === 'LineString');
     const polys = features.filter((f) => f.geometry.type === 'Polygon');
+    // Solo los puntos que SON una medida: cualquier otro punto que hubiera
+    // llegado por un GeoJSON ajeno no tiene rumbo que exportar.
+    const points = features.filter(
+      (f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement',
+    );
+
+    // Tipos de superficie realmente presentes, para que la leyenda de QGIS no
+    // traiga categorías vacías.
+    const tiposMedidos = STRUCTURE_TYPES.filter((t) => points.some((p) => p.properties.type === t.id));
 
     const tables = [
       {
         name: 'geol_lines',
         geomType: 'LINESTRING',
         rows: lines,
+        columns: ['type', 'certainty', 'label', 'note', 'created_at'],
+        valuesOf: (p) => [p.type, p.certainty, comboLabel(p.type, p.certainty), p.note || null],
         qml: buildLineQML(combosPresent(lines), ornaments),
         sld: buildLineSLD(combosPresent(lines), ornaments),
         identifier: 'Contactos, fallas, pliegues y diques',
@@ -189,9 +230,58 @@ export async function exportGeoPackage(features, units, ornaments) {
         name: 'geol_polygons',
         geomType: 'POLYGON',
         rows: polys,
+        columns: ['type', 'unit', 'code', 'certainty', 'label', 'note', 'created_at'],
+        valuesOf: (p) => [
+          p.type,
+          p.unit || '',
+          p.code || '',
+          p.certainty,
+          [p.unit || '', p.code ? `(${p.code})` : ''].filter(Boolean).join(' ') ||
+            comboLabel(p.type, p.certainty),
+          p.note || null,
+        ],
         qml: buildPolygonQML(combosPresent(polys, units), units),
         sld: buildPolygonSLD(combosPresent(polys, units)),
         identifier: 'Unidades de mapa',
+      },
+      {
+        name: 'geol_points',
+        geomType: 'POINT',
+        rows: points,
+        columns: [
+          'type', 'strike', 'dip', 'dip_dir', 'overturned', 'method',
+          'strike_sd', 'dip_sd', 'rms_m', 'n_points', 'base_m', 'spread_m',
+          'dem_source', 'label', 'note', 'created_at',
+        ],
+        /*
+         * Los campos de calidad se exportan junto al dato y no solo se muestran
+         * en la app: un manteo calculado sobre un DEM sin su incertidumbre al
+         * lado termina citado como si fuera de brújula, y en QGIS ya no queda
+         * forma de saber cuál era cuál.
+         */
+        valuesOf: (p) => [
+          p.type,
+          p.strike ?? null,
+          p.dip ?? null,
+          p.dipAzimuth ?? null,
+          p.overturned ? 1 : 0,
+          p.method || 'manual',
+          p.strikeSd ?? null,
+          p.dipSd ?? null,
+          p.rms ?? null,
+          p.n ?? null,
+          p.baseline ?? null,
+          p.minorSpread ?? null,
+          p.demSource || null,
+          `${STRUCTURE_TYPE_BY_ID.get(p.type)?.label || p.type} ${formatStrikeDip(p.strike, p.dip)}`,
+          p.note || null,
+        ],
+        qml: buildPointQML(tiposMedidos, {
+          horizontalMax: HORIZONTAL_DIP_MAX,
+          verticalMin: VERTICAL_DIP_MIN,
+        }),
+        sld: buildPointSLD(tiposMedidos),
+        identifier: 'Medidas de rumbo y manteo',
       },
     ];
 
@@ -207,29 +297,20 @@ export async function exportGeoPackage(features, units, ornaments) {
         [t.name, t.geomType],
       );
 
-      const isPoly = t.name === 'geol_polygons';
+      const marcadores = t.columns.map(() => '?').join(', ');
       const stmt = db.prepare(
-        isPoly
-          ? `INSERT INTO ${t.name} (geom, type, unit, code, certainty, label, note, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-          : `INSERT INTO ${t.name} (geom, type, certainty, label, note, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${t.name} (geom, ${t.columns.join(', ')}) VALUES (?, ${marcadores})`,
       );
       for (const f of t.rows) {
         const p = f.properties;
-        const geom = encodeGeoPackageBinary(f.geometry, 4326);
-        const label = isPoly
-          ? [p.unit || '', p.code ? `(${p.code})` : ''].filter(Boolean).join(' ') ||
-            comboLabel(p.type, p.certainty)
-          : comboLabel(p.type, p.certainty);
         const created = new Date(p.createdAt || Date.now()).toISOString();
-        stmt.run(
-          isPoly
-            ? [geom, p.type, p.unit || '', p.code || '', p.certainty, label, p.note || null, created]
-            : [geom, p.type, p.certainty, label, p.note || null, created],
-        );
+        stmt.run([encodeGeoPackageBinary(f.geometry, 4326), ...t.valuesOf(p), created]);
       }
       stmt.free();
+
+      // Una tabla vacía no lleva estilo: un QML sin reglas no describe nada y
+      // al releerlo el importador avisaría de que no pudo interpretarlo.
+      if (t.rows.length === 0) continue;
 
       db.run(
         `INSERT INTO layer_styles
@@ -295,7 +376,7 @@ async function makeReprojector(db, srsId, warnings) {
     };
   } catch (err) {
     warnings.push(
-      `Could not reproject from EPSG:${srsId} (${err.message}). The layer is loadedrá con sus coordenadas originales y probablemente no calce con el mapa.`,
+      `Could not reproject from EPSG:${srsId} (${err.message}). The layer is loaded with its original coordinates and will probably not line up with the map.`,
     );
     return null;
   }
@@ -385,10 +466,10 @@ export async function importGeoPackage(arrayBuffer) {
             style = parseQML(st.styleQML);
             for (const w of style.warnings) warnings.push(`"${table}": ${w}`);
           } catch (err) {
-            warnings.push(`"${table}": could not read the QML (${err.message}); the default style will beefecto.`);
+            warnings.push(`"${table}": could not read the QML (${err.message}); the default style is used instead.`);
           }
         } else if (st && st.styleSLD) {
-          warnings.push(`"${table}": the layer only carries SLD; not interpreted yet, using the default defecto.`);
+          warnings.push(`"${table}": the layer only carries SLD, which is not interpreted yet; the default style is used instead.`);
         }
       }
 

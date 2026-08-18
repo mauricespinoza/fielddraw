@@ -91,8 +91,47 @@ console.log('== acepta un GeoJSON pelado ==');
   ok('carga solo la geometría dibujable', project.features.length === 1);
   ok('les asigna id', !!project.features[0].properties.id);
   ok('les pone certeza por defecto', project.features[0].properties.certainty === 'observed');
-  ok('avisa de lo descartado', warnings.some((w) => /unsupported/.test(w)));
+  // Un punto pelado no es una medida: dibujarlo con el símbolo de
+  // estratificación afirmaría un rumbo que el archivo no trae.
+  ok('avisa de que el punto sin rumbo/manteo se descartó',
+    warnings.some((w) => /not measurements/.test(w)), warnings.join(' | '));
   ok('avisa de que era un GeoJSON', warnings.some((w) => /GeoJSON/.test(w)));
+}
+
+console.log('== medidas estructurales ==');
+{
+  const fc = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: { strike: 45, dip: 32, type: 'bedding' },
+        geometry: { type: 'Point', coordinates: [-71.4, -37.2] },
+      },
+    ],
+  };
+  const { project } = parseProject(JSON.stringify(fc));
+  ok('un punto con rumbo y manteo sí se carga', project.features.length === 1);
+  const p = project.features[0].properties;
+  ok('se marca como medida', p.geomKind === 'measurement');
+  ok('los números llegan como números', p.strike === 45 && p.dip === 32);
+  ok('una medida es siempre observada', p.certainty === 'observed');
+
+  // Strings numéricos (vienen así de más de un GeoPackage) no deben perderse.
+  const conTexto = parseProject(
+    JSON.stringify({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { strike: '120', dip: '15' },
+          geometry: { type: 'Point', coordinates: [0, 0] },
+        },
+      ],
+    }),
+  );
+  ok('acepta rumbo/manteo escritos como texto',
+    conTexto.project.features.length === 1 && conTexto.project.features[0].properties.strike === 120);
 }
 
 console.log('== nombre de archivo ==');

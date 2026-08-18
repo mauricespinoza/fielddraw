@@ -7,16 +7,20 @@ import {
   renderPointerInfo,
   showBanner,
   wireLocate,
+  wireMapView,
 } from './ui.js';
 import { openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedFeatures,
+  loadSavedOpenTopoKey,
   loadSavedOrnaments,
   loadSavedStraboStyle,
+  loadSavedStructureStyle,
   loadSavedUnits,
   saveFeatures,
   saveOrnaments,
   saveStraboStyle,
+  saveStructureStyle,
   saveUnits,
 } from './persistence.js';
 
@@ -33,6 +37,9 @@ const view = createMapView({
 });
 
 wireLocate(() => view.locateMe());
+// La interfaz necesita el mapa para encuadrar la traza de un perfil pedido
+// desde el menú de propiedades; `createMapView` no existe hasta aquí.
+wireMapView(view);
 
 // Restaurar el trabajo previo. Las unidades primero: los polígonos guardados
 // referencian sus ids, y sin ellas se dibujarían con el color por defecto.
@@ -40,8 +47,14 @@ const savedUnits = loadSavedUnits();
 if (savedUnits) store.loadUnits(savedUnits);
 const savedOrnaments = loadSavedOrnaments();
 if (savedOrnaments) store.setOrnaments(savedOrnaments);
+const savedStructureStyle = loadSavedStructureStyle();
+if (savedStructureStyle) store.setStructureStyle(savedStructureStyle);
 const savedStraboStyle = loadSavedStraboStyle();
 if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
+// La clave de OpenTopography es del dispositivo, no del proyecto: se recupera
+// aquí y no se toca al abrir un .fdproj.
+const savedOpenTopoKey = loadSavedOpenTopoKey();
+if (savedOpenTopoKey) store.setOpenTopoKey(savedOpenTopoKey);
 const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
 
@@ -50,16 +63,11 @@ let saveTimer = null;
 store.subscribe(() => {
   if (store.changed('units')) saveUnits(store.getState().units);
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
+  if (store.changed('structureStyle')) saveStructureStyle(store.getState().structureStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);
-});
-
-// Escape cierra cualquier panel flotante esté donde esté el foco: el menú de
-// propiedades, el de atributos de StraboSpot, o cualquier otro popover.
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeOverlays();
 });
 
 /*

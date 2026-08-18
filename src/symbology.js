@@ -38,6 +38,71 @@ export const POLYGON_TYPES = [
   { id: 'alteration-zone', label: 'Alteration zone', color: '#A1887F' },
 ];
 
+/**
+ * Superficies planares que se miden con rumbo y manteo.
+ *
+ * Deliberadamente corta: son las cuatro que se anotan en una jornada normal de
+ * cartografía. Cada una lleva su color porque en un afloramiento con
+ * estratificación y foliación superpuestas hay que distinguirlas de un vistazo,
+ * y el símbolo de ambas es el mismo trazo con su tic.
+ */
+export const STRUCTURE_TYPES = [
+  { id: 'bedding', short: 'S₀', label: 'Bedding', color: '#212121' },
+  { id: 'foliation', short: 'S₁', label: 'Foliation / cleavage', color: '#2E7D32' },
+  { id: 'joint', short: 'Jnt', label: 'Joint', color: '#1565C0' },
+  { id: 'fault-plane', short: 'Flt', label: 'Fault plane', color: '#D32F2F' },
+];
+
+export const STRUCTURE_TYPE_BY_ID = new Map(STRUCTURE_TYPES.map((t) => [t.id, t]));
+
+/**
+ * Umbrales de las variantes del símbolo.
+ *
+ * No son adorno: un manteo de 2° medido sobre un DEM de 30 m es
+ * indistinguible de cero, y dibujarle un tic apuntando a algún lado afirma una
+ * dirección de manteo que el dato no sostiene. Por debajo de `HORIZONTAL_DIP_MAX`
+ * se dibuja el símbolo de horizontal, que no tiene dirección; por encima de
+ * `VERTICAL_DIP_MIN`, el de vertical, que tiene tic a los dos lados.
+ */
+export const HORIZONTAL_DIP_MAX = 3;
+export const VERTICAL_DIP_MIN = 87;
+
+/** Variante del símbolo que le toca a una medida. */
+export function structureVariant(dip, overturned = false) {
+  if (!Number.isFinite(dip)) return 'inclined';
+  if (dip <= HORIZONTAL_DIP_MAX) return 'horizontal';
+  if (dip >= VERTICAL_DIP_MIN) return 'vertical';
+  return overturned ? 'overturned' : 'inclined';
+}
+
+export const STRUCTURE_VARIANTS = ['inclined', 'vertical', 'horizontal', 'overturned'];
+
+export const STRUCTURE_SIZE_LIMITS = { min: 0.5, max: 2.5, step: 0.1 };
+
+/**
+ * El zoom mínimo existe para que a escala regional el mapa no se convierta en
+ * una alfombra de símbolos. Pero tiene que quedar POR DEBAJO del zoom al que
+ * arranca la app (11,5): con el valor anterior —12— la primera medida que
+ * alguien tomaba no aparecía en pantalla, y eso no se lee como "está fuera de
+ * escala", se lee como "no funciona".
+ */
+export function defaultStructureStyle() {
+  return { size: 1, showLabels: true, minzoom: 10 };
+}
+
+export function sanitizeStructureStyle(raw) {
+  const out = defaultStructureStyle();
+  if (!raw || typeof raw !== 'object') return out;
+  const size = Number(raw.size);
+  if (Number.isFinite(size)) {
+    out.size = Math.min(STRUCTURE_SIZE_LIMITS.max, Math.max(STRUCTURE_SIZE_LIMITS.min, size));
+  }
+  const minzoom = Number(raw.minzoom);
+  if (Number.isFinite(minzoom)) out.minzoom = Math.min(18, Math.max(0, Math.round(minzoom)));
+  if (typeof raw.showLabels === 'boolean') out.showLabels = raw.showLabels;
+  return out;
+}
+
 /** `dash` va en múltiplos del ancho de línea, que es como lo lee MapLibre. */
 export const CERTAINTIES = [
   { id: 'observed', short: 'Obs', label: 'Observed', dash: null, cap: 'round' },

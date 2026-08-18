@@ -77,6 +77,14 @@
           <span>Polygon</span>
         </button>
 
+        <button class="tool" id="t-measure" title="Strike and dip: by compass, from three points, or fitted to a trace">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M6 20 18 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <path d="M12 12l5.5 3.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+          <span>Dip</span>
+        </button>
+
         <button class="tool" id="t-select" title="Select features">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M5 3.5 18.5 11 12.5 12.8 10 19z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
@@ -156,6 +164,23 @@
 
         <div class="tool-sep"></div>
 
+        <button class="tool" id="t-profile" title="Draw a line and read its topographic profile off the DEM">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M2.5 17.5 7 9.5l3.5 4.5L15 4l6.5 13.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+            <path d="M2.5 20.5h19" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          <span>Profile</span>
+        </button>
+        <button class="tool" id="t-3d" title="3D terrain — a viewing mode: drawing is disabled while it is on">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M12 2.8 21 8v8l-9 5.2L3 16V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <path d="M3 8l9 5.2L21 8M12 13.2v8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+          </svg>
+          <span>3D</span>
+        </button>
+
+        <div class="tool-sep"></div>
+
         <button class="tool" id="t-locate" title="Centre the map on your GPS position">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8" />
@@ -221,6 +246,7 @@
         <button class="pill" id="btn-settings">Settings</button>
         <button class="pill" id="btn-import">Import</button>
         <button class="pill" id="btn-export" disabled>Export</button>
+        <button class="pill" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨</button>
         <input type="file" id="file-gpkg" accept=".gpkg,.geopackage,.mbtiles,.pmtiles" hidden />
         <input type="file" id="file-project" accept=".json,.fdproj,.geojson" hidden />
       </div>
@@ -265,6 +291,20 @@
           is inserted there. Undoable in one step.
         </p>
         <button class="pill wide" id="topo-apply">Apply</button>
+      </div>
+
+      <!-- Se rellena desde la tabla de src/shortcuts.js, para que no pueda
+           anunciar una tecla que ya no hace nada. -->
+      <div class="dropdown shortcuts hidden" id="shortcuts">
+        <header>
+          <h2>Keyboard shortcuts</h2>
+          <button class="icon-btn" id="btn-close-shortcuts" aria-label="Close">✕</button>
+        </header>
+        <div id="shortcuts-body"></div>
+        <p class="hint footnote">
+          Keys are ignored while you are typing in a field. Right-click, or a click outside,
+          closes any open panel.
+        </p>
       </div>
 
       <div class="props-menu hidden" id="props-menu">
@@ -393,6 +433,34 @@
         </p>
         <ul id="symbology-list"></ul>
         <button class="pill wide" id="btn-reset-symbology">Reset to defaults</button>
+
+        <hr class="sep" />
+
+        <h2 class="panel-subhead">Strike and dip symbols</h2>
+        <p class="hint">
+          The strike bar is drawn along the measured strike and the tick points down-dip
+          (right-hand rule), so the symbol reads the same here, in QGIS and in StraboSpot. Below
+          3° the horizontal symbol is used and the tick disappears: a dip that small cannot state
+          a direction. Above 87° the vertical one, with a tick on both sides.
+        </p>
+        <label class="field">
+          <span>Symbol size</span>
+          <span class="tol-row">
+            <input type="range" id="structure-size" min="0.5" max="2.5" step="0.1" value="1" />
+            <span class="num" id="structure-size-num">1.0×</span>
+          </span>
+        </label>
+        <label class="field">
+          <span>Hide below zoom</span>
+          <span class="tol-row">
+            <input type="range" id="structure-minzoom" min="0" max="18" step="1" value="10" />
+            <span class="num" id="structure-minzoom-num">10</span>
+          </span>
+        </label>
+        <label class="row">
+          <input type="checkbox" id="structure-labels" checked />
+          Write the dip next to each symbol
+        </label>
       </aside>
 
       <aside class="layer-panel" id="layer-panel">
@@ -403,6 +471,26 @@
         <p class="hint">Top to bottom, exactly as they are drawn on the map.</p>
         <ul id="layer-list"></ul>
         <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
+
+        <hr class="sep" />
+
+        <label class="row">
+          <input type="checkbox" id="opt-terrain" />
+          3D terrain
+          <span class="sub">
+            Real relief off the same DEM as the contour lines, with the drawing draped over it.
+            It is a <strong>viewing</strong> mode: while it is on, digitising is disabled, because
+            on tilted terrain the point you touch and the point on the ground no longer line up
+            the way they do in plan view. Off the tiles already cached it renders flat, and on an
+            older tablet it costs noticeably more to draw.
+          </span>
+        </label>
+
+        <label class="row column">
+          <span>Vertical exaggeration: <strong id="terrain-exag-value">1.4×</strong></span>
+          <input type="range" id="opt-terrain-exag" min="0.5" max="3" step="0.1" value="1.4" />
+          <span class="sub">1× is the real relief; above 2× the slopes are a caricature.</span>
+        </label>
       </aside>
 
       <div class="settings hidden" id="settings">
@@ -473,8 +561,68 @@
           <label><input type="radio" name="cutsrc" id="cut-feature" /> An existing feature</label>
         </fieldset>
 
+        <fieldset>
+          <legend>Elevation source (profiles)</legend>
+          <label>
+            <input type="radio" name="demsrc" id="dem-terrarium" checked />
+            AWS Terrain Tiles (~30 m)
+          </label>
+          <span class="sub">
+            The same tiles that draw the contour lines, so a profile over ground you looked at
+            before heading out works <strong>with no signal</strong>.
+          </span>
+          <label>
+            <input type="radio" name="demsrc" id="dem-opentopo" />
+            Copernicus via OpenTopography
+          </label>
+          <span class="sub">
+            Better and more recent data, but it needs a free API key and a live connection — it
+            does <strong>not</strong> work in the field.
+          </span>
+        </fieldset>
+
+        <label class="row column">
+          <span>OpenTopography model</span>
+          <select id="opt-opentopo-dem"></select>
+        </label>
+
+        <label class="row column">
+          <span>OpenTopography API key</span>
+          <input type="text" id="opt-opentopo-key" placeholder="Paste your key" autocomplete="off" spellcheck="false" />
+          <span class="sub">
+            Free from <span class="mono" id="opentopo-signup"></span>. It is kept on this device
+            only: it never travels inside a project file.
+          </span>
+        </label>
+
+        <label class="row column">
+          <span>Profile samples: <strong id="profile-samples-value">200</strong></span>
+          <input type="range" id="opt-profile-samples" min="50" max="600" step="25" value="200" />
+          <span class="sub">
+            Points read along the line. More samples do not add detail beyond the DEM's own
+            resolution; they only smooth the curve.
+          </span>
+        </label>
+
         <button class="pill wide" id="btn-export-geojson">Also export to GeoJSON</button>
         <button class="pill danger wide" id="btn-clear">Delete the whole drawing</button>
+      </div>
+
+      <!-- Hoja del perfil. A propósito NO entra en `closeOverlays`: se mira el
+           gráfico mientras se navega el mapa, y cerrarla al tocar el mapa haría
+           imposible justamente eso. Se cierra con su botón. -->
+      <div class="profile-sheet hidden" id="profile-sheet">
+        <header>
+          <h2>Topographic profile</h2>
+          <span class="pf-source" id="profile-source-label"></span>
+          <button class="pill" id="btn-profile-csv">CSV</button>
+          <button class="icon-btn" id="btn-close-profile" aria-label="Close profile">✕</button>
+        </header>
+        <div class="pf-chart-wrap">
+          <svg id="profile-chart" class="pf-chart" preserveAspectRatio="none" aria-label="Elevation along the drawn line"></svg>
+        </div>
+        <div class="pf-stats" id="profile-stats"></div>
+        <p class="hint footnote" id="profile-note"></p>
       </div>
 
       <div class="statusbar">

@@ -109,6 +109,18 @@ export function pickFeature(features, screen, project, tolerance) {
   let best = null;
   for (const f of features) {
     if (!f.geometry) continue;
+
+    // Los puntos —las medidas de rumbo y manteo— no tienen anillos: se
+    // resuelven por distancia directa. El símbolo es alto y estrecho, así que
+    // se les da algo más de margen que a una línea, o habría que apuntar
+    // justo al trazo de rumbo para seleccionarlos.
+    if (f.geometry.type === 'Point') {
+      const q = project(f.geometry.coordinates);
+      const dist = Math.hypot(screen[0] - q.x, screen[1] - q.y);
+      if (dist <= tolerance + 6 && (!best || dist < best.dist)) best = { feature: f, dist };
+      continue;
+    }
+
     const rings = ringsOf(f.geometry).map((r) => ({
       ...r,
       pts: r.coords.map((c) => {

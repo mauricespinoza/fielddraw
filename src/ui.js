@@ -8,11 +8,41 @@ import {
   LINE_TYPE_BY_ID,
   ORNAMENT_LIMITS,
   ORNAMENT_TYPES,
+  STRUCTURE_TYPES,
+  STRUCTURE_TYPE_BY_ID,
   effectiveLineColor,
   isObservedOnly,
 } from './symbology.js';
+import {
+  DEM_METHODS,
+  MEASURE_METHODS,
+  METHOD_BY_ID,
+  formatStrikeDip,
+  planeFromPoints,
+  quadrant,
+} from './structure.js';
 import { chaikin, simplifyDP } from './simplify.js';
-import { downloadBlob, downloadGeoJSON } from './persistence.js';
+import {
+  DemSampler,
+  OPENTOPO_DEMS,
+  OPENTOPO_DEM_BY_ID,
+  OPENTOPO_SIGNUP,
+  OpenTopoSampler,
+  TERRARIUM_NOMINAL_M,
+} from './dem.js';
+import {
+  formatDistance,
+  formatElevation,
+  indexAtDistance,
+  profileCSV,
+  renderProfileChart,
+} from './profile.js';
+import {
+  downloadBlob,
+  downloadGeoJSON,
+  downloadText,
+  saveOpenTopoKey,
+} from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { MBTILES_WARN_BYTES, openTileFile } from './tiles.js';
 import {
@@ -24,6 +54,15 @@ import {
 } from './editOps.js';
 import { openProject, parseProject, saveProject } from './project.js';
 import { initStraboPanel } from './strabo/panel.js';
+import {
+  SHORTCUTS,
+  SHORTCUT_GROUPS,
+  comboLabel,
+  consumesDefault,
+  isTyping,
+  labelsFor,
+  shortcutFor,
+} from './shortcuts.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +115,46 @@ function chip({ label, title, color, dash, swatch, glyph, active, disabled, onCl
   return b;
 }
 
+/** Grupo etiquetado dentro de la paleta; devuelve el contenedor de los chips. */
+function paletteGroup(parent, label) {
+  const group = document.createElement('div');
+  group.className = 'palette-group';
+  const l = document.createElement('span');
+  l.className = 'palette-label';
+  l.textContent = label;
+  group.appendChild(l);
+  const row = document.createElement('div');
+  row.className = 'palette-row';
+  group.appendChild(row);
+  parent.appendChild(group);
+  return row;
+}
+
+/**
+ * Campo numérico compacto para la paleta. Emite en `input` y no en `change`
+ * para que el número que se escribe con brújula ya esté puesto cuando el dedo
+ * va al mapa a colocar la medida.
+ */
+function numberField(label, value, { min, max, step }, onInput) {
+  const wrap = document.createElement('label');
+  wrap.className = 'palette-number';
+  const l = document.createElement('span');
+  l.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(Math.round(value * 10) / 10);
+  input.inputMode = 'decimal';
+  input.addEventListener('input', () => {
+    const v = Number(input.value);
+    if (Number.isFinite(v)) onInput(v);
+  });
+  wrap.append(l, input);
+  return wrap;
+}
+
 /* ---------- paleta de tipos ---------- */
 
 /** Modos de la herramienta Nodos, con su glifo y su ayuda. */
@@ -117,8 +196,72 @@ function buildPalette() {
     return;
   }
 
+  // Rumbo y manteo: método, superficie medida y, con brújula, los números.
+  if (s.tool === 'measure') {
+    el.classList.remove('hidden');
+    const scroll = document.createElement('div');
+    scroll.className = 'palette-scroll';
+
+    const metodos = paletteGroup(scroll, 'Method');
+    for (const m of MEASURE_METHODS) {
+      metodos.appendChild(
+        chip({
+          label: m.short,
+          title: m.help,
+          glyph: m.glyph,
+          active: s.measureMethod === m.id,
+          onClick: () => store.setMeasureMethod(m.id),
+        }),
+      );
+    }
+
+    const tipos = paletteGroup(scroll, 'Surface');
+    for (const t of STRUCTURE_TYPES) {
+      tipos.appendChild(
+        chip({
+          label: t.short,
+          title: t.label,
+          color: t.color,
+          swatch: true,
+          active: s.measureType === t.id,
+          onClick: () => store.setMeasureType(t.id),
+        }),
+      );
+    }
+
+    // Invertido solo aplica a la estratificación: una foliación o una diaclasa
+    // no tienen techo y muro que se puedan haber dado vuelta.
+    if (s.measureType === 'bedding') {
+      const inv = paletteGroup(scroll, 'Younging');
+      inv.appendChild(
+        chip({
+          label: 'Overturned',
+          title: 'Beds are upside down: the tick gets a hook back',
+          glyph: '⤣',
+          active: s.measureOverturned,
+          onClick: () => store.setMeasureOverturned(!s.measureOverturned),
+        }),
+      );
+    }
+
+    if (s.measureMethod === 'manual') {
+      const nums = paletteGroup(scroll, 'Compass');
+      nums.appendChild(
+        numberField('Strike', s.manualStrike, { min: 0, max: 359.9, step: 1 }, (v) =>
+          store.setManualStrike(v),
+        ),
+      );
+      nums.appendChild(
+        numberField('Dip', s.manualDip, { min: 0, max: 90, step: 1 }, (v) => store.setManualDip(v)),
+      );
+    }
+
+    el.appendChild(scroll);
+    return;
+  }
+
   // Estas herramientas no crean elementos, así que no hay tipo que escoger.
-  if (['navigate', 'select', 'cut', 'reshape'].includes(s.tool)) {
+  if (['navigate', 'select', 'cut', 'reshape', 'profile'].includes(s.tool)) {
     el.classList.add('hidden');
     return;
   }
@@ -467,8 +610,31 @@ export function openPropsMenu(screen) {
 
   const polys = sel.filter((f) => f.geometry.type === 'Polygon');
   const lines = sel.filter((f) => f.geometry.type === 'LineString');
+  const medidas = sel.filter((f) => f.properties.geomKind === 'measurement');
   $('props-title').textContent =
     sel.length === 1 ? '1 feature selected' : `${sel.length} features selected`;
+
+  /*
+   * Una medida sola se lleva el menú entero: sus dos números son lo único que
+   * se edita, y las secciones de línea y polígono (certeza, unidad, suavizar,
+   * cerrar contorno) no significan nada sobre un punto.
+   */
+  if (medidas.length === 1 && sel.length === 1) {
+    $('props-title').textContent = `${STRUCTURE_TYPE_BY_ID.get(medidas[0].properties.type)?.label || 'Measurement'} ${formatStrikeDip(medidas[0].properties.strike, medidas[0].properties.dip)}`;
+    measurementSection(body, medidas[0], () => openPropsMenu(screen));
+
+    const del = document.createElement('button');
+    del.className = 'pill danger wide';
+    del.textContent = 'Delete measurement';
+    del.addEventListener('click', () => {
+      store.deleteSelected();
+      closePropsMenu();
+    });
+    body.appendChild(del);
+
+    positionPropsMenu(menu, screen);
+    return;
+  }
 
   // Editar nodos: el atajo natural desde aquí, ya que la selección ya acota
   // sobre qué geometrías se muestran las manijas. Los tres modos entran por la
@@ -649,6 +815,42 @@ export function openPropsMenu(screen) {
 
   geo.appendChild(geoRow);
 
+  /*
+   * Continuar la línea. Existía desde siempre —seleccionar una línea y pulsar
+   * **Línea** la sigue en vez de empezar otra— pero no había forma de
+   * enterarse: ningún botón lo nombraba y nada en pantalla lo anunciaba. Aquí
+   * queda a un clic del sitio donde uno ya está mirando el elemento.
+   */
+  if (lines.length === 1 && polys.length === 0 && medidas.length === 0) {
+    const seguir = document.createElement('button');
+    seguir.className = 'chip';
+    seguir.textContent = 'Continue line';
+    seguir.title =
+      'Carry on drawing from one of its ends — the next click picks which end, and the attributes are inherited';
+    seguir.addEventListener('click', () => {
+      closePropsMenu();
+      store.setTool('line');
+    });
+    geoRow.appendChild(seguir);
+  }
+
+  // Perfil de una línea que ya está en el mapa. Es el caso más útil de todos:
+  // el corte que interesa suele ser justo un contacto o una falla que ya se
+  // cartografió, y volver a trazarlo a mano introduciría un error propio.
+  if (lines.length === 1) {
+    const perfil = section(body, 'Terrain');
+    const btn = document.createElement('button');
+    btn.className = 'pill wide';
+    btn.textContent = 'Topographic profile';
+    btn.title = 'Read the elevation along this line off the DEM';
+    btn.addEventListener('click', () => {
+      closePropsMenu();
+      if (mapBridge) mapBridge.fitToCoords(lines[0].geometry.coordinates);
+      store.requestProfileFor(lines[0].properties.id);
+    });
+    perfil.appendChild(btn);
+  }
+
   // Borrar
   const del = document.createElement('button');
   del.className = 'pill danger wide';
@@ -659,7 +861,11 @@ export function openPropsMenu(screen) {
   });
   body.appendChild(del);
 
-  // Posicionar cerca del toque, sin salirse de la pantalla.
+  positionPropsMenu(menu, screen);
+}
+
+/** Coloca el menú cerca del toque, sin salirse de la pantalla. */
+function positionPropsMenu(menu, screen) {
   menu.classList.remove('hidden');
   const rect = menu.getBoundingClientRect();
   const x = Math.min(Math.max(12, screen[0] - rect.width / 2), window.innerWidth - rect.width - 12);
@@ -685,7 +891,75 @@ export function closePropsMenu() {
 /** Cajones laterales: solo uno abierto a la vez. */
 const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'strabo-attrs'];
+const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'strabo-attrs', 'shortcuts'];
+
+/**
+ * Elementos que NO cuentan como "fuera" al cerrar por clic.
+ *
+ * Sin la barra superior, pulsar **Capas** con el panel de Capas abierto se
+ * comería el clic: primero lo cerraría este manejador y después el botón lo
+ * volvería a abrir, o al revés según el orden. La hoja del perfil va aquí por
+ * otro motivo —no se cierra al tocar el mapa a propósito— y la barra de
+ * herramientas porque cambiar de herramienta no debería cerrar el panel que se
+ * está consultando.
+ */
+const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet'];
+
+/**
+ * Cierra los paneles al hacer clic fuera de ellos.
+ *
+ * En tablet esto ya lo resolvía `onMapTap`, porque cualquier toque cae sobre el
+ * mapa. Desde un PC no: se pulsa un botón de la barra superior, o el borde de
+ * la ventana, y el panel se quedaba abierto tapando el mapa.
+ *
+ * Va en captura y sobre `pointerdown` —no sobre `click`— para que cierre antes
+ * de que el elemento de debajo reaccione, que es lo que uno espera de un
+ * popover.
+ */
+function wireClickOutside() {
+  const dentroDeAlgoAbierto = (target) => {
+    for (const id of [...DRAWERS, ...POPOVERS, 'props-menu', ...CLICK_OUTSIDE_EXEMPT]) {
+      const el = $(id);
+      if (el && el.contains(target)) return true;
+    }
+    // El menú superior abre y cierra sus propios paneles.
+    const top = document.querySelector('.top-right');
+    return !!(top && top.contains(target));
+  };
+
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!anyOverlayOpen() || dentroDeAlgoAbierto(e.target)) return;
+      closeOverlays();
+    },
+    { capture: true },
+  );
+
+  /*
+   * Clic secundario: cierra siempre, esté donde esté. Sobre el mapa el menú
+   * contextual ya lo suprime DrawController —el clic derecho cierra el
+   * elemento en curso, como en QGIS—, así que aquí solo se añade el cierre de
+   * paneles, sin tocar el menú nativo fuera del mapa.
+   */
+  document.addEventListener(
+    'contextmenu',
+    (e) => {
+      if (!anyOverlayOpen()) return;
+      closeOverlays();
+      const mapa = $('map-host');
+      if (mapa && mapa.contains(e.target)) e.preventDefault();
+    },
+    { capture: true },
+  );
+}
+
+/** ¿Hay algo flotando sobre el mapa ahora mismo? */
+function anyOverlayOpen() {
+  if (DRAWERS.some((id) => $(id).classList.contains('open'))) return true;
+  if (POPOVERS.some((id) => !$(id).classList.contains('hidden'))) return true;
+  return !$('props-menu').classList.contains('hidden');
+}
 
 function openPanel(id) {
   closeOverlays();
@@ -960,6 +1234,628 @@ function runTopology() {
   }
 }
 
+/* ---------- atajos de teclado ---------- */
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
+
+/**
+ * Cambia de herramienta explicando el rechazo.
+ *
+ * Con el relieve 3D puesto los botones de la barra salen deshabilitados y se
+ * ve por qué, pero una tecla no se puede deshabilitar: sin este aviso, pulsar
+ * `L` con el 3D encendido no haría absolutamente nada y parecería un fallo.
+ */
+function pickTool(tool) {
+  if (store.setTool(tool) === false) {
+    showBanner(
+      'Drawing is disabled while 3D terrain is on: on tilted ground the point you click is not the point on the map. Press 3 to go back to plan view.',
+    );
+  }
+}
+
+/** Rota la certeza activa. Los tipos acotados (pliegues) se quedan en observado. */
+function cycleCertainty() {
+  const s = store.getState();
+  if (isObservedOnly(s.lineType)) {
+    showBanner(`${LINE_TYPE_BY_ID.get(s.lineType).label} is only mapped as observed.`);
+    return;
+  }
+  const i = CERTAINTIES.findIndex((c) => c.id === s.certainty);
+  const next = CERTAINTIES[(i + 1) % CERTAINTIES.length];
+  store.setCertainty(next.id);
+  showBanner(`Certainty: ${next.label.toLowerCase()}.`, 'info');
+}
+
+/**
+ * Escape en cascada, de lo más superficial a lo más profundo. Pulsarlo varias
+ * veces desanda el estado sin sorpresas, en vez de tirarlo todo de golpe: un
+ * solo Escape no debería descartar un trazo de veinte vértices solo porque
+ * había un panel abierto.
+ */
+function handleEscape() {
+  if (anyOverlayOpen()) {
+    closeOverlays();
+    return;
+  }
+  const s = store.getState();
+  if (s.draft) {
+    store.cancelDraft();
+    return;
+  }
+  if (s.selection.length) {
+    store.clearSelection();
+    return;
+  }
+  if (s.tool !== 'navigate') store.setTool('navigate');
+}
+
+/** Qué hace cada acción de la tabla de atajos. */
+function shortcutActions() {
+  return {
+    'tool-navigate': () => pickTool('navigate'),
+    'tool-select': () => pickTool('select'),
+    'tool-line': () => pickTool('line'),
+    'tool-polygon': () => pickTool('polygon'),
+    'tool-vertices': () => pickTool('vertices'),
+    'tool-cut': () => pickTool('cut'),
+    'tool-reshape': () => pickTool('reshape'),
+    'tool-measure': () => pickTool('measure'),
+    'tool-profile': () => pickTool('profile'),
+
+    'toggle-snap': () => store.setSnapEnabled(!store.getState().snapEnabled),
+    'toggle-trace': () => store.setTraceEnabled(!store.getState().traceEnabled),
+    'toggle-terrain': () => $('t-3d').click(),
+    'cycle-certainty': cycleCertainty,
+    locate: () => $('t-locate').click(),
+
+    finish: () => store.finishDraft(),
+    'undo-vertex': () => store.undoVertex(),
+    escape: handleEscape,
+    'delete-selection': () => {
+      if (store.getState().selection.length) store.deleteSelected();
+      else showBanner('Nothing selected. Pick features with V first.');
+    },
+    undo: () => {
+      if (!store.undo()) showBanner('Nothing left to undo.');
+    },
+    redo: () => {
+      if (!store.redo()) showBanner('Nothing left to redo.');
+    },
+    'select-all': () => {
+      const ids = store.getState().features.map((f) => f.properties.id);
+      if (!ids.length) return;
+      store.setTool('select');
+      store.setSelection(ids);
+    },
+    merge: () => {
+      if ($('t-merge').disabled) {
+        showBanner('Merge needs two or more features of the same geometry type selected.');
+        return;
+      }
+      runMerge();
+    },
+    topology: () => {
+      if ($('t-topo').disabled) return;
+      $('t-topo').click();
+    },
+
+    'panel-layers': () => togglePanel('layer-panel'),
+    'panel-units': () => togglePanel('units-panel'),
+    'panel-symbology': () => togglePanel('symbology-panel'),
+    'panel-strabo': () => togglePanel('strabo-panel'),
+    'panel-settings': () => togglePanel('settings'),
+    'project-save': doSaveProject,
+    'project-open': () => $('file-project').click(),
+    'export-gpkg': () => {
+      if (!$('btn-export').disabled) doExportGeoPackage();
+    },
+    help: () => togglePanel('shortcuts'),
+  };
+}
+
+/** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */
+function renderShortcutsHelp() {
+  const body = $('shortcuts-body');
+  body.replaceChildren();
+  for (const grupo of SHORTCUT_GROUPS) {
+    const bloque = document.createElement('div');
+    bloque.className = 'shortcut-group';
+    const h = document.createElement('span');
+    h.className = 'palette-label';
+    h.textContent = grupo;
+    bloque.appendChild(h);
+    for (const s of SHORTCUTS.filter((x) => x.group === grupo)) {
+      const fila = document.createElement('div');
+      fila.className = 'shortcut-row';
+      const teclas = document.createElement('span');
+      teclas.className = 'shortcut-keys';
+      for (const k of s.keys) {
+        const kbd = document.createElement('kbd');
+        kbd.textContent = comboLabel(k, IS_MAC);
+        teclas.appendChild(kbd);
+      }
+      const texto = document.createElement('span');
+      texto.className = 'shortcut-label';
+      texto.textContent = s.label;
+      fila.append(teclas, texto);
+      bloque.appendChild(fila);
+    }
+    body.appendChild(bloque);
+  }
+}
+
+/** Añade el atajo a la ayuda del botón, para que se descubra usándolo. */
+function annotateToolbarShortcuts() {
+  const porBoton = {
+    't-nav': 'tool-navigate',
+    't-select': 'tool-select',
+    't-line': 'tool-line',
+    't-poly': 'tool-polygon',
+    't-vertices': 'tool-vertices',
+    't-cut': 'tool-cut',
+    't-reshape': 'tool-reshape',
+    't-measure': 'tool-measure',
+    't-profile': 'tool-profile',
+    't-snap': 'toggle-snap',
+    't-trace': 'toggle-trace',
+    't-3d': 'toggle-terrain',
+    't-locate': 'locate',
+    't-merge': 'merge',
+    't-topo': 'topology',
+    'btn-layers': 'panel-layers',
+    'btn-units': 'panel-units',
+    'btn-symbology': 'panel-symbology',
+    'btn-strabo': 'panel-strabo',
+    'btn-settings': 'panel-settings',
+    'btn-project': 'project-save',
+    'btn-export': 'export-gpkg',
+  };
+  for (const [id, accion] of Object.entries(porBoton)) {
+    const el = $(id);
+    if (!el) continue;
+    const teclas = labelsFor(accion, IS_MAC);
+    if (!teclas.length) continue;
+    const base = defaultTitle(id) || el.textContent.trim();
+    // Se guarda como base la ayuda YA anotada: `defaultTitle` la cachea, y el
+    // bloqueo por relieve la restaura desde ahí.
+    const anotada = `${base} (${teclas[0]})`;
+    el.title = anotada;
+    defaultTitles.set(id, anotada);
+  }
+}
+
+function wireShortcuts() {
+  const acciones = shortcutActions();
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    const id = shortcutFor(e);
+    if (!id) return;
+
+    /*
+     * Escribiendo, el teclado es del campo — con una excepción: Escape.
+     *
+     * Sin ella, con el cursor en la clave de OpenTopography no había forma de
+     * cerrar Ajustes con el teclado. Primero suelta el foco y solo entonces
+     * hace su cascada, así que el primer Escape sale del campo y el segundo
+     * cierra el panel, que es lo que uno espera de un formulario.
+     */
+    if (isTyping(e.target)) {
+      if (id !== 'escape') return;
+      e.target.blur();
+      return;
+    }
+
+    const fn = acciones[id];
+    if (!fn) return;
+    if (consumesDefault(id)) e.preventDefault();
+    fn();
+  });
+}
+
+/* ---------- perfil topográfico ---------- */
+
+/**
+ * La vista del mapa, para poder encuadrar la traza de un perfil pedido desde
+ * el menú de propiedades. Llega por `wireMapView` porque `createMapView` se
+ * construye después de `initUI()`.
+ */
+let mapBridge = null;
+
+export function wireMapView(view) {
+  mapBridge = view;
+}
+
+/** Handle del gráfico dibujado, para mover el cursor sin repintar todo. */
+let chart = null;
+let profileBusy = false;
+
+/**
+ * Muestreador del terrarium, reutilizado entre perfiles y medidas.
+ *
+ * Guarda las teselas ya decodificadas, así que dos perfiles sobre la misma
+ * ladera no vuelven a descargar ni a decodificar nada. Uno nuevo por
+ * operación tiraría esa caché justo cuando más sirve: en terreno se perfila
+ * varias veces la misma zona.
+ */
+let terrariumSampler = null;
+
+function samplerFor(state) {
+  if (state.profileSource === 'opentopo') {
+    // Este sí se crea nuevo cada vez: cachea UN recorte, y el recorte depende
+    // de la traza que se acaba de dibujar.
+    return new OpenTopoSampler({
+      key: (state.opentopoKey || '').trim(),
+      demtype: state.opentopoDem,
+    });
+  }
+  if (!terrariumSampler) terrariumSampler = new DemSampler();
+  return terrariumSampler;
+}
+
+/**
+ * Calcula el perfil de una traza. Es lo único asíncrono de todo el camino: el
+ * store publica la traza y aquí se muestrea el DEM, igual que con el corte.
+ */
+async function runProfile(pending) {
+  if (profileBusy) return;
+  const coords = pending && pending.coords;
+  if (!coords || coords.length < 2) {
+    store.clearPendingProfile();
+    return;
+  }
+
+  profileBusy = true;
+  const st = store.getState();
+  setBusy(st.profileSource === 'opentopo' ? 'Downloading the DEM…' : 'Reading elevations…');
+  try {
+    const result = await samplerFor(st).profile(coords, st.profileSamples);
+    if (result.stats.samples === 0) {
+      showBanner(
+        st.profileSource === 'opentopo'
+          ? 'The DEM has no data over that line.'
+          : 'No elevation tiles for that line. Off the network only ground you have already looked at is available.',
+      );
+      store.clearProfile();
+      return;
+    }
+    // Una traza de longitud cero —dos toques en el mismo sitio— no tiene
+    // perfil: el eje horizontal no existe y el gráfico saldría degenerado.
+    if (!(result.stats.length > 0)) {
+      showBanner('That line has no length: draw it across the ground you want to section.');
+      store.clearPendingProfile();
+      return;
+    }
+    if (result.stats.missing > 0) {
+      showBanner(
+        `${result.stats.missing} of ${result.samples.length} samples had no elevation; the profile is drawn with gaps.`,
+      );
+    }
+    store.setProfile({ ...result, coords });
+  } catch (err) {
+    showBanner(err.message);
+    store.clearPendingProfile();
+  } finally {
+    setBusy(null);
+    profileBusy = false;
+  }
+}
+
+/** Fila del resumen: una etiqueta y su valor. */
+function statChip(parent, label, value, live = false) {
+  const s = document.createElement('span');
+  s.className = `pf-stat${live ? ' live' : ''}`;
+  s.append(`${label} `);
+  const b = document.createElement('b');
+  b.textContent = value;
+  s.appendChild(b);
+  parent.appendChild(s);
+  return s;
+}
+
+function renderProfileStats(result, index) {
+  const box = $('profile-stats');
+  box.replaceChildren();
+  const { stats } = result;
+
+  const m = Number.isInteger(index) ? result.samples[index] : null;
+  if (m && Number.isFinite(m.elevation)) {
+    statChip(box, 'At', formatDistance(m.distance), true);
+    statChip(box, '·', formatElevation(m.elevation), true);
+  }
+  statChip(box, 'Length', formatDistance(stats.length));
+  statChip(box, 'Min', formatElevation(stats.min));
+  statChip(box, 'Max', formatElevation(stats.max));
+  statChip(box, 'Relief', formatElevation(stats.max - stats.min));
+  statChip(box, 'Ascent', formatElevation(stats.gain));
+  statChip(box, 'Descent', formatElevation(stats.loss));
+}
+
+/**
+ * Nota al pie del gráfico. Dice de dónde salió la cota y con qué resolución,
+ * porque un perfil sin eso invita a leer detalle que el dato no tiene: sobre
+ * un DEM de 30 m, un escalón de 40 m de ancho no existe.
+ */
+function profileNote(result) {
+  const partes = [
+    `${result.label} · nominal resolution ≈ ${Math.round(result.nominal)} m`,
+    `${result.stats.samples} samples`,
+  ];
+  if (Number.isFinite(result.step)) {
+    partes.push(`sampling step ≈ ${Math.round(result.stats.length / (result.samples.length - 1))} m`);
+  }
+  if (!result.offline) partes.push('needs a connection');
+  return `${partes.join(' · ')}. Detail finer than the DEM's resolution is interpolation, not data.`;
+}
+
+/** Dibuja el gráfico al tamaño real que tiene el contenedor en pantalla. */
+function renderProfilePanel() {
+  const result = store.getState().profile;
+  const sheet = $('profile-sheet');
+  if (!result) {
+    sheet.classList.add('hidden');
+    chart = null;
+    return;
+  }
+  sheet.classList.remove('hidden');
+  $('profile-source-label').textContent = result.label;
+
+  const wrap = $('profile-chart').parentElement;
+  const width = Math.max(240, Math.round(wrap.clientWidth));
+  const height = Math.max(110, Math.round(wrap.clientHeight));
+  chart = renderProfileChart($('profile-chart'), result, { width, height });
+
+  renderProfileStats(result, null);
+  $('profile-note').textContent = profileNote(result);
+}
+
+/**
+ * Puntero sobre el gráfico: mueve el cursor y, sobre todo, marca en el MAPA la
+ * muestra señalada. Es lo que convierte la curva en algo que se puede leer
+ * geológicamente — ver qué quiebre del perfil cae sobre qué contacto.
+ */
+function wireProfilePointer() {
+  const svg = $('profile-chart');
+
+  const señalar = (e) => {
+    const result = store.getState().profile;
+    if (!result || !chart) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    // El viewBox se dibuja al tamaño real del elemento y con
+    // `preserveAspectRatio="none"`, así que la conversión es una regla de tres.
+    const px = ((e.clientX - rect.left) / rect.width) * chart.width;
+    const d = chart.scales.distanceAt(px);
+    const i = indexAtDistance(result.samples, Math.min(Math.max(0, d), chart.scales.total));
+    if (i < 0) return;
+    chart.setCursor(i);
+    renderProfileStats(result, i);
+    store.setProfileCursor(i);
+  };
+
+  svg.addEventListener('pointerdown', (e) => {
+    svg.setPointerCapture(e.pointerId);
+    señalar(e);
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (e.buttons === 0 && e.pointerType !== 'mouse') return;
+    señalar(e);
+  });
+  svg.addEventListener('pointerleave', () => {
+    const result = store.getState().profile;
+    if (!result || !chart) return;
+    chart.setCursor(-1);
+    renderProfileStats(result, null);
+    store.setProfileCursor(null);
+  });
+
+  // Al girar la tablet el ancho cambia y el SVG quedaría estirado.
+  window.addEventListener('resize', () => {
+    if (store.getState().profile) renderProfilePanel();
+  });
+}
+
+function downloadProfileCSV() {
+  const result = store.getState().profile;
+  if (!result) return;
+  downloadText(profileCSV(result), `profile-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+}
+
+/* ---------- rumbo y manteo ---------- */
+
+/** Refleja en los controles del panel de símbolos lo que dice el store. */
+function syncStructureControls() {
+  const st = store.getState().structureStyle;
+  const size = $('structure-size');
+  if (document.activeElement !== size) size.value = String(st.size);
+  $('structure-size-num').textContent = `${st.size.toFixed(1)}×`;
+  const mz = $('structure-minzoom');
+  if (document.activeElement !== mz) mz.value = String(st.minzoom);
+  $('structure-minzoom-num').textContent = String(st.minzoom);
+  $('structure-labels').checked = st.showLabels;
+}
+
+function wireStructureControls() {
+  $('structure-size').addEventListener('input', (e) =>
+    store.setStructureStyle({ size: Number(e.target.value) }),
+  );
+  $('structure-minzoom').addEventListener('input', (e) =>
+    store.setStructureStyle({ minzoom: Number(e.target.value) }),
+  );
+  $('structure-labels').addEventListener('change', (e) =>
+    store.setStructureStyle({ showLabels: e.target.checked }),
+  );
+}
+
+let planeBusy = false;
+
+/**
+ * Resuelve una medida estructural a partir de los puntos marcados.
+ *
+ * Los tres pasos son: leer la cota de cada punto en el DEM, ajustar el plano y
+ * —lo que de verdad decide si el número sirve— comprobar la geometría de la
+ * base. Un manteo sobre una base más corta que dos celdas del modelo es ruido,
+ * y aquí se dice en vez de dibujarlo como si fuera un dato.
+ */
+async function runPlane(pending) {
+  if (planeBusy) return;
+  const coords = pending && pending.coords;
+  if (!coords || coords.length < 3) {
+    store.clearPendingPlane();
+    showBanner('Three points are needed to define a plane.');
+    return;
+  }
+
+  planeBusy = true;
+  const st = store.getState();
+  setBusy('Reading elevations…');
+  try {
+    const sampler = samplerFor(st);
+    // Un muestreador de OpenTopography necesita descargar su recorte antes de
+    // poder contestar; el de terrarium resuelve tesela a tesela.
+    if (sampler.loadGrid) await sampler.loadGrid(coords);
+    const cotas = await Promise.all(coords.map((c) => sampler.elevationAt(c[0], c[1])));
+    const puntos = coords.map((c, i) => ({ lngLat: c, elevation: cotas[i] }));
+
+    // La resolución del modelo es lo que decide si una base es suficiente, así
+    // que se pasa la real y no un valor fijo: con COP90 hace falta el triple
+    // de base que con COP30 para el mismo margen de error.
+    const dem = OPENTOPO_DEM_BY_ID.get(st.opentopoDem);
+    const nominal = st.profileSource === 'opentopo' && dem ? dem.nominal : TERRARIUM_NOMINAL_M;
+    const r = planeFromPoints(puntos, { resolution: nominal });
+    if (!r.ok) {
+      showBanner(r.reason);
+      store.clearPendingPlane();
+      return;
+    }
+
+    store.createMeasurement({
+      lngLat: r.lngLat,
+      strike: r.strike,
+      dip: r.dip,
+      dipAzimuth: r.dipAzimuth,
+      method: pending.method,
+      quality: {
+        strikeSd: round1(r.strikeSd),
+        dipSd: round1(r.dipSd),
+        rms: round1(r.rms),
+        n: r.n,
+        baseline: Math.round(r.baseline),
+        minorSpread: Math.round(r.minorSpread),
+        demSource: st.profileSource,
+      },
+    });
+
+    const resumen = `${formatStrikeDip(r.strike, r.dip)} (dip ${quadrant(r.dipAzimuth)}) ±${round1(r.dipSd)}° over a ${Math.round(r.baseline)} m base.`;
+    if (r.warnings.length) showBanner(`${resumen} ${r.warnings.join(' ')}`);
+    else showBanner(`${resumen} Tap it to see the full quality figures.`, 'info');
+  } catch (err) {
+    showBanner(err.message);
+    store.clearPendingPlane();
+  } finally {
+    setBusy(null);
+    planeBusy = false;
+  }
+}
+
+const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
+
+/** Una fila «clave: valor» del bloque de calidad de una medida. */
+function measureRow(parent, k, v, title) {
+  const row = document.createElement('div');
+  row.className = 'strabo-attrs-row';
+  const ke = document.createElement('span');
+  ke.className = 'k';
+  ke.textContent = k;
+  const ve = document.createElement('span');
+  ve.className = 'v';
+  ve.textContent = v;
+  if (title) row.title = title;
+  row.append(ke, ve);
+  parent.appendChild(row);
+}
+
+/**
+ * Bloque de una medida dentro del menú de propiedades: los dos números
+ * editables y, debajo, de dónde salieron y cuánto valen.
+ */
+function measurementSection(body, medida, reabrir) {
+  const p = medida.properties;
+
+  const sec = section(body, 'Strike and dip');
+
+  const fila = document.createElement('div');
+  fila.className = 'palette-row';
+  fila.append(
+    numberField('Strike', p.strike ?? 0, { min: 0, max: 359.9, step: 1 }, (v) =>
+      store.updateMeasurement({ strike: v }),
+    ),
+    numberField('Dip', p.dip ?? 0, { min: 0, max: 90, step: 1 }, (v) =>
+      store.updateMeasurement({ dip: v }),
+    ),
+  );
+  sec.appendChild(fila);
+
+  const tipos = document.createElement('div');
+  tipos.className = 'palette-row';
+  for (const t of STRUCTURE_TYPES) {
+    tipos.appendChild(
+      chip({
+        label: t.short,
+        title: t.label,
+        color: t.color,
+        swatch: true,
+        active: p.type === t.id,
+        onClick: () => {
+          store.updateMeasurement({ type: t.id });
+          reabrir();
+        },
+      }),
+    );
+  }
+  sec.appendChild(tipos);
+
+  if (p.type === 'bedding') {
+    const inv = document.createElement('div');
+    inv.className = 'palette-row';
+    inv.appendChild(
+      chip({
+        label: 'Overturned',
+        glyph: '⤣',
+        active: !!p.overturned,
+        onClick: () => {
+          store.updateMeasurement({ overturned: !p.overturned });
+          reabrir();
+        },
+      }),
+    );
+    sec.appendChild(inv);
+  }
+
+  /*
+   * Calidad. Es la parte que justifica todo el módulo: un manteo sacado de un
+   * DEM sin la base sobre la que se midió y sin su incertidumbre es un número
+   * que nadie puede evaluar, y que acaba citado como si fuera de brújula.
+   */
+  const met = METHOD_BY_ID.get(p.method);
+  const cal = section(body, 'Quality');
+  measureRow(cal, 'Method', met ? met.label : p.method === 'edited' ? 'Edited by hand' : p.method);
+  measureRow(cal, 'Dip direction', `${Math.round(p.dipAzimuth ?? 0)}° (${quadrant(p.dipAzimuth)})`);
+
+  if (DEM_METHODS.has(p.method)) {
+    measureRow(
+      cal,
+      'Uncertainty',
+      `±${p.strikeSd ?? '—'}° strike · ±${p.dipSd ?? '—'}° dip`,
+      'One standard deviation, propagated from the DEM vertical error by Monte Carlo',
+    );
+    measureRow(cal, 'Base', `${p.baseline ?? '—'} m long · ${p.minorSpread ?? '—'} m across`);
+    measureRow(cal, 'Fit', `${p.n ?? '—'} points · RMS ${p.rms ?? '—'} m`);
+    measureRow(cal, 'Elevations from', p.demSource === 'opentopo' ? 'OpenTopography' : 'AWS Terrain Tiles');
+  } else if (p.method === 'edited') {
+    measureRow(cal, 'Uncertainty', 'not applicable — typed in by hand');
+  }
+}
+
 /* ---------- proyectos ---------- */
 
 function setProjectStatus(text) {
@@ -1058,6 +1954,31 @@ async function doImportGeoPackage(file) {
 
 /* ---------- barra de herramientas y estado ---------- */
 
+/** Botones que crean o mueven geometría, y que el relieve 3D deshabilita. */
+const GEOMETRY_TOOL_BUTTONS = [
+  't-line',
+  't-poly',
+  't-measure',
+  't-vertices',
+  't-cut',
+  't-reshape',
+  't-profile',
+];
+
+const TERRAIN_BLOCKED_TITLE =
+  'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
+
+/**
+ * Ayuda original de cada botón, capturada del HTML la primera vez. Hace falta
+ * para poder devolverla al apagar el relieve, en vez de dejar el mensaje del
+ * bloqueo puesto para siempre.
+ */
+const defaultTitles = new Map();
+function defaultTitle(id) {
+  if (!defaultTitles.has(id)) defaultTitles.set(id, $(id).title);
+  return defaultTitles.get(id);
+}
+
 function renderToolbar() {
   const s = store.getState();
   const hasDraft = !!s.draft && s.draft.coords.length > 0;
@@ -1069,23 +1990,41 @@ function renderToolbar() {
     ['t-vertices', 'vertices'],
     ['t-cut', 'cut'],
     ['t-reshape', 'reshape'],
+    ['t-profile', 'profile'],
+    ['t-measure', 'measure'],
   ]) {
     $(id).classList.toggle('active', s.tool === tool);
   }
   $('t-snap').classList.toggle('active', s.snapEnabled);
   $('t-trace').classList.toggle('active', s.traceEnabled);
+  $('t-3d').classList.toggle('active', s.terrain3d);
+
+  /*
+   * Con el relieve puesto, las herramientas que crean o mueven geometría se
+   * apagan en vez de fallar en silencio: sobre terreno inclinado el vértice no
+   * cae donde se toca, y el resultado sería un dibujo corrido que nadie
+   * relacionaría con haber tenido el 3D encendido.
+   */
+  for (const id of GEOMETRY_TOOL_BUTTONS) {
+    const btn = $(id);
+    const original = defaultTitle(id); // se captura siempre, no solo al restaurar
+    btn.disabled = s.terrain3d;
+    btn.title = s.terrain3d ? TERRAIN_BLOCKED_TITLE : original;
+  }
 
   // Unir exige dos o más elementos del mismo tipo de geometría.
   const sel = store.selectedFeatures();
   const kinds = new Set(sel.map((f) => f.geometry.type));
-  $('t-merge').disabled = sel.length < 2 || kinds.size > 1;
+  $('t-merge').disabled = s.terrain3d || sel.length < 2 || kinds.size > 1;
 
   // La topología trabaja sobre la selección, o sobre todo si no hay ninguna.
   const alcance = sel.length || s.features.length;
-  $('t-topo').disabled = alcance < 2;
-  $('t-topo').title = sel.length
-    ? `Make the ${sel.length} selected features share vertices`
-    : 'Make all adjacent features share vertices';
+  $('t-topo').disabled = s.terrain3d || alcance < 2;
+  $('t-topo').title = s.terrain3d
+    ? TERRAIN_BLOCKED_TITLE
+    : sel.length
+      ? `Make the ${sel.length} selected features share vertices`
+      : 'Make all adjacent features share vertices';
 
   $('t-undo').disabled = !hasDraft;
   $('t-finish').disabled = !hasDraft;
@@ -1101,8 +2040,32 @@ function renderStatus() {
   const s = store.getState();
   const n = s.draft ? s.draft.coords.length : 0;
   $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
-  if (s.tool === 'navigate') {
+  if (s.terrain3d) {
+    $('status-text').textContent =
+      '3D terrain on — viewing only: drag with two fingers to tilt, tap 3D again to draw';
+  } else if (s.tool === 'navigate') {
     $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
+  } else if (s.tool === 'profile') {
+    $('status-text').textContent =
+      n > 0
+        ? `Profile line with ${n} vertices · close it to read the terrain along it`
+        : 'Draw the line to profile · press and hold for freehand, double tap to close';
+  } else if (s.tool === 'measure') {
+    const superficie = STRUCTURE_TYPE_BY_ID.get(s.measureType);
+    const que = superficie ? superficie.label.toLowerCase() : 'surface';
+    if (s.measureMethod === 'manual') {
+      $('status-text').textContent = `Tap where you measured the ${que} — ${formatStrikeDip(s.manualStrike, s.manualDip)} goes in, and you can correct it right after`;
+    } else if (s.measureMethod === 'three-point') {
+      $('status-text').textContent =
+        n === 0
+          ? `Tap three points on the same ${que}, spread as widely as the outcrop allows`
+          : `${n} of 3 points · spread them out: a short or collinear base gives a worthless dip`;
+    } else {
+      $('status-text').textContent =
+        n > 0
+          ? `${n} nodes along the trace · close it to fit the plane`
+          : `Draw along the trace of the ${que} · every node is sampled on the DEM`;
+    }
   } else if (s.tool === 'select') {
     $('status-text').textContent = s.selection.length
       ? `${s.selection.length} selected · tap another to add it, or outside to clear`
@@ -1136,6 +2099,11 @@ function renderStatus() {
               ? `Draw the split line · it will only affect the ${s.selection.length} selected features`
               : 'Draw the split line · it will affect everything it crosses');
     }
+  } else if (s.extendFrom) {
+    // El primer clic decide por qué extremo se sigue, así que eso es lo único
+    // que hay que decir aquí.
+    $('status-text').textContent =
+      'Continuing the selected line — click near the end you want to carry on from (both are marked)';
   } else if (s.traceEnabled) {
     $('status-text').textContent =
       n > 0
@@ -1167,7 +2135,25 @@ const SETTING_INPUTS = [
   // sincronizan en syncTopoTolerance; aquí solo se refresca su valor.
   { key: 'topoTolerance', id: 'opt-topo-tol' },
   { key: 'topoTolerance', id: 'opt-topo-tol-num' },
+  { key: 'terrain3d', id: 'opt-terrain', kind: 'check' },
+  {
+    key: 'terrainExaggeration',
+    id: 'opt-terrain-exag',
+    out: 'terrain-exag-value',
+    fmt: (v) => `${v.toFixed(1)}×`,
+  },
+  { key: 'opentopoDem', id: 'opt-opentopo-dem' },
+  { key: 'opentopoKey', id: 'opt-opentopo-key' },
+  {
+    key: 'profileSamples',
+    id: 'opt-profile-samples',
+    out: 'profile-samples-value',
+    fmt: (v) => String(v),
+  },
 ];
+
+/** Ajustes que se ven en un grupo de radios y no en un control con valor. */
+const RADIO_SETTING_KEYS = ['freehandMode', 'cutSource', 'profileSource'];
 
 function syncSettingsUI() {
   const s = store.getState();
@@ -1185,6 +2171,7 @@ function syncSettingsUI() {
   }
   $(s.freehandMode === 'drag' ? 'fh-drag' : 'fh-hold').checked = true;
   $(s.cutSource === 'feature' ? 'cut-feature' : 'cut-draw').checked = true;
+  $(s.profileSource === 'opentopo' ? 'dem-opentopo' : 'dem-terrarium').checked = true;
 }
 
 export function initUI() {
@@ -1202,6 +2189,26 @@ export function initUI() {
   $('t-vertices').addEventListener('click', () => store.setTool('vertices'));
   $('t-cut').addEventListener('click', () => store.setTool('cut'));
   $('t-reshape').addEventListener('click', () => store.setTool('reshape'));
+  $('t-profile').addEventListener('click', () => store.setTool('profile'));
+  $('t-measure').addEventListener('click', () => store.setTool('measure'));
+  $('t-3d').addEventListener('click', () => {
+    const encender = !store.getState().terrain3d;
+    store.setTerrain3d(encender);
+    /*
+     * Se lee el estado DE VUELTA en vez de dar por hecho que se aplicó: si el
+     * dispositivo no puede con el terreno, `applyTerrain` lo revierte y deja su
+     * propio aviso. Anunciar aquí "modo de visualización" a ciegas pisaría ese
+     * mensaje y dejaría al usuario creyendo que el 3D está puesto cuando no lo
+     * está — y sin entender por qué no puede dibujar... o por qué sí puede.
+     */
+    if (store.getState().terrain3d !== encender) return;
+    showBanner(
+      encender
+        ? 'Viewing mode: the drawing is draped over the relief but digitising is disabled. Off the cached tiles the ground renders flat, and on an older tablet this costs noticeably more to render.'
+        : 'Back to plan view: you can draw again.',
+      encender ? 'warn' : 'info',
+    );
+  });
   $('t-merge').addEventListener('click', runMerge);
   // El botón abre el desplegable en vez de aplicar a ciegas: el umbral es el
   // parámetro que decide el resultado y tiene que verse antes de tocarlo.
@@ -1315,6 +2322,60 @@ export function initUI() {
     if (confirm('Delete every drawn feature?')) store.clearFeatures();
   });
 
+  /* ---------- elevación y relieve ---------- */
+
+  const demSelect = $('opt-opentopo-dem');
+  for (const d of OPENTOPO_DEMS) {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = `${d.label} (~${d.nominal} m)`;
+    demSelect.appendChild(opt);
+  }
+  // Texto y no enlace: abrir el navegador desde una PWA en terreno saca de la
+  // app, y la clave se pega igual copiándola desde otro dispositivo.
+  $('opentopo-signup').textContent = OPENTOPO_SIGNUP;
+
+  $('dem-terrarium').addEventListener('change', () => store.setProfileSource('terrarium'));
+  $('dem-opentopo').addEventListener('change', () => {
+    store.setProfileSource('opentopo');
+    if (!store.getState().opentopoKey.trim()) {
+      showBanner('OpenTopography needs a free API key. Paste it just below.');
+    }
+  });
+  demSelect.addEventListener('change', (e) => store.setOpenTopoDem(e.target.value));
+  $('opt-opentopo-key').addEventListener('change', (e) => {
+    const key = e.target.value.trim();
+    store.setOpenTopoKey(key);
+    saveOpenTopoKey(key);
+  });
+  $('opt-profile-samples').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    $('profile-samples-value').textContent = String(v);
+    store.setProfileSamples(v);
+  });
+
+  $('opt-terrain').addEventListener('change', (e) => store.setTerrain3d(e.target.checked));
+  $('opt-terrain-exag').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    $('terrain-exag-value').textContent = `${v.toFixed(1)}×`;
+    store.setTerrainExaggeration(v);
+  });
+
+  $('btn-close-profile').addEventListener('click', () => store.clearProfile());
+  $('btn-profile-csv').addEventListener('click', downloadProfileCSV);
+  wireProfilePointer();
+  wireStructureControls();
+  syncStructureControls();
+
+  $('btn-shortcuts').addEventListener('click', () => togglePanel('shortcuts'));
+  $('btn-close-shortcuts').addEventListener('click', () => $('shortcuts').classList.add('hidden'));
+  renderShortcutsHelp();
+  // Anotar ANTES de que renderToolbar cachee las ayudas originales, para que
+  // el bloqueo por relieve 3D restaure la versión con el atajo incluido.
+  annotateToolbarShortcuts();
+  wireShortcuts();
+  wireClickOutside();
+
   // StraboSpot vive en su propio módulo: la API, el aplanado de spots y su
   // simbología no tienen por qué mezclarse con el resto de la interfaz.
   initStraboPanel({ message: showBanner, busy: setBusy });
@@ -1334,6 +2395,9 @@ export function initUI() {
       store.changed('lineType') ||
       store.changed('polygonType') ||
       store.changed('vertexMode') ||
+      store.changed('measureMethod') ||
+      store.changed('measureType') ||
+      store.changed('measureOverturned') ||
       store.changed('units')
     ) {
       buildPalette();
@@ -1343,7 +2407,12 @@ export function initUI() {
     if (store.changed('layers')) renderLayers();
     // Abrir un proyecto reescribe los ajustes: los controles tienen que
     // reflejarlo, o mostrarían valores que ya no son los que rigen.
-    if (SETTING_INPUTS.some((s) => store.changed(s.key))) syncSettingsUI();
+    if (
+      SETTING_INPUTS.some((s) => store.changed(s.key)) ||
+      RADIO_SETTING_KEYS.some((k) => store.changed(k))
+    ) {
+      syncSettingsUI();
+    }
     // Si la selección desaparece, el menú de propiedades ya no aplica a nada.
     if (store.changed('selection') && store.getState().selection.length === 0) closePropsMenu();
     if (
@@ -1355,7 +2424,12 @@ export function initUI() {
       store.changed('traceEnabled') ||
       store.changed('topoEdit') ||
       store.changed('vertexMode') ||
-      store.changed('cutSource')
+      store.changed('cutSource') ||
+      store.changed('extendFrom') ||
+      store.changed('measureMethod') ||
+      store.changed('measureType') ||
+      store.changed('manualStrike') ||
+      store.changed('manualDip')
     ) {
       renderToolbar();
       renderStatus();
@@ -1369,6 +2443,23 @@ export function initUI() {
     if (store.changed('pendingReshape')) {
       const linea = store.getState().pendingReshape;
       if (linea) runReshape(linea);
+    }
+    // Mismo patrón que el corte: el store publica la traza y aquí se muestrea
+    // el DEM, que es asíncrono.
+    if (store.changed('pendingProfile')) {
+      const traza = store.getState().pendingProfile;
+      if (traza) runProfile(traza);
+    }
+    if (store.changed('pendingPlane')) {
+      const puntos = store.getState().pendingPlane;
+      if (puntos) runPlane(puntos);
+    }
+    if (store.changed('structureStyle')) syncStructureControls();
+    if (store.changed('profile')) renderProfilePanel();
+    if (store.changed('terrain3d')) {
+      renderToolbar();
+      renderStatus();
+      buildPalette();
     }
   });
 }

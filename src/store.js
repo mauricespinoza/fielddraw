@@ -4,7 +4,9 @@ import {
   POLYGON_TYPES,
   certaintyFor,
   defaultOrnaments,
+  defaultStructureStyle,
   sanitizeOrnaments,
+  sanitizeStructureStyle,
 } from './symbology.js';
 import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
 
@@ -40,6 +42,10 @@ function defaultLayers() {
   return [
     { id: 'geology', kind: 'geology', label: 'Geology (drawing)', visible: true, opacity: 1 },
     { id: 'contours', kind: 'contours', label: 'Contour lines', visible: true, opacity: 0.85 },
+    // Sombreado calculado del mismo DEM que las curvas. Apagado por omisión:
+    // sobre imagen satelital compite con el relieve que ya se ve, y encendido
+    // sin querer haría descargar teselas DEM que en terreno no hacen falta.
+    { id: 'hillshade', kind: 'hillshade', label: 'Hillshade (DEM)', visible: false, opacity: 0.5 },
     ...BASEMAPS.map((b) => ({
       id: b.id,
       kind: 'basemap',
@@ -99,6 +105,44 @@ let state = {
   pendingCut: null,
   /** Línea de reshape recién terminada, a la espera de que se aplique. */
   pendingReshape: null,
+  /** Traza recién terminada de la que hay que calcular el perfil. */
+  pendingProfile: null,
+  /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
+  pendingPlane: null,
+
+  /* ---------- medidas estructurales ---------- */
+
+  /** 'manual' | 'three-point' | 'plane-fit' (ver structure.js). */
+  measureMethod: 'three-point',
+  /** Superficie que se está midiendo: estratificación, foliación, diaclasa… */
+  measureType: 'bedding',
+  /** Estratos invertidos: cambia el símbolo, no el número. */
+  measureOverturned: false,
+  /** Valores de partida del método manual, que se editan tras colocarlo. */
+  manualStrike: 0,
+  manualDip: 30,
+  /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
+  structureStyle: defaultStructureStyle(),
+
+  /* ---------- perfil topográfico ---------- */
+
+  /**
+   * De dónde salen las cotas: 'terrarium' son las mismas teselas que ya
+   * alimentan las curvas de nivel —funciona sin señal sobre lo cacheado— y
+   * 'opentopo' es Copernicus vía OpenTopography, que da mejor resolución pero
+   * exige clave y red, así que en terreno no sirve.
+   */
+  profileSource: 'terrarium',
+  /** Modelo pedido a OpenTopography cuando esa es la fuente. */
+  opentopoDem: 'COP30',
+  /** Clave de OpenTopography. Vive en el dispositivo, nunca en el proyecto. */
+  opentopoKey: '',
+  /** Puntos muestreados a lo largo de la traza. */
+  profileSamples: 200,
+  /** Perfil ya calculado que muestra el panel, o null si no hay ninguno. */
+  profile: null,
+  /** Índice de la muestra señalada en el gráfico, para marcarla en el mapa. */
+  profileCursor: null,
   /** Unidades geológicas definidas por el usuario. */
   units: defaultUnits(),
   /** Línea que se va a continuar en cuanto se ponga el primer vértice. */
@@ -122,6 +166,19 @@ let state = {
    * parece que la capa desapareció.
    */
   straboFilters: { structures: null, observations: null, lines: null },
+
+  /* ---------- relieve 3D ---------- */
+
+  /**
+   * Terreno real, no solo inclinación de cámara. Es modo de VISUALIZACIÓN: con
+   * el relieve puesto, el punto que se toca y el punto del terreno dejan de
+   * coincidir como en planta, así que digitalizar en 3D produce geometría
+   * desplazada sin que se note. Por eso activarlo devuelve a navegación y
+   * bloquea las herramientas de dibujo (ver `drawingBlocked`).
+   */
+  terrain3d: false,
+  /** Exageración vertical. 1 es el relieve real; más de 2 caricaturiza. */
+  terrainExaggeration: 1.4,
 };
 
 /* ---------- historial ---------- */
@@ -179,8 +236,39 @@ export function redo() {
   return true;
 }
 
-const geomKindForTool = (tool) =>
-  tool === 'polygon' ? 'polygon' : tool === 'cut' ? 'cut' : tool === 'reshape' ? 'reshape' : 'line';
+const GEOM_KIND_FOR_TOOL = {
+  polygon: 'polygon',
+  cut: 'cut',
+  reshape: 'reshape',
+  profile: 'profile',
+  // Los puntos que definen el plano; el método decide cuántos hacen falta.
+  measure: 'plane',
+};
+
+const geomKindForTool = (tool) => GEOM_KIND_FOR_TOOL[tool] || 'line';
+
+/**
+ * Borradores que NO llegan a ser elementos del mapa: son una instrucción
+ * (cortar, redibujar, perfilar) que se consume y desaparece. Cambiar de
+ * herramienta con uno a medias lo descarta, porque aplicarlo sin querer sería
+ * destructivo en los dos primeros casos y desconcertante en el tercero.
+ */
+const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane']);
+
+/**
+ * Herramientas que crean o mueven geometría, y que por eso no se ofrecen con
+ * el relieve 3D puesto: sobre terreno inclinado el punto tocado y el punto del
+ * terreno no coinciden como en planta, así que lo dibujado saldría corrido.
+ */
+export const DRAWING_TOOLS = [
+  'line',
+  'polygon',
+  'vertices',
+  'cut',
+  'reshape',
+  'profile',
+  'measure',
+];
 
 export function getState() {
   return state;
@@ -209,21 +297,19 @@ function set(patch) {
 /* ---------- herramientas ---------- */
 
 export function setTool(tool) {
+  // Con el relieve puesto no se digitaliza: se avisa y no se cambia nada. El
+  // aviso lo da la interfaz, que es quien puede explicarlo.
+  if (state.terrain3d && DRAWING_TOOLS.includes(tool)) return false;
+
   // Con una sola línea seleccionada, pasar a Línea la continúa en vez de
   // empezar una nueva. Se resuelve al poner el primer vértice, que es cuando
   // se sabe por qué extremo seguir.
-  let extendFrom = null;
-  if (tool === 'line' && state.selection.length === 1) {
-    const sel = state.features.find((f) => f.properties.id === state.selection[0]);
-    if (sel && sel.geometry.type === 'LineString') extendFrom = sel.properties.id;
-  }
+  const extendFrom = tool === 'line' ? extendCandidate(state.selection) : null;
 
   if (state.draft) {
-    // Cambiar de herramienta cierra lo abierto, como en QGIS. Una línea de
-    // corte a medias se descarta: aplicarla sin querer sería destructivo.
-    // Una línea de corte o de reshape a medias se descarta: aplicarla sin
-    // querer sería destructivo en los dos casos.
-    if (state.draft.kind === 'cut' || state.draft.kind === 'reshape') cancelDraft();
+    // Cambiar de herramienta cierra lo abierto, como en QGIS; los borradores
+    // que son una instrucción y no un elemento se descartan.
+    if (TRANSIENT_KINDS.has(state.draft.kind)) cancelDraft();
     else finishDraft();
   }
   // La selección sobrevive al pasar a Vértices, Cortar, Reshape o a extender
@@ -232,6 +318,7 @@ export function setTool(tool) {
     set({ selection: [] });
   }
   set({ tool, extendFrom });
+  return true;
 }
 
 /**
@@ -303,6 +390,31 @@ export const setTraceEnabled = (traceEnabled) =>
 export function addVertex(p) {
   if (state.tool === 'navigate' || state.tool === 'select') return;
 
+  if (state.tool === 'measure') {
+    // Con brújula no hay nada que muestrear: el toque solo dice dónde va la
+    // medida, y los números se escriben después en el menú de propiedades.
+    if (state.measureMethod === 'manual') {
+      createMeasurement({
+        lngLat: p,
+        strike: state.manualStrike,
+        dip: state.manualDip,
+        method: 'manual',
+      });
+      return;
+    }
+
+    const draft = state.draft && state.draft.kind === 'plane' ? state.draft : { kind: 'plane', coords: [] };
+    const coords = [...draft.coords, p];
+    // El problema de tres puntos se cierra solo al tercero: pedir además que
+    // se confirme sería un paso de más en el gesto más frecuente.
+    if (state.measureMethod === 'three-point' && coords.length >= 3) {
+      set({ draft: null, pendingPlane: { coords, method: 'three-point' } });
+      return;
+    }
+    set({ draft: { ...draft, coords } });
+    return;
+  }
+
   // Continuación de una línea existente: se saca del mapa, se orienta para
   // que el extremo más cercano al toque quede al final, y pasa a ser el
   // borrador. Así se sigue dibujando donde se dejó.
@@ -369,6 +481,28 @@ export function finishDraft() {
     return;
   }
 
+  // La traza del perfil tampoco se guarda como elemento: es una pregunta sobre
+  // el terreno, no algo cartografiado. El muestreo del DEM es asíncrono, así
+  // que se publica y la capa de aplicación la resuelve.
+  if (d.kind === 'profile') {
+    set({
+      draft: null,
+      pendingProfile: d.coords.length >= 2 ? { coords: d.coords } : null,
+    });
+    return;
+  }
+
+  // Los puntos de una medida estructural tampoco se guardan tal cual: lo que
+  // queda en el mapa es el símbolo de rumbo/manteo que sale de ellos.
+  if (d.kind === 'plane') {
+    set({
+      draft: null,
+      pendingPlane:
+        d.coords.length >= 3 ? { coords: d.coords, method: state.measureMethod } : null,
+    });
+    return;
+  }
+
   const minPts = d.kind === 'polygon' ? 3 : 2;
   if (d.coords.length < minPts) {
     set({ draft: null });
@@ -424,19 +558,48 @@ export function deleteLastFeature() {
 
 /* ---------- selección, cortar y unir ---------- */
 
+/**
+ * Línea que una selección deja lista para continuarse: exactamente una, y de
+ * tipo LineString. Con dos es ambiguo por qué extremo seguir, y un polígono no
+ * tiene extremos.
+ */
+function extendCandidate(selection) {
+  if (selection.length !== 1) return null;
+  const sel = state.features.find((f) => f.properties.id === selection[0]);
+  return sel && sel.geometry.type === 'LineString' ? sel.properties.id : null;
+}
+
+/**
+ * Rearma la continuación al cambiar la selección.
+ *
+ * Sin esto, continuar una línea solo funcionaba entrando a la herramienta
+ * **Línea** DESPUÉS de haberla seleccionado. Si ya se estaba en Línea —que es
+ * lo normal cuando se está cartografiando— seleccionar otra no marcaba nada y
+ * el siguiente clic empezaba una línea nueva: exactamente el síntoma de "la
+ * extensión no funciona".
+ *
+ * Con un borrador abierto no se toca: la selección no debe secuestrar un trazo
+ * que ya está en curso.
+ */
+function extendPatch(selection) {
+  if (state.tool !== 'line' || state.draft) return {};
+  return { extendFrom: extendCandidate(selection) };
+}
+
 export function toggleSelection(id) {
   const selection = state.selection.includes(id)
     ? state.selection.filter((x) => x !== id)
     : [...state.selection, id];
-  set({ selection });
+  set({ selection, ...extendPatch(selection) });
 }
 
 export function clearSelection() {
-  set({ selection: [] });
+  set({ selection: [], extendFrom: null });
 }
 
 export function setSelection(ids) {
-  set({ selection: Array.from(new Set(ids)) });
+  const selection = Array.from(new Set(ids));
+  set({ selection, ...extendPatch(selection) });
 }
 
 export function selectedFeatures() {
@@ -452,6 +615,176 @@ export function clearPendingCut() {
   set({ pendingCut: null });
 }
 
+/* ---------- medidas estructurales ---------- */
+
+export const setMeasureMethod = (measureMethod) => set({ measureMethod, draft: null });
+export const setMeasureType = (measureType) => set({ measureType });
+export const setMeasureOverturned = (measureOverturned) => set({ measureOverturned });
+export const setManualStrike = (manualStrike) => set({ manualStrike: norm360(manualStrike) });
+export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) });
+
+export function clearPendingPlane() {
+  set({ pendingPlane: null });
+}
+
+export function setStructureStyle(patch) {
+  set({ structureStyle: sanitizeStructureStyle({ ...state.structureStyle, ...patch }) });
+}
+
+const norm360 = (deg) => {
+  const v = Number(deg);
+  return Number.isFinite(v) ? ((v % 360) + 360) % 360 : 0;
+};
+
+/** El manteo de un plano vive en [0, 90]: 91° no es un plano, es otro rumbo. */
+const clampDip = (deg) => {
+  const v = Number(deg);
+  return Number.isFinite(v) ? Math.min(90, Math.max(0, v)) : 0;
+};
+
+/**
+ * Crea un punto de medida estructural.
+ *
+ * Es la primera geometría de PUNTO del modelo: hasta aquí solo había líneas y
+ * polígonos. `geomKind: 'measurement'` la distingue de cualquier otro punto que
+ * pudiera entrar por un GeoPackage ajeno, y es lo que filtran tanto las capas
+ * del símbolo como la exportación.
+ *
+ * Los campos de calidad (`strikeSd`, `dipSd`, `rms`, `baseline`…) viajan con el
+ * dato y no solo en pantalla: un manteo calculado sobre el DEM sin su
+ * incertidumbre al lado es un número que después nadie sabe si puede usar.
+ */
+export function createMeasurement({
+  lngLat,
+  strike,
+  dip,
+  dipAzimuth,
+  type,
+  overturned,
+  method = 'manual',
+  quality = {},
+  note = '',
+}) {
+  const id = newId();
+  const rumbo = norm360(strike);
+  const manteo = clampDip(dip);
+  const feature = {
+    type: 'Feature',
+    id,
+    properties: {
+      id,
+      kind: 'point',
+      geomKind: 'measurement',
+      type: type ?? state.measureType,
+      strike: rumbo,
+      dip: manteo,
+      dipAzimuth: Number.isFinite(dipAzimuth) ? norm360(dipAzimuth) : norm360(rumbo + 90),
+      overturned: overturned ?? state.measureOverturned,
+      method,
+      // Una medida es siempre observada: no existe un rumbo "inferido".
+      certainty: 'observed',
+      opacity: 1,
+      note,
+      ...quality,
+      createdAt: Date.now(),
+    },
+    geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
+  };
+  pushHistory();
+  set({ features: [...state.features, feature], draft: null, selection: [id], pendingPlane: null });
+  return feature;
+}
+
+/**
+ * Cambia rumbo o manteo de las medidas seleccionadas. Va aparte de
+ * `updateSelectedProps` porque los dos números tienen dominio propio y porque
+ * editarlos a mano invalida la incertidumbre calculada del DEM: el resultado
+ * ya no es el del ajuste, es el que decidió quien lo corrigió.
+ */
+export function updateMeasurement(patch) {
+  const ids = new Set(state.selection);
+  if (ids.size === 0) return;
+  pushHistory();
+  set({
+    features: state.features.map((f) => {
+      if (!ids.has(f.properties.id) || f.properties.geomKind !== 'measurement') return f;
+      const props = { ...f.properties };
+      if (patch.strike !== undefined) props.strike = norm360(patch.strike);
+      if (patch.dip !== undefined) props.dip = clampDip(patch.dip);
+      if (patch.type !== undefined) props.type = patch.type;
+      if (patch.overturned !== undefined) props.overturned = !!patch.overturned;
+      if (patch.strike !== undefined || patch.dip !== undefined) {
+        props.dipAzimuth = norm360(props.strike + 90);
+        if (props.method !== 'manual') {
+          props.method = 'edited';
+          // Las barras de error eran del ajuste, no de este número escrito a
+          // mano: dejarlas puestas afirmaría una precisión que ya no aplica.
+          for (const k of ['strikeSd', 'dipSd', 'rms', 'baseline', 'minorSpread', 'n']) {
+            delete props[k];
+          }
+        }
+      }
+      return { ...f, properties: props };
+    }),
+  });
+}
+
+/* ---------- perfil topográfico ---------- */
+
+export const setProfileSource = (profileSource) => set({ profileSource });
+export const setOpenTopoDem = (opentopoDem) => set({ opentopoDem });
+export const setOpenTopoKey = (opentopoKey) => set({ opentopoKey });
+export const setProfileSamples = (profileSamples) =>
+  set({ profileSamples: Math.min(1000, Math.max(20, Math.round(profileSamples))) });
+
+export function clearPendingProfile() {
+  set({ pendingProfile: null });
+}
+
+/** Publica el perfil ya calculado. El cursor arranca sin señalar nada. */
+export function setProfile(profile) {
+  set({ profile, profileCursor: null, pendingProfile: null });
+}
+
+export function clearProfile() {
+  set({ profile: null, profileCursor: null, pendingProfile: null });
+}
+
+export function setProfileCursor(profileCursor) {
+  set({ profileCursor });
+}
+
+/**
+ * Perfila una línea que ya está dibujada, sin volver a trazarla. Es el camino
+ * natural cuando el corte que interesa es justo un contacto o una falla que ya
+ * se cartografió.
+ */
+export function requestProfileFor(id) {
+  const f = state.features.find((x) => x.properties.id === id);
+  if (!f || f.geometry.type !== 'LineString') return false;
+  set({ pendingProfile: { coords: f.geometry.coordinates, fromFeature: id } });
+  return true;
+}
+
+/* ---------- relieve 3D ---------- */
+
+/**
+ * Activar el relieve saca de cualquier herramienta de dibujo: es lo que evita
+ * que se sigan poniendo vértices sobre un terreno inclinado, donde no caen
+ * donde parece.
+ */
+export function setTerrain3d(terrain3d) {
+  if (terrain3d && DRAWING_TOOLS.includes(state.tool)) {
+    if (state.draft) cancelDraft();
+    set({ tool: 'navigate', terrain3d, selection: [] });
+    return;
+  }
+  set({ terrain3d });
+}
+
+export const setTerrainExaggeration = (terrainExaggeration) =>
+  set({ terrainExaggeration: Math.min(3, Math.max(0.5, terrainExaggeration)) });
+
 /** Usar un elemento ya existente como cortador, en vez de dibujar la línea. */
 export function requestCutByFeature(id) {
   set({ pendingCut: { type: 'feature', id } });
@@ -466,7 +799,11 @@ export function deleteSelected() {
   if (state.selection.length === 0) return;
   pushHistory();
   const ids = new Set(state.selection);
-  set({ features: state.features.filter((f) => !ids.has(f.properties.id)), selection: [] });
+  set({
+    features: state.features.filter((f) => !ids.has(f.properties.id)),
+    selection: [],
+    extendFrom: null,
+  });
 }
 
 /** Sustituye un conjunto de elementos por otro, en una sola operación. */
@@ -588,7 +925,7 @@ export const setExtendFrom = (extendFrom) => set({ extendFrom });
 /** Carga un conjunto de elementos como punto de partida: no se deshace más allá. */
 export function loadFeatures(features) {
   resetHistory();
-  set({ features, selection: [], draft: null });
+  set({ features, selection: [], draft: null, extendFrom: null });
 }
 
 /* ---------- proyectos ---------- */
@@ -609,7 +946,24 @@ export const SETTING_KEYS = [
   'topoEdit',
   'topoTolerance',
   'cutSource',
+  'measureMethod',
+  'measureType',
+  'measureOverturned',
+  'profileSource',
+  'opentopoDem',
+  'profileSamples',
+  'terrainExaggeration',
 ];
+
+/*
+ * `opentopoKey` queda deliberadamente FUERA de los ajustes del proyecto: es una
+ * credencial personal, y un `.fdproj.json` se manda por correo o se sube a un
+ * repositorio como cualquier otro archivo del trabajo. Vive solo en el
+ * dispositivo, en localStorage.
+ *
+ * `terrain3d` tampoco viaja: es un modo de visualización que además bloquea el
+ * dibujo, y abrir un proyecto ajeno sin poder digitalizar no se entendería.
+ */
 
 export function currentSettings() {
   const out = {};
@@ -619,8 +973,9 @@ export function currentSettings() {
 
 /** Visibilidad y opacidad de las capas propias, sin lo importado en la sesión. */
 export function currentLayerState() {
+  const propias = new Set(['geology', 'contours', 'hillshade', 'basemap']);
   return state.layers
-    .filter((l) => l.kind === 'geology' || l.kind === 'contours' || l.kind === 'basemap')
+    .filter((l) => propias.has(l.kind))
     .map((l) => ({ id: l.id, visible: l.visible, opacity: l.opacity }));
 }
 
@@ -629,7 +984,7 @@ export function currentLayerState() {
  * repinten una vez. El historial se corta: deshacer no debe llevar de vuelta al
  * proyecto anterior.
  */
-export function loadProject({ features, units, ornaments, settings, layers } = {}) {
+export function loadProject({ features, units, ornaments, structureStyle, settings, layers } = {}) {
   resetHistory();
   const patch = {
     features: Array.isArray(features) ? features : [],
@@ -641,6 +996,7 @@ export function loadProject({ features, units, ornaments, settings, layers } = {
   };
   if (Array.isArray(units) && units.length) patch.units = units;
   if (ornaments) patch.ornaments = sanitizeOrnaments(ornaments);
+  if (structureStyle) patch.structureStyle = sanitizeStructureStyle(structureStyle);
   if (settings) {
     for (const k of SETTING_KEYS) {
       if (settings[k] !== undefined) patch[k] = settings[k];
