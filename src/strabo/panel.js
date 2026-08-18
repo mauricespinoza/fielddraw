@@ -33,6 +33,10 @@ export function initStraboPanel({ message, busy }) {
   $('strabo-signin').addEventListener('click', doSignIn);
   $('strabo-signout').addEventListener('click', doSignOut);
   $('strabo-project').addEventListener('change', onProjectChange);
+  // Elegir un dataset no dispara nada por sí solo: hay que reevaluar el
+  // botón de descarga explícitamente, o se queda deshabilitado para siempre
+  // aunque ya haya un dataset seleccionado.
+  $('strabo-dataset').addEventListener('change', render);
   $('strabo-download').addEventListener('click', doDownload);
   $('strabo-upload').addEventListener('click', doUpload);
   $('strabo-clear').addEventListener('click', () => {
