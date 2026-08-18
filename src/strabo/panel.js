@@ -217,15 +217,39 @@ function renderFilters() {
 /** Claves internas que no le sirven de nada al usuario. */
 const HIDDEN_ATTR_KEYS = new Set(['id']);
 
+/**
+ * Campos que se leen como texto corrido y no como un dato: van a ancho
+ * completo debajo de su etiqueta, no apretados en la columna derecha. Son las
+ * anotaciones de terreno, que es justamente lo que uno viene a leer al tocar
+ * un spot.
+ */
+const LONG_ATTR_KEYS = new Set([
+  'Notes',
+  'Structure notes',
+  'Sample Description',
+  'Indicators',
+  'Purpose',
+]);
+
+/** Un valor corto puede quedarse en su fila; uno largo no cabe en el 56%. */
+const isLongAttr = (key, text) => LONG_ATTR_KEYS.has(key) || text.length > 28;
+
 function attrTitle(hit) {
   const p = hit.properties;
-  if (hit.layer.id === 'strabo-structures') return p.Type || 'Structure';
+  // El nombre del spot es como el geólogo lo tiene anotado en la libreta, así
+  // que encabeza siempre que exista; el tipo lo acompaña porque un mismo spot
+  // puede traer varias mediciones.
+  if (hit.layer.id === 'strabo-structures') {
+    return [p.Name, p.Type].filter(Boolean).join(' · ') || 'Structure';
+  }
   if (hit.layer.id === 'strabo-observations') return p.Name || 'Observation';
   return p.Name || (hit.geometry.type === 'Polygon' ? 'Polygon' : 'Line');
 }
 
+const EMPTY_ATTR = '—';
+
 function fmtAttrValue(v) {
-  if (v === null || v === undefined || v === '') return '—';
+  if (v === null || v === undefined || v === '') return EMPTY_ATTR;
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
   return String(v);
 }
@@ -245,6 +269,7 @@ export function openStraboAttrs(hit, screen) {
     body.appendChild(p);
   }
   for (const [k, v] of entries) {
+    const text = fmtAttrValue(v);
     const row = document.createElement('div');
     row.className = 'strabo-attrs-row';
     const kEl = document.createElement('span');
@@ -252,7 +277,8 @@ export function openStraboAttrs(hit, screen) {
     kEl.textContent = k;
     const vEl = document.createElement('span');
     vEl.className = 'v';
-    vEl.textContent = fmtAttrValue(v);
+    vEl.textContent = text;
+    if (text !== EMPTY_ATTR && isLongAttr(k, text)) row.classList.add('long');
     row.append(kEl, vEl);
     body.appendChild(row);
   }

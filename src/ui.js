@@ -2,17 +2,20 @@ import * as store from './store.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
+  FLIPPABLE_ORNAMENT_TYPES,
   LINE_GROUPS,
   LINE_TYPES,
   LINE_TYPE_BY_ID,
   ORNAMENT_LIMITS,
   ORNAMENT_TYPES,
+  effectiveLineColor,
+  isObservedOnly,
 } from './symbology.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import { downloadBlob, downloadGeoJSON } from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { MBTILES_WARN_BYTES, openTileFile } from './tiles.js';
-import { applyCut, applyMerge, applyTopology } from './editOps.js';
+import { applyCut, applyLinesToPolygon, applyMerge, applyTopology } from './editOps.js';
 import { openProject, parseProject, saveProject } from './project.js';
 import { initStraboPanel } from './strabo/panel.js';
 
@@ -42,10 +45,11 @@ function dashPreview(color, dash) {
   return svg;
 }
 
-function chip({ label, title, color, dash, swatch, glyph, active, onClick, cls = '' }) {
+function chip({ label, title, color, dash, swatch, glyph, active, disabled, onClick, cls = '' }) {
   const b = document.createElement('button');
   b.className = `chip${cls ? ` ${cls}` : ''}${active ? ' active' : ''}`;
   if (title) b.title = title;
+  if (disabled) b.disabled = true;
   if (glyph) {
     const g = document.createElement('span');
     g.className = 'glyph';
@@ -114,17 +118,24 @@ function buildPalette() {
   }
   el.classList.remove('hidden');
 
-  // Fila de certeza: tres chips minúsculos arriba del todo.
+  // Fila de certeza: tres chips minúsculos arriba del todo. Con un tipo de
+  // certeza acotada (los pliegues) los otros dos se ven pero no se pueden
+  // pulsar: dejarlos a la vista explica la regla, esconderlos solo desconcierta.
+  const soloObservado = s.tool === 'line' && isObservedOnly(s.lineType);
   const certRow = document.createElement('div');
   certRow.className = 'palette-row certainty-row';
   for (const c of CERTAINTIES) {
+    const bloqueado = soloObservado && c.id !== 'observed';
     certRow.appendChild(
       chip({
         label: c.short,
-        title: c.label,
+        title: bloqueado
+          ? `${LINE_TYPE_BY_ID.get(s.lineType).label} is only mapped as observed`
+          : c.label,
         color: '#e6edf3',
         dash: c.dash,
         active: s.certainty === c.id,
+        disabled: bloqueado,
         cls: 'certainty',
         onClick: () => store.setCertainty(c.id),
       }),
@@ -151,8 +162,10 @@ function buildPalette() {
           chip({
             label: t.short,
             title: t.label,
-            color: t.color,
-            dash: activeDash,
+            color: effectiveLineColor(t.id, s.ornaments),
+            // Un pliegue se dibuja siempre continuo, sea cual sea la certeza
+            // activa: la muestra tiene que enseñar eso y no el patrón de otro.
+            dash: isObservedOnly(t.id) ? null : activeDash,
             active: s.lineType === t.id,
             onClick: () => store.setLineType(t.id),
           }),
@@ -273,6 +286,23 @@ function symbField(type, field, value) {
   return row;
 }
 
+/**
+ * La muestra de color es el propio selector: en una tablet, tocar el cuadrito
+ * y que se abra la rueda del sistema es el gesto que uno intenta igual. El
+ * cambio se aplica en `input` para que se vea en el mapa mientras se arrastra,
+ * como los deslizadores de al lado.
+ */
+function symbColor(type, value, label) {
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.className = 'swatch swatch-input';
+  input.value = value;
+  input.title = `Colour of ${label}`;
+  input.setAttribute('aria-label', `Colour of ${label}`);
+  input.addEventListener('input', () => store.setOrnament(type, { color: input.value }));
+  return input;
+}
+
 function renderSymbology() {
   const list = $('symbology-list');
   const { ornaments } = store.getState();
@@ -288,15 +318,15 @@ function renderSymbology() {
 
     const head = document.createElement('div');
     head.className = 'symb-head';
-    const sw = document.createElement('span');
-    sw.className = 'swatch';
-    sw.style.background = meta.color;
     const name = document.createElement('strong');
     name.textContent = meta.label;
-    head.append(sw, name);
+    head.append(symbColor(type, effectiveLineColor(type, ornaments), meta.label), name);
     li.appendChild(head);
 
-    for (const f of SYMB_FIELDS) li.appendChild(symbField(type, f, s[f.key]));
+    // El símbolo de un pliegue va a caballo del eje: desplazarlo hacia un lado
+    // rompe lo que significa, así que ese deslizador ni se ofrece.
+    const fields = isObservedOnly(type) ? SYMB_FIELDS.filter((f) => f.key !== 'offset') : SYMB_FIELDS;
+    for (const f of fields) li.appendChild(symbField(type, f, s[f.key]));
     list.appendChild(li);
   }
 }
@@ -403,6 +433,12 @@ function renderLayers() {
 
 /* ---------- menú de propiedades de la selección ---------- */
 
+/** Nombre de la unidad que la paleta tiene activa, para los tooltips. */
+function activeUnitName(state) {
+  const unit = state.units.find((u) => u.id === state.polygonType);
+  return unit ? unit.name : 'no unit';
+}
+
 function section(parent, title) {
   const wrap = document.createElement('div');
   wrap.className = 'props-section';
@@ -424,6 +460,7 @@ export function openPropsMenu(screen) {
   body.replaceChildren();
 
   const polys = sel.filter((f) => f.geometry.type === 'Polygon');
+  const lines = sel.filter((f) => f.geometry.type === 'LineString');
   $('props-title').textContent =
     sel.length === 1 ? '1 feature selected' : `${sel.length} features selected`;
 
@@ -449,15 +486,17 @@ export function openPropsMenu(screen) {
   }
   acciones.appendChild(nodosRow);
 
-  // Flip del ornamento: solo tiene sentido en las fallas que llevan símbolo.
-  const conOrnamento = sel.filter((f) => ORNAMENT_TYPES.includes(f.properties.type));
+  // Flip del ornamento: solo en las fallas, cuyo símbolo es asimétrico. Las
+  // flechas de un pliegue son simétricas respecto del eje, así que reflejarlas
+  // devolvería el mismo dibujo.
+  const conOrnamento = sel.filter((f) => FLIPPABLE_ORNAMENT_TYPES.includes(f.properties.type));
   if (conOrnamento.length > 0) {
     const simb = section(body, 'Symbology');
     const flip = document.createElement('button');
     flip.className = 'pill wide';
     flip.textContent = `Flip symbol (${conOrnamento.length})`;
     flip.title =
-      'Moves the teeth or ticks to the other side of the trace, with no need to redraw the fault backwards';
+      'Mirrors the teeth or ticks across the trace, moving them to the other block with no need to redraw the fault backwards';
     flip.addEventListener('click', () => {
       const n = store.flipSelectedOrnament();
       showBanner(
@@ -485,13 +524,20 @@ export function openPropsMenu(screen) {
   const currentCert = sel.every((f) => f.properties.certainty === sel[0].properties.certainty)
     ? sel[0].properties.certainty
     : null;
+  // Si TODO lo seleccionado tiene la certeza acotada, los otros dos valores se
+  // bloquean. En una selección mixta se dejan pulsables: el store los aplica a
+  // lo que los admite y respeta los ejes de pliegue.
+  const todoObservado = sel.every((f) => isObservedOnly(f.properties.type));
   for (const c of CERTAINTIES) {
+    const bloqueado = todoObservado && c.id !== 'observed';
     certRow.appendChild(
       chip({
         label: c.label,
+        title: bloqueado ? 'Fold axial traces are only mapped as observed' : undefined,
         color: '#e6edf3',
         dash: c.dash,
         active: currentCert === c.id,
+        disabled: bloqueado,
         onClick: () => {
           store.updateSelectedProps({ certainty: c.id });
           openPropsMenu(screen);
@@ -569,6 +615,32 @@ export function openPropsMenu(screen) {
   });
 
   geoRow.append(suavizar, simplificar);
+
+  // Cerrar el contorno y convertirlo en unidad: con varias líneas se encadenan
+  // primero, que es como se cierra un borde hecho de contactos y fallas.
+  if (lines.length > 0) {
+    const aPoligono = document.createElement('button');
+    aPoligono.className = 'chip';
+    aPoligono.textContent = lines.length === 1 ? 'To polygon' : `Close ${lines.length} lines`;
+    aPoligono.title =
+      lines.length === 1
+        ? `Close the line into a polygon of the active unit (${activeUnitName(s)})`
+        : `Chain the lines by their nearest ends and close them into one polygon of the active unit (${activeUnitName(s)})`;
+    aPoligono.addEventListener('click', () => {
+      try {
+        const { desde, unidad } = applyLinesToPolygon();
+        showBanner(
+          `${desde} line${desde === 1 ? '' : 's'} converted into a polygon${unidad ? ` — ${unidad}` : ''}.`,
+          'info',
+        );
+        closePropsMenu();
+      } catch (err) {
+        showBanner(err.message, 'warn');
+      }
+    });
+    geoRow.appendChild(aPoligono);
+  }
+
   geo.appendChild(geoRow);
 
   // Borrar
@@ -717,7 +789,8 @@ async function doExportGeoPackage() {
   if (!features.length) return;
   setBusy('Building GeoPackage…');
   try {
-    const bytes = await exportGeoPackage(features, store.getState().units);
+    const st = store.getState();
+    const bytes = await exportGeoPackage(features, st.units, st.ornaments);
     const stamp = new Date().toISOString().slice(0, 10);
     downloadBlob(
       new Blob([bytes], { type: 'application/geopackage+sqlite3' }),

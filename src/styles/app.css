@@ -310,6 +310,16 @@ body,
   width: 24px;
 }
 
+/*
+ * Un chip que no aplica se ve pero no se pulsa: es el caso de "inferido" y
+ * "cubierto" con un eje de pliegue activo, donde esconderlos dejaría al usuario
+ * preguntándose adónde se fueron.
+ */
+.chip:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
 .chip.ghost {
   border-style: dashed;
   color: var(--muted);
@@ -755,6 +765,25 @@ input[type='radio'] {
   text-align: right;
   word-break: break-word;
 }
+
+/*
+ * Las anotaciones de terreno son texto corrido: en la columna derecha, con el
+ * 56% del ancho y alineadas a la derecha, quedaban en una tira ilegible. A
+ * ancho completo bajo su etiqueta se leen como lo que son, un párrafo.
+ */
+.strabo-attrs-row.long {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.strabo-attrs-row.long .k {
+  max-width: none;
+}
+
+.strabo-attrs-row.long .v {
+  text-align: left;
+  white-space: pre-wrap;
+}
 .layer-panel .field {
   display: flex;
   flex-direction: column;
@@ -814,6 +843,36 @@ input[type='radio'] {
   border-radius: 4px;
   border: 1px solid rgba(0, 0, 0, 0.4);
   flex: none;
+}
+
+/*
+ * La muestra de color ES el selector. Los navegadores dibujan el <input
+ * type=color> con relleno y borde propios, así que se recortan para que quede
+ * como el cuadrito de siempre — con más área de toque de la que aparenta, que
+ * en tablet es lo que importa.
+ */
+.symb-head .swatch-input {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.symb-head .swatch-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.symb-head .swatch-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.symb-head .swatch-input::-moz-color-swatch {
+  border: none;
+  border-radius: 3px;
 }
 
 .symb-field {

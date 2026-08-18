@@ -80,6 +80,75 @@ export function applyTopology() {
   return { ...result, revisados: targets.length, cambio };
 }
 
+/**
+ * Convierte las líneas seleccionadas en un polígono, cerrando el anillo.
+ *
+ * Con varias líneas se encadenan primero por sus extremos más próximos: en el
+ * terreno el borde de una unidad casi nunca es un solo trazo, sino un contacto
+ * más una falla más otro contacto, y lo que se quiere al seleccionarlos todos
+ * es el polígono que encierran, no un polígono por trazo. El puente entre
+ * pieza y pieza queda como un segmento recto, igual que en Unir.
+ *
+ * El polígono nace con la unidad activa de la paleta —una línea no tiene
+ * unidad de la que heredarla— y conserva certeza y opacidad de la primera
+ * línea. Las líneas de origen desaparecen: es una conversión, no una copia.
+ */
+export function applyLinesToPolygon() {
+  const st = store.getState();
+  const sel = store.selectedFeatures();
+  const lineas = sel.filter((f) => f.geometry.type === 'LineString');
+  if (lineas.length === 0) throw new Error('Select at least one line to convert');
+
+  const chained =
+    lineas.length === 1
+      ? lineas[0].geometry.coordinates.slice()
+      : chainLines(lineas.map((f) => f.geometry.coordinates));
+  const ring = closeRing(chained || []);
+  if (!ring) {
+    throw new Error('The line does not enclose an area: it needs three distinct vertices.');
+  }
+
+  const unit = st.units.find((u) => u.id === st.polygonType);
+  const source = lineas[0];
+  const polygon = store.derivedFeature(source, { type: 'Polygon', coordinates: [ring] });
+  // `flip` es del ornamento de la falla y no significa nada en un polígono;
+  // `type` pasa de ser el tipo de línea a ser el id de la unidad.
+  delete polygon.properties.flip;
+  polygon.properties = {
+    ...polygon.properties,
+    kind: 'polygon',
+    type: st.polygonType,
+    unit: unit ? unit.name : '',
+    code: unit ? unit.code : '',
+  };
+
+  store.replaceFeatures(
+    lineas.map((f) => f.properties.id),
+    [polygon],
+  );
+  return { desde: lineas.length, unidad: unit ? unit.name : '' };
+}
+
+/**
+ * Anillo cerrado a partir de una polilínea: quita los puntos repetidos
+ * seguidos —que un trazo a pulso deja de sobra— y repite el primero al final
+ * si hacía falta. Devuelve null si no quedan tres vértices distintos, que es
+ * lo mínimo para encerrar área.
+ */
+function closeRing(coords) {
+  const pts = [];
+  for (const c of coords) {
+    const last = pts[pts.length - 1];
+    if (!last || last[0] !== c[0] || last[1] !== c[1]) pts.push(c.slice());
+  }
+  // Un anillo que ya venía cerrado no debe contar dos veces su primer punto.
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  if (pts.length > 1 && first[0] === last[0] && first[1] === last[1]) pts.pop();
+  if (pts.length < 3) return null;
+  return [...pts, first.slice()];
+}
+
 /** Une los elementos seleccionados; todos deben ser del mismo tipo. */
 export async function applyMerge() {
   const sel = store.selectedFeatures();

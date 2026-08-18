@@ -17,10 +17,12 @@ import {
   EDIT_LAYER_IDS,
   EDIT_SOURCE,
   GEOLOGY_LAYER_IDS,
+  GEOLOGY_LINE_LAYER_IDS,
   GEOLOGY_SOURCE,
   draftLayers,
   editLayers,
   geologyLayers,
+  lineColorExpr,
   unitFillExpr,
   unitOutlineExpr,
   withFeatureAlpha,
@@ -295,12 +297,13 @@ export function createMapView({
     for (const l of geologyLayers()) map.addLayer(l);
 
     try {
-      addOrnamentImages(map);
+      addOrnamentImages(map, store.getState().ornaments);
       for (const l of ornamentLayers(store.getState().ornaments)) map.addLayer(l);
     } catch (err) {
       console.warn('[ornamentos]', err);
     }
     applyUnitColors();
+    applyLineColors();
 
     map.addSource(DRAFT_SOURCE, {
       type: 'geojson',
@@ -326,8 +329,8 @@ export function createMapView({
     // evento nativo de MapLibre solo cuando pasó libre.
     if (onStraboFeatureTap) {
       map.on('click', (e) => {
-        const hits = map.queryRenderedFeatures(e.point, { layers: STRABO_INTERACTIVE_LAYER_IDS });
-        if (hits.length) onStraboFeatureTap(hits[0], [e.point.x, e.point.y]);
+        const hit = straboHitAt([e.point.x, e.point.y]);
+        if (hit) onStraboFeatureTap(hit, [e.point.x, e.point.y]);
       });
       // Cursor de mano al pasar por encima, como cualquier elemento con el que
       // se puede interactuar: es la única pista de que ahí hay algo que tocar.
@@ -355,6 +358,18 @@ export function createMapView({
     collectSnapSources();
     rebuildHandles();
   });
+
+  /**
+   * Repinta las trazas cuando cambia un color en el módulo de simbología. Es el
+   * gemelo de `applyUnitColors` para las líneas: la expresión se reconstruye
+   * entera, que es más barato que llevar la cuenta de qué tipo cambió.
+   */
+  function applyLineColors() {
+    const expr = lineColorExpr(store.getState().ornaments);
+    for (const id of GEOLOGY_LINE_LAYER_IDS) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', expr);
+    }
+  }
 
   /** Repinta los polígonos cuando cambian las unidades del usuario. */
   function applyUnitColors() {
@@ -874,6 +889,24 @@ export function createMapView({
     return pickFeature(store.getState().features, screen, projectLngLat, tolerance);
   }
 
+  /**
+   * Spot de StraboSpot bajo el toque. Se consulta un recuadro y no el píxel
+   * exacto: los símbolos estructurales son chicos y en terreno se tocan con el
+   * dedo, no con el ratón. El primer resultado es el de la capa dibujada más
+   * arriba, que es el que se ve.
+   */
+  function straboHitAt(screen, tolerance = 10) {
+    if (!ready) return null;
+    const box = [
+      [screen[0] - tolerance, screen[1] - tolerance],
+      [screen[0] + tolerance, screen[1] + tolerance],
+    ];
+    const capas = STRABO_INTERACTIVE_LAYER_IDS.filter((id) => map.getLayer(id));
+    if (capas.length === 0) return null;
+    const hits = map.queryRenderedFeatures(box, { layers: capas });
+    return hits.length ? hits[0] : null;
+  }
+
   function endLasso(screen, info) {
     lassoEl.hidden = true;
     const l = lasso;
@@ -887,8 +920,19 @@ export function createMapView({
 
     if (!info.moved) {
       const hit = pickAt(screen);
-      if (hit) store.toggleSelection(hit.properties.id);
-      else store.clearSelection();
+      if (hit) {
+        store.toggleSelection(hit.properties.id);
+        return;
+      }
+      // Elegir consume el puntero, así que el `click` de MapLibre —que es por
+      // donde se abren los atributos en Navegar— aquí no llega nunca. Sin
+      // esto, tocar un spot importado con la herramienta con la que uno
+      // naturalmente lo intenta no hacía absolutamente nada.
+      // Se limpia igual que con cualquier otro toque en vacío: el spot no es
+      // un elemento del dibujo y no entra en la selección, solo se lee.
+      store.clearSelection();
+      const spot = onStraboFeatureTap && straboHitAt(screen);
+      if (spot) onStraboFeatureTap(spot, screen);
       return;
     }
 
@@ -1119,7 +1163,10 @@ export function createMapView({
 
   store.subscribe(() => {
     if (store.changed('units')) applyUnitColors();
-    if (store.changed('ornaments')) applyOrnamentStyle(map, store.getState().ornaments);
+    if (store.changed('ornaments')) {
+      applyOrnamentStyle(map, store.getState().ornaments);
+      applyLineColors();
+    }
     if (store.changed('strabo')) {
       syncStrabo();
       applyLayerStack(map, store.getState().layers);

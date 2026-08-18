@@ -357,13 +357,15 @@
 
       <aside class="layer-panel" id="symbology-panel">
         <header>
-          <h2>Fault symbology</h2>
+          <h2>Line symbology</h2>
           <button class="icon-btn" id="btn-close-symbology" aria-label="Close">✕</button>
         </header>
         <p class="hint">
-          Size, spacing and position of the ornaments. Position is the perpendicular distance to
+          Colour, size, spacing and position of faults and fold axial traces. The colour swatch
+          repaints both the trace and its ornament. Position is the perpendicular distance to
           the trace: the sign picks the side, and <strong>flip</strong> in the properties menu
-          reverses it per feature.
+          mirrors the symbol across the trace on one feature, sending it to the other block.
+          Fold arrows straddle the axis, so they have no side to flip.
         </p>
         <ul id="symbology-list"></ul>
         <button class="pill wide" id="btn-reset-symbology">Reset to defaults</button>

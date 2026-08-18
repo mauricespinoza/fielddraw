@@ -243,10 +243,16 @@ Provisional, según lo acordado: el **tipo** se codifica en color y la
 | Contacto estratigráfico | casi negro `#212121` |
 | Contacto intrusivo | magenta `#C2185B` |
 | Contacto estructural | verde `#2E7D32` |
+| Antiforme / Sinforme | magenta `#ff00ff` |
 | Dique | café `#6D4C41` |
 
 Certeza: **observado** continua · **inferido** segmentada · **cubierto**
-punteada.
+punteada. Los ejes de pliegue son la excepción: **solo observados** (ver
+*Pliegues*).
+
+El color de los tipos que llevan ornamento —las cuatro fallas y los dos
+pliegues— se puede cambiar desde el módulo de simbología; el resto sale de esta
+tabla (ver *Color editable*).
 
 Nota técnica: `line-dasharray` no admite expresiones data-driven en MapLibre,
 así que hay una capa por patrón de certeza, filtrada por atributo. El color sí
@@ -395,6 +401,8 @@ Mantener pulsado ~1 s sobre la selección abre un menú flotante con:
 - **Vértices**: los tres modos de la herramienta Nodos, ya acotados a lo
   seleccionado, para ir directo a añadir o a borrar un vértice.
 - **Invertir símbolo**, cuando hay fallas con ornamento en la selección.
+- **A polígono**, cuando hay líneas en la selección: las cierra y las convierte
+  en una unidad (ver *De línea a polígono*).
 - **Suavizar** (Chaikin) y **Simplificar** (Douglas-Peucker con tolerancia
   derivada del tamaño de la propia geometría, para que se comporte igual en un
   dique de 200 m que en un contacto de 20 km).
@@ -405,12 +413,13 @@ Mantener pulsado ~1 s sobre la selección abre un menú flotante con:
 > primera acción. Si prefieres que la pulsación larga salte directo a los nodos,
 > es un cambio de una línea.
 
-## Ornamentos de falla
+## Ornamentos de falla y de pliegue
 
 Las fallas llevan su símbolo estructural: **dientes** en las inversas, **tics
 con cuadrado** en las normales y **pares de medias flechas** en las de rumbo,
 con el sentido correcto para dextral y sinestral. Una falla cubierta no los
-lleva: no tiene expresión superficial que ornamentar.
+lleva: no tiene expresión superficial que ornamentar. Los ejes de pliegue llevan
+**flechas perpendiculares** al eje, divergentes o convergentes.
 
 Se dibujan como capas `symbol` con `symbol-placement: 'line'`, que reparte
 iconos a lo largo del trazo y los rota con él; `icon-offset` desplaza en el
@@ -421,13 +430,15 @@ máscara alfa cruda se ve sucia al recolorearla.
 
 ### Simbología editable
 
-El botón **Símbolos** abre el módulo donde se ajusta, por tipo de falla:
+El botón **Símbolos** abre el módulo donde se ajusta, por tipo de falla y de
+pliegue:
 
 | Parámetro | Qué hace |
 |---|---|
+| Color | repinta la traza y su ornamento; parte del catálogo y se guarda con el proyecto |
 | Tamaño | escala el icono (0,4–2,5×); multiplica la rampa por zoom, no la reemplaza |
 | Espaciado | separación entre símbolos a lo largo de la traza (10–200 px) |
-| Posición | distancia perpendicular a la traza; el signo elige el lado (±14 px) |
+| Posición | distancia perpendicular a la traza; el signo elige el lado (±14 px). No se ofrece en los pliegues: su símbolo va a caballo del eje |
 | Zoom mínimo | por debajo no se dibuja, para que a escala regional la traza no sea una fila de símbolos |
 
 Los cambios se aplican en caliente con `setLayoutProperty` en vez de recrear las
@@ -436,17 +447,97 @@ valores se guardan en localStorage y viajan dentro del proyecto.
 
 ### Flip
 
-**Invertir símbolo**, en el menú de propiedades, pasa los dientes o los tics al
-otro lado de la traza sin tener que redibujar la falla al revés — que es lo que
-había que hacer antes cuando el bloque colgante quedaba del lado equivocado.
+**Invertir símbolo**, en el menú de propiedades, **refleja el ornamento como en
+un espejo cuyo eje es la propia traza**: los dientes o los tics pasan al otro
+lado sin tener que redibujar la falla al revés — que es lo que había que hacer
+antes cuando el bloque colgante quedaba del lado equivocado.
 
 Se resuelve con dos capas por tipo, filtradas por el atributo `flip`, en vez de
-con expresiones data-driven: espejar es cruzar la traza (`icon-offset` opuesto)
-*y* girar 180°, y las dos cosas tienen que ir sincronizadas. Dos capas con
-filtros mutuamente excluyentes son más fáciles de leer y de comprobar. En las
-fallas de rumbo el flip no cambia el sentido del movimiento: para eso se cambia
-el tipo de dextral a sinestral, que es un dato distinto, no una decisión de
-dibujo.
+con expresiones data-driven: `icon-offset` e `icon-rotate` sí admiten
+expresiones, pero tienen que ir sincronizados, y dos capas con filtros
+mutuamente excluyentes son más fáciles de leer y de comprobar.
+
+La reflexión la hace **`icon-rotate: 180` ella sola**, y por eso las dos capas
+llevan el **mismo** `icon-offset`. MapLibre hornea el offset en las esquinas del
+quad del icono (`shapeIcon`) y recién después les aplica la matriz de
+`icon-rotate` (`getIconQuads`), así que el giro arrastra también el
+desplazamiento: 180° dejan el símbolo al otro lado de la traza, a la misma
+distancia. Negar además el offset —que es lo que parece natural, y lo que hacía
+la primera versión— lo devolvía al lado de partida, y el flip terminaba dando
+vuelta el diente **sin cambiarlo de bloque**.
+
+Que girar 180° equivalga a reflejar depende de que el icono sea simétrico
+respecto de su eje vertical, y los cuatro lo son: el diente y el tic por
+construcción, y el par de medias flechas porque su simetría es justamente de
+180°. En las fallas de rumbo eso es además lo que corresponde: el flip no cambia
+el sentido del movimiento —reflejar de verdad un par dextral daría uno
+sinestral, que es otra falla— y para eso se cambia el tipo, que es un dato
+distinto, no una decisión de dibujo.
+
+### Pliegues
+
+Los ejes de pliegue se cartografían con dos tipos propios, en su grupo
+**Folds** de la paleta: **antiforme** y **sinforme**.
+
+El ornamento son dos flechas perpendiculares al eje, una a cada lado, que es lo
+que distingue uno de otro: **divergentes** en el antiforme —los flancos manteen
+alejándose de la charnela— y **convergentes** en el sinforme. A diferencia del
+de una falla, el símbolo va a caballo del eje (`icon-offset` 0, mitad a cada
+lado), y de ahí salen dos consecuencias:
+
+- **No se ofrece flip.** Las flechas son simétricas respecto del eje, así que
+  reflejarlas devuelve el mismo dibujo — y un antiforme no pasa a ser sinforme
+  por haberlo digitalizado al revés. El botón del menú de propiedades solo
+  cuenta las fallas, y `flipSelectedOrnament` tampoco los toca.
+- **No se ofrece el deslizador de Posición.** Desplazar el símbolo hacia un
+  lado rompe lo que significa.
+
+**Solo se mapean como observados.** El eje se traza donde se ve el cierre o
+donde lo obligan los manteos medidos; "inferido" y "cubierto" no son grados de
+certeza que se le apliquen a un eje, y ofrecerlos solo produce datos que después
+nadie sabe interpretar. La restricción se aplica en tres sitios, no solo en la
+UI:
+
+- Elegir Antiforme o Sinforme baja la certeza activa a observado.
+- Al cerrar el elemento, `finishDraft` la reajusta según el tipo definitivo, que
+  puede venir heredado si se estaba continuando una línea.
+- `updateSelectedProps` la filtra por elemento: en una selección mixta, poner
+  "inferido" afecta a los contactos y deja los ejes como estaban.
+- Y `parseProject` la normaliza al abrir, para que tampoco entre por un proyecto
+  ajeno o por un GeoPackage.
+
+En la paleta los dos chips que no aplican se ven pero no se pueden pulsar, con
+la razón en el tooltip: esconderlos dejaría al usuario preguntándose adónde se
+fueron.
+
+### Color editable
+
+La muestra de color de cada fila del módulo es a la vez el selector: se toca y
+se abre la rueda del sistema. Repinta **la traza y su ornamento**, en caliente.
+
+El magenta `#ff00ff` de los pliegues es solo el valor de partida — sobre imagen
+satelital no se confunde con ningún contacto ni falla, que es lo que se le pide
+a un eje. Los dos pliegues arrancan del mismo color a propósito: lo que
+distingue un antiforme de un sinforme son las flechas, no el color.
+
+El color vive en el mismo objeto que el resto de los parámetros del ornamento,
+así que se guarda en localStorage y viaja dentro del proyecto sin código nuevo.
+Tres detalles que sí hicieron falta:
+
+- La expresión `line-color` pasa a construirse a demanda (`lineColorExpr`) y
+  mapView la reaplica con `setPaintProperty`, igual que ya hacía con el relleno
+  de las unidades.
+- Los iconos están rasterizados en canvas **ya coloreados**, así que un cambio
+  de color obliga a redibujarlos. Se sustituyen con `updateImage`, que conserva
+  el nombre —quitar y volver a añadir la imagen deja las capas parpadeando— y
+  solo se toca el tipo que cambió, porque esto corre en cada evento `input` del
+  selector mientras se arrastra por la rueda.
+- El QML y el SLD que se exportan dentro del GeoPackage llevan el color
+  efectivo, no el del catálogo: lo que se abre en QGIS tiene que verse como lo
+  que se dejó en la tablet.
+
+Solo son editables los tipos que aparecen en el módulo, que son los que llevan
+ornamento. Los contactos y el dique salen siempre del catálogo.
 
 ## Deshacer y rehacer
 
@@ -508,6 +599,32 @@ como un segmento recto, que es lo que uno dibujaría a mano para cerrar un
 contacto partido. En polígonos disjuntos las piezas se guardan por separado,
 porque el modelo de datos usa polígonos simples, no multiparte.
 
+### De línea a polígono
+
+**A polígono**, en el menú de propiedades, cierra las líneas seleccionadas y las
+convierte en una unidad. Es la operación que faltaba para el orden natural del
+trabajo: en terreno se digitalizan primero los contactos y las fallas, y recién
+después se decide qué área encierran.
+
+- **Una línea**: se cierra el anillo sobre su primer vértice.
+- **Varias**: se encadenan antes por sus extremos más próximos (el mismo
+  `chainLines` de Unir), porque el borde de una unidad casi nunca es un solo
+  trazo sino un contacto más una falla más otro contacto. El resultado es **un**
+  polígono, no uno por trazo, y el salto entre pieza y pieza queda como un
+  segmento recto.
+
+El polígono nace con la **unidad activa de la paleta** —una línea no tiene
+unidad de la que heredarla— y conserva la certeza y la opacidad de la primera
+línea. `flip` se descarta: es del ornamento de la falla y no significa nada en
+un polígono. Las líneas de origen desaparecen; es una conversión, no una copia,
+y como cualquier otra edición se deshace con un solo paso.
+
+Hacen falta **tres vértices distintos**: dos no encierran área. Los puntos
+repetidos seguidos —de los que un trazo a pulso deja de sobra— se descartan
+antes de contar, y una línea que ya venía cerrada no duplica su primer vértice.
+No se valida la autointersección: cerrar un trazo que se cruza a sí mismo da un
+polígono inválido, igual que dibujarlo a mano con la herramienta Polígono.
+
 ## StraboSpot
 
 El botón **StraboSpot** abre un panel con sesión, proyecto, dataset, descarga
@@ -532,12 +649,31 @@ La simbología de Estructuras usa los mismos SVG del plugin (`vendor/strabo-svg/
 copiados de ahí), rotados por `Strike` con `icon-rotation-alignment: map`; la de
 Observación categoriza por `Process`.
 
-**Ver atributos.** Tocar un spot en modo **Navegar** abre un panel de solo
-lectura con todos sus campos. Funciona por `queryRenderedFeatures` sobre las
-capas de contenido (no las de etiqueta), y solo recibe el toque cuando ninguna
-otra herramienta lo está reclamando — en la práctica, en Navegar, porque en
-cualquier herramienta de dibujo o arrastre `DrawController` ya consume el
-puntero antes de que llegue a MapLibre.
+**Ver atributos.** Tocar un spot abre un panel de solo lectura con **todos** sus
+campos, en el orden de las columnas del plugin: nombre, fecha, unidad y a
+continuación las **anotaciones de terreno** (`Notes`), antes que las
+coordenadas y la medición. Los campos vacíos se muestran igual, con un guion, en
+vez de desaparecer: que un dato falte también es información.
+
+Los campos que se leen como texto corrido —`Notes`, `Structure notes`,
+`Sample Description`— van a ancho completo debajo de su etiqueta y no
+apretados en la columna derecha, donde un párrafo de libreta quedaba en una tira
+ilegible.
+
+Funciona por `queryRenderedFeatures` sobre las capas de contenido (no las de
+etiqueta), consultando un **recuadro de ±10 px** y no el píxel exacto: los
+símbolos estructurales son chicos y en terreno se tocan con el dedo.
+
+El toque entra por dos puertas, porque una sola no alcanzaba:
+
+- En **Navegar**, por el evento `click` nativo de MapLibre.
+- En **Elegir**, desde el propio final del gesto: esa herramienta arrastra el
+  lazo, así que `DrawController` consume el puntero y el `click` de MapLibre
+  no llega nunca. Sin esto, tocar un spot con la herramienta con la que uno
+  naturalmente lo intenta no hacía absolutamente nada. Si el toque cae sobre un
+  elemento del dibujo propio, ese manda; el spot solo se consulta cuando el
+  toque quedó en vacío, y entonces la selección se limpia igual que con
+  cualquier otro toque en vacío: un spot importado se lee, no se selecciona.
 
 **Filtrar por tipo.** El panel construye, para cada categoría con datos
 (Estructuras por `Type`, Observación por `Process`, Líneas/Polígonos por
@@ -574,6 +710,7 @@ manda, nunca se topó con esto.
 - ✅ Línea y polígono vértice a vértice, trazo libre por long-press,
   simplificación Douglas-Peucker en píxeles y suavizado Chaikin.
 - ✅ Tipos de línea por color, certeza por patrón.
+- ✅ Ejes de pliegue: antiforme y sinforme, en magenta y solo como observados.
 - ✅ Cierre del elemento por doble toque, toque fuera, doble clic, clic derecho
   o Enter.
 - ✅ Exportación a GeoPackage con `layer_styles` (QML + SLD).
@@ -584,12 +721,14 @@ manda, nunca se topó con esto.
 - ✅ Edición de vértices con edición topológica.
 - ✅ Corte con una línea dibujada o con un elemento existente, sobre la selección.
 - ✅ Unión de líneas no contiguas por sus extremos más próximos.
+- ✅ Conversión de línea a polígono, encadenando varias líneas en un solo borde.
 - ✅ Módulo de unidades geológicas, exportadas como `unit` y `code`.
 - ✅ Menú de propiedades: unidad, certeza, opacidad, suavizado y borrado.
 - ✅ Deshacer/rehacer con gestos de dos y tres dedos.
 - ✅ Continuación de una línea existente desde su extremo más cercano.
-- ✅ Ornamentos de falla: dientes, tics y medias flechas, con tamaño,
-  espaciado y posición editables, y flip por elemento.
+- ✅ Ornamentos de falla y de pliegue: dientes, tics, medias flechas y flechas
+  de eje, con color, tamaño, espaciado y posición editables, y flip por
+  elemento (reflejo especular respecto de la traza) en las fallas.
 - ✅ Confirmación topológica: fusión de vértices y nodado, con tolerancia en metros.
 - ✅ Modos de añadir y borrar vértices en la herramienta Nodos.
 - ✅ Guardar y abrir proyectos (`.fdproj.json`).
@@ -598,7 +737,8 @@ manda, nunca se topó con esto.
   app shell y caché de las teselas ya visitadas.
 - ✅ StraboSpot: sesión, descarga de spots (Estructuras/Observación con la misma
   simbología que el plugin de QGIS), subida del dibujo como dataset nuevo, ver
-  atributos, filtrar por tipo y tamaño de símbolo ajustable.
+  atributos desde Navegar y desde Elegir, filtrar por tipo y tamaño de símbolo
+  ajustable.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
   pulsar **Topología**), subtipos por categoría, y descarga dirigida de un área
   de basemap para llevar al terreno (hoy se resuelve importando un PMTiles).

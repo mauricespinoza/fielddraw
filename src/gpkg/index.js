@@ -159,7 +159,7 @@ function bboxOfFeatures(features) {
  * la tabla `layer_styles`: gracias a ella QGIS abre el archivo con la
  * simbología ya puesta, sin que el geólogo tenga que aplicar nada.
  */
-export async function exportGeoPackage(features, units) {
+export async function exportGeoPackage(features, units, ornaments) {
   const SQL = await loadSql();
   const db = new SQL.Database();
   try {
@@ -181,9 +181,9 @@ export async function exportGeoPackage(features, units) {
         name: 'geol_lines',
         geomType: 'LINESTRING',
         rows: lines,
-        qml: buildLineQML(combosPresent(lines)),
-        sld: buildLineSLD(combosPresent(lines)),
-        identifier: 'Contactos, fallas y diques',
+        qml: buildLineQML(combosPresent(lines), ornaments),
+        sld: buildLineSLD(combosPresent(lines), ornaments),
+        identifier: 'Contactos, fallas, pliegues y diques',
       },
       {
         name: 'geol_polygons',

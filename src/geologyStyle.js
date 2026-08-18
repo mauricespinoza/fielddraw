@@ -1,14 +1,23 @@
-import { CERTAINTIES, LINE_TYPES, POLYGON_TYPES } from './symbology.js';
+import { CERTAINTIES, LINE_TYPES, POLYGON_TYPES, effectiveLineColor } from './symbology.js';
 
 export const GEOLOGY_SOURCE = 'geology-src';
 export const DRAFT_SOURCE = 'draft-src';
 
-const lineColorExpr = [
-  'match',
-  ['get', 'type'],
-  ...LINE_TYPES.flatMap((t) => [t.id, t.color]),
-  '#888888',
-];
+/**
+ * El color de las líneas también cambia en caliente: el módulo de simbología
+ * deja reescribir el de los tipos con ornamento, y mapView reaplica esta
+ * expresión igual que hace con el relleno de las unidades.
+ */
+export function lineColorExpr(ornaments) {
+  return [
+    'match',
+    ['get', 'type'],
+    ...LINE_TYPES.flatMap((t) => [t.id, effectiveLineColor(t.id, ornaments)]),
+    '#888888',
+  ];
+}
+
+const defaultLineColorExpr = lineColorExpr(null);
 
 const lineWeightExpr = [
   'match',
@@ -143,7 +152,7 @@ export function geologyLayers() {
       filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'certainty'], c.id]],
       layout: { 'line-cap': c.cap, 'line-join': 'round' },
       paint: {
-        'line-color': lineColorExpr,
+        'line-color': defaultLineColorExpr,
         'line-width': lineWidthExpr,
         'line-opacity': 1,
         ...(c.dash ? { 'line-dasharray': c.dash } : {}),
@@ -156,6 +165,9 @@ export function geologyLayers() {
 }
 
 export const GEOLOGY_LAYER_IDS = geologyLayers().map((l) => l.id);
+
+/** Capas cuyo `line-color` sale del catálogo de tipos de línea. */
+export const GEOLOGY_LINE_LAYER_IDS = CERTAINTIES.map((c) => `geology-line-${c.id}`);
 
 /** Capas del elemento en construcción: siempre por encima de todo. */
 export function draftLayers() {

@@ -1,5 +1,11 @@
 import { BASEMAPS } from './basemaps.js';
-import { POLYGON_TYPES, defaultOrnaments, sanitizeOrnaments } from './symbology.js';
+import {
+  FLIPPABLE_ORNAMENT_TYPES,
+  POLYGON_TYPES,
+  certaintyFor,
+  defaultOrnaments,
+  sanitizeOrnaments,
+} from './symbology.js';
 import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
 
 /** Unidades sembradas para que la paleta no arranque vacía. */
@@ -222,9 +228,16 @@ export function setTool(tool) {
   set({ tool, extendFrom });
 }
 
-export const setLineType = (lineType) => set({ lineType });
+/**
+ * Elegir un tipo con certeza acotada (los pliegues) baja también la certeza
+ * activa a observado, en vez de dejar en la paleta una combinación que después
+ * no se va a poder dibujar.
+ */
+export const setLineType = (lineType) =>
+  set({ lineType, certainty: certaintyFor(lineType, state.certainty) });
 export const setPolygonType = (polygonType) => set({ polygonType });
-export const setCertainty = (certainty) => set({ certainty });
+export const setCertainty = (certainty) =>
+  set({ certainty: certaintyFor(state.lineType, certainty) });
 export const setFreehandMode = (freehandMode) => set({ freehandMode });
 export const setFingerDraw = (fingerDraw) => set({ fingerDraw });
 export const setSmoothing = (smoothing) => set({ smoothing });
@@ -253,14 +266,22 @@ export function resetOrnaments() {
   set({ ornaments: defaultOrnaments() });
 }
 
-/** Invierte el lado del ornamento en los elementos seleccionados. */
+const FLIPPABLE = new Set(FLIPPABLE_ORNAMENT_TYPES);
+
+/**
+ * Refleja el ornamento respecto de la traza en los elementos seleccionados.
+ *
+ * Solo cuenta y toca los tipos que llevan un ornamento asimétrico: un contacto
+ * no tiene nada que voltear, y las flechas de un pliegue son simétricas
+ * respecto del eje, así que reflejarlas devuelve el mismo dibujo.
+ */
 export function flipSelectedOrnament() {
   if (state.selection.length === 0) return 0;
   pushHistory();
   const ids = new Set(state.selection);
   let n = 0;
   const features = state.features.map((f) => {
-    if (!ids.has(f.properties.id) || f.geometry.type !== 'LineString') return f;
+    if (!ids.has(f.properties.id) || !FLIPPABLE.has(f.properties.type)) return f;
     n++;
     return { ...f, properties: { ...f.properties, flip: !f.properties.flip } };
   });
@@ -344,6 +365,8 @@ export function finishDraft() {
     ...inherited,
     id,
     kind: d.kind,
+    // Provisional: en una línea el tipo definitivo se resuelve más abajo
+    // (heredado o el de la paleta), y con él se reajusta la certeza.
     certainty: inherited.certainty ?? state.certainty,
     opacity: inherited.opacity ?? 1,
     createdAt: Date.now(),
@@ -364,10 +387,11 @@ export function finishDraft() {
       geometry: { type: 'Polygon', coordinates: [[...d.coords, d.coords[0]]] },
     };
   } else {
+    const type = inherited.type ?? state.lineType;
     feature = {
       type: 'Feature',
       id,
-      properties: { ...common, type: inherited.type ?? state.lineType },
+      properties: { ...common, type, certainty: certaintyFor(type, common.certainty) },
       geometry: { type: 'LineString', coordinates: d.coords },
     };
   }
@@ -437,15 +461,26 @@ export function replaceFeatures(removedIds, added) {
 
 /* ---------- atributos de la selección ---------- */
 
-/** Aplica un cambio de propiedades a todos los elementos seleccionados. */
+/**
+ * Aplica un cambio de propiedades a todos los elementos seleccionados.
+ *
+ * La certeza se filtra por tipo: en una selección mixta, poner "inferido"
+ * afecta a los contactos y deja los ejes de pliegue como estaban, en vez de
+ * escribirles un valor que su simbología no admite.
+ */
 export function updateSelectedProps(patch) {
   if (state.selection.length === 0) return;
   pushHistory();
   const ids = new Set(state.selection);
   set({
-    features: state.features.map((f) =>
-      ids.has(f.properties.id) ? { ...f, properties: { ...f.properties, ...patch } } : f,
-    ),
+    features: state.features.map((f) => {
+      if (!ids.has(f.properties.id)) return f;
+      const props = { ...f.properties, ...patch };
+      if (patch.certainty !== undefined) {
+        props.certainty = certaintyFor(props.type, props.certainty);
+      }
+      return { ...f, properties: props };
+    }),
   });
 }
 

@@ -1,5 +1,6 @@
 import * as store from './store.js';
 import { downloadBlob } from './persistence.js';
+import { certaintyFor } from './symbology.js';
 
 /**
  * Proyectos de FieldDraw: un único JSON con el dibujo, las unidades, la
@@ -118,7 +119,9 @@ function sanitizeFeatures(list, warnings) {
       sinId++;
     }
     if (!props.kind) props.kind = g.type === 'Polygon' ? 'polygon' : 'line';
-    if (!props.certainty) props.certainty = 'observed';
+    // La certeza se normaliza contra el tipo: un eje de pliegue con "inferido"
+    // —de un proyecto viejo o de otra herramienta— no tiene capa donde caer.
+    props.certainty = certaintyFor(props.type, props.certainty || 'observed');
     out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });
   }
   if (descartados) warnings.push(`${descartados} feature(s) with unsupported geometry were skipped.`);

@@ -1,4 +1,9 @@
-import { CERTAINTY_BY_ID, LINE_TYPE_BY_ID, POLYGON_TYPE_BY_ID } from '../symbology.js';
+import {
+  CERTAINTY_BY_ID,
+  LINE_TYPE_BY_ID,
+  POLYGON_TYPE_BY_ID,
+  effectiveLineColor,
+} from '../symbology.js';
 
 /**
  * Simbología QGIS: generación (al exportar) y lectura (al importar).
@@ -95,7 +100,12 @@ ${symbols.join('\n')}
 </qgis>`;
 }
 
-export function buildLineQML(combos) {
+/**
+ * `ornaments` es el estilo editable: si el usuario cambió el color de una falla
+ * o de un pliegue, el QML tiene que llevar ese, no el del catálogo. Lo que se
+ * abre en QGIS debe verse como lo que se dejó en la tablet.
+ */
+export function buildLineQML(combos, ornaments) {
   return buildRuleQML({
     combos,
     geometryType: 1,
@@ -103,7 +113,11 @@ export function buildLineQML(combos) {
     symbolFor: (c) => {
       const t = LINE_TYPE_BY_ID.get(c.type);
       const widthMm = (0.5 * (t ? t.weight : 1)).toFixed(2);
-      return simpleLineLayer(t ? t.color : '#888888', widthMm, QGIS_LINE_STYLE[c.certainty] || 'solid');
+      return simpleLineLayer(
+        effectiveLineColor(c.type, ornaments),
+        widthMm,
+        QGIS_LINE_STYLE[c.certainty] || 'solid',
+      );
     },
   });
 }
@@ -168,7 +182,7 @@ ${rulesXml}
 </StyledLayerDescriptor>`;
 }
 
-export function buildLineSLD(combos) {
+export function buildLineSLD(combos, ornaments) {
   return sldDocument(
     'geol_lines',
     sldRules(combos, (c) => {
@@ -176,7 +190,7 @@ export function buildLineSLD(combos) {
       const dash = SLD_DASH[c.certainty];
       return `        <se:LineSymbolizer>
           <se:Stroke>
-            <se:SvgParameter name="stroke">${t ? t.color : '#888888'}</se:SvgParameter>
+            <se:SvgParameter name="stroke">${effectiveLineColor(c.type, ornaments)}</se:SvgParameter>
             <se:SvgParameter name="stroke-width">${(2 * (t ? t.weight : 1)).toFixed(2)}</se:SvgParameter>
             <se:SvgParameter name="stroke-linecap">round</se:SvgParameter>${
               dash ? `\n            <se:SvgParameter name="stroke-dasharray">${dash}</se:SvgParameter>` : ''

@@ -1,4 +1,5 @@
 import { chainLines, pickFeature, pointInPolygon, pointInRing } from '../src/geom.js';
+import { applyLinesToPolygon } from '../src/editOps.js';
 import * as store from '../src/store.js';
 
 let fails = 0;
@@ -318,6 +319,139 @@ console.log('== unidades ==');
   ok('no deja quedarse sin ninguna',
      (store.loadUnits([{ id: 'solo', name: 'Única', code: 'U', color: '#fff' }]),
       store.removeUnit('solo'), store.getState().units.length === 1));
+}
+
+console.log('== líneas a polígono ==');
+{
+  // Las pruebas de unidades de más arriba dejaron el catálogo tocado.
+  store.loadUnits([{ id: 'volcanic-unit', name: 'Volcanic unit', code: 'VOL', color: '#BA68C8' }]);
+  const cuadrado = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  store.clearFeatures();
+  store.loadFeatures([line('L', cuadrado)]);
+  store.setPolygonType('volcanic-unit');
+  store.setSelection(['L']);
+  const r = applyLinesToPolygon();
+
+  const f = store.getState().features;
+  ok('la línea desaparece y queda un polígono', f.length === 1 && f[0].geometry.type === 'Polygon');
+  ok('informa de cuántas líneas venía', r.desde === 1);
+  ok('el anillo cierra sobre el primer vértice',
+     eq(f[0].geometry.coordinates[0], [...cuadrado, [0, 0]]),
+     JSON.stringify(f[0].geometry.coordinates[0]));
+  ok('pasa a ser polígono también en los atributos', f[0].properties.kind === 'polygon');
+  ok('toma la unidad activa de la paleta', f[0].properties.type === 'volcanic-unit');
+  ok('con su nombre y código denormalizados',
+     f[0].properties.unit === 'Volcanic unit' && f[0].properties.code === 'VOL',
+     JSON.stringify(f[0].properties));
+  ok('conserva la certeza de la línea', f[0].properties.certainty === 'observed');
+  ok('id nuevo, no el de la línea', f[0].properties.id !== 'L');
+  ok('deshacer lo devuelve', (store.undo(), store.getState().features[0].geometry.type === 'LineString'));
+}
+
+{
+  // Un borde de unidad hecho de tres trazos sueltos: se encadenan y se cierran.
+  store.clearFeatures();
+  store.loadFeatures([
+    line('a', [[0, 0], [10, 0]]),
+    line('b', [[10, 0], [10, 10]]),
+    line('c', [[10, 10], [0, 10]]),
+  ]);
+  store.setSelection(['a', 'b', 'c']);
+  const r = applyLinesToPolygon();
+  const f = store.getState().features;
+  ok('tres líneas => un solo polígono', f.length === 1 && r.desde === 3);
+  ok('sin repetir los vértices compartidos',
+     eq(f[0].geometry.coordinates[0], [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]),
+     JSON.stringify(f[0].geometry.coordinates[0]));
+}
+
+{
+  // Una línea que ya venía cerrada no debe duplicar su primer vértice.
+  store.clearFeatures();
+  store.loadFeatures([line('R', [[0, 0], [10, 0], [10, 10], [0, 0]])]);
+  store.setSelection(['R']);
+  applyLinesToPolygon();
+  ok('el anillo ya cerrado se respeta tal cual',
+     eq(store.getState().features[0].geometry.coordinates[0], [[0, 0], [10, 0], [10, 10], [0, 0]]),
+     JSON.stringify(store.getState().features[0].geometry.coordinates[0]));
+}
+
+{
+  store.clearFeatures();
+  store.loadFeatures([line('D', [[0, 0], [10, 0]]), poly('P', [[[0, 0], [1, 0], [1, 1], [0, 0]]])]);
+  store.setSelection(['D']);
+  let msg = '';
+  try { applyLinesToPolygon(); } catch (e) { msg = e.message; }
+  ok('dos vértices no encierran área', msg.includes('three distinct vertices'), msg);
+  ok('y no toca el dibujo', store.getState().features.length === 2);
+
+  store.setSelection(['P']);
+  msg = '';
+  try { applyLinesToPolygon(); } catch (e) { msg = e.message; }
+  ok('sin líneas seleccionadas avisa', msg.includes('at least one line'), msg);
+}
+
+console.log('== pliegues: la certeza queda acotada ==');
+{
+  store.clearFeatures();
+  store.setLineType('dike');
+  store.setCertainty('covered');
+  ok('un dique admite cubierto', store.getState().certainty === 'covered');
+
+  store.setLineType('antiform');
+  ok('pasar a antiforme baja la certeza a observado', store.getState().certainty === 'observed');
+  store.setCertainty('inferred');
+  ok('y no deja subirla mientras el pliegue esté activo', store.getState().certainty === 'observed');
+
+  store.setLineType('thrust-fault');
+  store.setCertainty('inferred');
+  ok('al volver a una falla la certeza se libera', store.getState().certainty === 'inferred');
+}
+
+{
+  // Dibujar el eje: aunque la certeza activa fuese otra, el elemento nace
+  // observado, porque el tipo manda.
+  store.clearFeatures();
+  store.setTool('line');
+  store.setLineType('thrust-fault');
+  store.setCertainty('covered');
+  store.setLineType('antiform');
+  store.addVertex([0, 0]);
+  store.addVertex([1, 1]);
+  store.finishDraft();
+  const f = store.getState().features[0];
+  ok('el eje dibujado sale observado', f.properties.certainty === 'observed', JSON.stringify(f.properties));
+  ok('y con su tipo', f.properties.type === 'antiform');
+}
+
+{
+  // Selección mixta: la certeza se aplica a lo que la admite y respeta el eje.
+  const eje = { type: 'Feature', id: 'x', properties: { id: 'x', kind: 'line', type: 'synform', certainty: 'observed' }, geometry: { type: 'LineString', coordinates: [[0,0],[1,1]] } };
+  const falla = { type: 'Feature', id: 'y', properties: { id: 'y', kind: 'line', type: 'normal-fault', certainty: 'observed' }, geometry: { type: 'LineString', coordinates: [[2,2],[3,3]] } };
+  store.loadFeatures([eje, falla]);
+  store.setSelection(['x', 'y']);
+  store.updateSelectedProps({ certainty: 'covered' });
+  const byId = Object.fromEntries(store.getState().features.map(f => [f.properties.id, f.properties]));
+  ok('la falla acepta cubierto', byId.y.certainty === 'covered');
+  ok('el sinforme se queda observado', byId.x.certainty === 'observed');
+  ok('y el resto del patch sí llega a los dos',
+     (store.updateSelectedProps({ opacity: 0.5 }),
+      store.getState().features.every(f => f.properties.opacity === 0.5)));
+}
+
+{
+  // Voltear: solo cuenta y toca las fallas.
+  const eje = { type: 'Feature', id: 'x', properties: { id: 'x', kind: 'line', type: 'antiform', certainty: 'observed' }, geometry: { type: 'LineString', coordinates: [[0,0],[1,1]] } };
+  const falla = { type: 'Feature', id: 'y', properties: { id: 'y', kind: 'line', type: 'thrust-fault', certainty: 'observed' }, geometry: { type: 'LineString', coordinates: [[2,2],[3,3]] } };
+  const contacto = { type: 'Feature', id: 'z', properties: { id: 'z', kind: 'line', type: 'dike', certainty: 'observed' }, geometry: { type: 'LineString', coordinates: [[4,4],[5,5]] } };
+  store.loadFeatures([eje, falla, contacto]);
+  store.setSelection(['x', 'y', 'z']);
+  const n = store.flipSelectedOrnament();
+  const byId = Object.fromEntries(store.getState().features.map(f => [f.properties.id, f.properties]));
+  ok('solo cuenta la falla', n === 1, `-> ${n}`);
+  ok('la falla queda volteada', byId.y.flip === true);
+  ok('el pliegue no', byId.x.flip === undefined);
+  ok('el dique tampoco', byId.z.flip === undefined);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
