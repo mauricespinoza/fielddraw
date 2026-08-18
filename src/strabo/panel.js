@@ -1,5 +1,6 @@
 import * as store from '../store.js';
 import * as api from './api.js';
+import { distinctValues, STRABO_FILTER_FIELD } from './layers.js';
 import {
   buildEstructuras,
   buildLineasPoligonos,
@@ -49,10 +50,19 @@ export function initStraboPanel({ message, busy }) {
     if (e.key === 'Enter') doSignIn();
   });
 
+  wireSizeSlider('strabo-size-structures', 'structureSize');
+  wireSizeSlider('strabo-size-observations', 'observationSize');
+  $('strabo-size-reset').addEventListener('click', () => store.resetStraboStyle());
+
+  $('btn-close-strabo-attrs').addEventListener('click', closeStraboAttrs);
+
   store.subscribe(() => {
     if (store.changed('features') || store.changed('strabo')) render();
+    if (store.changed('strabo')) renderFilters();
+    if (store.changed('straboStyle')) syncSizeSliders();
   });
 
+  syncSizeSliders();
   render();
 }
 
@@ -81,6 +91,184 @@ export function render() {
     $('strabo-loaded-text').textContent =
       `${data.datasetName}: ${e} structure(s), ${o} observation(s), ${l} line/polygon(s).`;
   }
+}
+
+/* ---------- tamaño del símbolo ---------- */
+
+function wireSizeSlider(id, key) {
+  const el = $(id);
+  const num = $(`${id}-num`);
+  el.addEventListener('input', () => {
+    const v = Number(el.value);
+    num.textContent = `${v.toFixed(1)}×`;
+    store.setStraboStyle({ [key]: v });
+  });
+}
+
+/** Refleja el store en los deslizadores, sin pisar uno que se está arrastrando. */
+function syncSizeSlider(id, key) {
+  const el = $(id);
+  if (document.activeElement === el) return;
+  const v = store.getState().straboStyle[key];
+  el.value = String(v);
+  $(`${id}-num`).textContent = `${v.toFixed(1)}×`;
+}
+
+function syncSizeSliders() {
+  syncSizeSlider('strabo-size-structures', 'structureSize');
+  syncSizeSlider('strabo-size-observations', 'observationSize');
+}
+
+/* ---------- filtros por tipo ---------- */
+
+/**
+ * Qué colección alimenta cada categoría de filtro y cómo se llama en la UI.
+ * El campo por el que se filtra ya lo sabe `layers.js`
+ * (`STRABO_FILTER_FIELD`); aquí solo se decide de qué colección salen los
+ * valores distintos.
+ */
+const FILTER_CATEGORIES = [
+  { id: 'structures', title: 'Structures', data: (d) => d.estructuras },
+  { id: 'observations', title: 'Observations', data: (d) => d.observacion },
+  { id: 'lines', title: 'Lines / Polygons', data: (d) => d.lineas },
+];
+
+/** Cuenta cuántas features de la colección tienen cada valor del campo. */
+function countByValue(fc, field) {
+  const counts = new Map();
+  for (const f of (fc && fc.features) || []) {
+    const v = f.properties && f.properties[field];
+    if (v === undefined || v === null || v === '') continue;
+    const k = String(v);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  return counts;
+}
+
+function renderFilterGroup(container, cat, data) {
+  const fc = cat.data(data);
+  const field = STRABO_FILTER_FIELD[cat.id];
+  const counts = countByValue(fc, field);
+  const values = distinctValues(fc, field);
+  if (values.length === 0) return; // nada que filtrar en esta categoría
+
+  const current = store.getState().straboFilters[cat.id];
+  // Sin filtro explícito, todo cuenta como "marcado" — es el estado inicial.
+  const checked = new Set(current === null ? values : current);
+
+  const group = document.createElement('div');
+  group.className = 'strabo-filter-group';
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const title = document.createElement('span');
+  title.className = 'palette-label';
+  title.textContent = `${cat.title} (${field})`;
+  const buttons = document.createElement('span');
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.textContent = 'All';
+  allBtn.addEventListener('click', () => store.setStraboFilter(cat.id, null));
+  const noneBtn = document.createElement('button');
+  noneBtn.type = 'button';
+  noneBtn.textContent = 'None';
+  noneBtn.addEventListener('click', () => store.setStraboFilter(cat.id, []));
+  buttons.append(allBtn, noneBtn);
+  head.append(title, buttons);
+  group.appendChild(head);
+
+  const list = document.createElement('div');
+  list.className = 'strabo-filter-list';
+  for (const v of values) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked.has(v);
+    cb.addEventListener('change', () => {
+      const now = new Set(store.getState().straboFilters[cat.id] ?? values);
+      if (cb.checked) now.add(v);
+      else now.delete(v);
+      // Si quedan todos marcados, se vuelve a "sin filtro": así un dataset
+      // nuevo con valores distintos no hereda una lista que ya no aplica.
+      store.setStraboFilter(cat.id, now.size === values.length ? null : [...now]);
+    });
+    const text = document.createElement('span');
+    text.textContent = v;
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = String(counts.get(v) || 0);
+    label.append(cb, text, count);
+    list.appendChild(label);
+  }
+  group.appendChild(list);
+  container.appendChild(group);
+}
+
+function renderFilters() {
+  const container = $('strabo-filters');
+  container.replaceChildren();
+  const data = store.getState().strabo;
+  if (!data) return;
+  for (const cat of FILTER_CATEGORIES) renderFilterGroup(container, cat, data);
+}
+
+/* ---------- atributos de un spot ---------- */
+
+/** Claves internas que no le sirven de nada al usuario. */
+const HIDDEN_ATTR_KEYS = new Set(['id']);
+
+function attrTitle(hit) {
+  const p = hit.properties;
+  if (hit.layer.id === 'strabo-structures') return p.Type || 'Structure';
+  if (hit.layer.id === 'strabo-observations') return p.Name || 'Observation';
+  return p.Name || (hit.geometry.type === 'Polygon' ? 'Polygon' : 'Line');
+}
+
+function fmtAttrValue(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  return String(v);
+}
+
+export function openStraboAttrs(hit, screen) {
+  const menu = $('strabo-attrs');
+  const body = $('strabo-attrs-body');
+  body.replaceChildren();
+
+  $('strabo-attrs-title').textContent = attrTitle(hit);
+
+  const entries = Object.entries(hit.properties || {}).filter(([k]) => !HIDDEN_ATTR_KEYS.has(k));
+  if (entries.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = 'This spot has no attributes.';
+    body.appendChild(p);
+  }
+  for (const [k, v] of entries) {
+    const row = document.createElement('div');
+    row.className = 'strabo-attrs-row';
+    const kEl = document.createElement('span');
+    kEl.className = 'k';
+    kEl.textContent = k;
+    const vEl = document.createElement('span');
+    vEl.className = 'v';
+    vEl.textContent = fmtAttrValue(v);
+    row.append(kEl, vEl);
+    body.appendChild(row);
+  }
+
+  menu.classList.remove('hidden');
+  // Mismo encaje en pantalla que el menú de propiedades: cerca del toque, sin
+  // salirse del viewport.
+  const rect = menu.getBoundingClientRect();
+  const x = Math.min(Math.max(12, screen[0] - rect.width / 2), window.innerWidth - rect.width - 12);
+  const y = Math.min(screen[1] + 18, window.innerHeight - rect.height - 12);
+  menu.style.left = `${x}px`;
+  menu.style.top = `${Math.max(12, y)}px`;
+}
+
+export function closeStraboAttrs() {
+  $('strabo-attrs').classList.add('hidden');
 }
 
 async function doSignIn() {

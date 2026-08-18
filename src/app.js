@@ -1,19 +1,15 @@
 import * as store from './store.js';
 import { createMapView } from './mapView.js';
-import {
-  closeOverlays,
-  closePropsMenu,
-  initUI,
-  openPropsMenu,
-  renderPointerInfo,
-  showBanner,
-} from './ui.js';
+import { closeOverlays, initUI, openPropsMenu, renderPointerInfo, showBanner } from './ui.js';
+import { openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedFeatures,
   loadSavedOrnaments,
+  loadSavedStraboStyle,
   loadSavedUnits,
   saveFeatures,
   saveOrnaments,
+  saveStraboStyle,
   saveUnits,
 } from './persistence.js';
 
@@ -26,6 +22,7 @@ createMapView({
   onOpenProps: openPropsMenu,
   // Cualquier toque sobre el mapa cierra lo que estuviera abierto encima.
   onMapTap: closeOverlays,
+  onStraboFeatureTap: openStraboAttrs,
 });
 
 // Restaurar el trabajo previo. Las unidades primero: los polígonos guardados
@@ -34,6 +31,8 @@ const savedUnits = loadSavedUnits();
 if (savedUnits) store.loadUnits(savedUnits);
 const savedOrnaments = loadSavedOrnaments();
 if (savedOrnaments) store.setOrnaments(savedOrnaments);
+const savedStraboStyle = loadSavedStraboStyle();
+if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
 const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
 
@@ -42,14 +41,16 @@ let saveTimer = null;
 store.subscribe(() => {
   if (store.changed('units')) saveUnits(store.getState().units);
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
+  if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);
 });
 
-// Escape cierra el menú de propiedades esté donde esté el foco.
+// Escape cierra cualquier panel flotante esté donde esté el foco: el menú de
+// propiedades, el de atributos de StraboSpot, o cualquier otro popover.
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closePropsMenu();
+  if (e.key === 'Escape') closeOverlays();
 });
 
 /*

@@ -1,6 +1,7 @@
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
 const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
+const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
 
 export function saveFeatures(features) {
   try {
@@ -51,6 +52,25 @@ export function saveOrnaments(ornaments) {
 export function loadSavedOrnaments() {
   try {
     const raw = localStorage.getItem(ORNAMENTS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStraboStyle(style) {
+  try {
+    localStorage.setItem(STRABO_STYLE_KEY, JSON.stringify(style));
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedStraboStyle() {
+  try {
+    const raw = localStorage.getItem(STRABO_STYLE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;

@@ -599,7 +599,7 @@ export function closePropsMenu() {
 /** Cajones laterales: solo uno abierto a la vez. */
 const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu', 'topo-menu'];
+const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'strabo-attrs'];
 
 function openPanel(id) {
   closeOverlays();

@@ -25,17 +25,18 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo; do node test/$f.test.mjs; done
 ```
 
-377 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+453 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
 corte, edición de vértices (mover, insertar, borrar, buscar el punto de
 inserción y agrupar coincidentes), confirmación topológica, serialización de
 proyectos, parámetros de los ornamentos, historial de deshacer/rehacer,
-encadenado de líneas sueltas, extensión de líneas y el módulo de unidades.
+encadenado de líneas sueltas, extensión de líneas, el módulo de unidades y el
+aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -507,6 +508,65 @@ como un segmento recto, que es lo que uno dibujaría a mano para cerrar un
 contacto partido. En polígonos disjuntos las piezas se guardan por separado,
 porque el modelo de datos usa polígonos simples, no multiparte.
 
+## StraboSpot
+
+El botón **StraboSpot** abre un panel con sesión, proyecto, dataset, descarga
+de spots y subida del dibujo como dataset nuevo (`src/strabo/`).
+
+**Sesión.** HTTP Basic con el correo como usuario. Las credenciales viven
+**solo en memoria**, nunca en localStorage: dejarlas escritas en el disco de
+una tablet que va a terreno no compensa el ahorro de volver a escribirlas.
+
+**Descarga.** Los spots se aplanan a **Estructuras** y **Observación**, con las
+mismas columnas y en el mismo orden que produce el plugin de QGIS
+`Strabo_to_Spots`, replicando dos detalles suyos que no son obvios:
+
+- La estría de una falla no es un elemento suelto de `orientation_data`: viene
+  anidada en `associated_orientation`, dentro de la propia medición planar. Leer
+  solo el primer nivel deja `Trend`/`Plunge` vacíos en todas las fallas.
+- `Type` se arma comparando `planar === "fault"` **sin normalizar mayúsculas**,
+  igual que el plugin: es lo que decide contra qué SVG categoriza la simbología,
+  y "corregir" la comparación cambiaría esas categorías.
+
+La simbología de Estructuras usa los mismos SVG del plugin (`vendor/strabo-svg/`,
+copiados de ahí), rotados por `Strike` con `icon-rotation-alignment: map`; la de
+Observación categoriza por `Process`.
+
+**Ver atributos.** Tocar un spot en modo **Navegar** abre un panel de solo
+lectura con todos sus campos. Funciona por `queryRenderedFeatures` sobre las
+capas de contenido (no las de etiqueta), y solo recibe el toque cuando ninguna
+otra herramienta lo está reclamando — en la práctica, en Navegar, porque en
+cualquier herramienta de dibujo o arrastre `DrawController` ya consume el
+puntero antes de que llegue a MapLibre.
+
+**Filtrar por tipo.** El panel construye, para cada categoría con datos
+(Estructuras por `Type`, Observación por `Process`, Líneas/Polígonos por
+`Type`), una lista de casillas con los valores presentes en el dataset y cuántos
+elementos trae cada uno. Se aplica con `setFilter` de MapLibre, sin volver a
+pedir nada a la API. El filtro de tipo se **combina** con el filtro de geometría
+que ya tenía `strabo-lines-fill` (que separa el relleno de polígono del trazo de
+línea) en vez de reemplazarlo, y al marcar todas las casillas se vuelve a "sin
+filtro": así un dataset nuevo con valores distintos no hereda una lista que ya
+no tiene sentido.
+
+**Tamaño de símbolo.** Dos deslizadores (0,4–3×) escalan el icono de Estructuras
+y el punto de Observación, en caliente y sin recrear capas. Se guardan en
+localStorage, aparte de los ornamentos de falla del dibujo propio: son símbolos
+ajenos, y agrandarlos para verlos mejor no debería tocar la simbología del mapa
+que se está construyendo.
+
+**Subida.** Siempre a un dataset **nuevo**: `POST /db/datasetspots/{id}`
+reemplaza todos los spots del dataset de destino, así que escribir en uno
+existente lo destruiría. Las líneas y polígonos del dibujo se convierten en
+spots con las columnas del plugin (`Name`, `Date`, `Unit`, `Notes`, `Type`,
+`Field`, `Geologist`).
+
+Un detalle de la API que costó encontrar: StraboSpot responde **406** ante
+cualquier petición con `Accept: application/json`, aunque JSON sea justo lo que
+devuelve. El cliente no manda esa cabecera —comprobado con curl aislando cabecera
+por cabecera contra el servidor real— y por eso el plugin de QGIS, que tampoco la
+manda, nunca se topó con esto.
+
 ## Estado
 
 - ✅ Basemaps, orden de capas y transparencia por capa.
@@ -536,10 +596,12 @@ porque el modelo de datos usa polígonos simples, no multiparte.
 - ✅ Autosave en localStorage y exportación a GeoJSON.
 - ✅ PWA instalable: dependencias en `vendor/`, service worker con precache del
   app shell y caché de las teselas ya visitadas.
+- ✅ StraboSpot: sesión, descarga de spots (Estructuras/Observación con la misma
+  simbología que el plugin de QGIS), subida del dibujo como dataset nuevo, ver
+  atributos, filtrar por tipo y tamaño de símbolo ajustable.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
-  pulsar **Topología**), subtipos por categoría, descarga dirigida de un área de
-  basemap para llevar al terreno (hoy se resuelve importando un PMTiles), y
-  StraboSpot.
+  pulsar **Topología**), subtipos por categoría, y descarga dirigida de un área
+  de basemap para llevar al terreno (hoy se resuelve importando un PMTiles).
 
 ## Limitaciones conocidas del iPad
 

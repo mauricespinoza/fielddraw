@@ -9,6 +9,14 @@ import {
   senseOfSlip,
 } from '../src/strabo/spots.js';
 import { featuresToSpots, uploadableCount } from '../src/strabo/upload.js';
+import {
+  STRABO_FILTER_FIELD,
+  applyStraboFilter,
+  applyStraboStyle,
+  distinctValues,
+  straboLayers,
+} from '../src/strabo/layers.js';
+import { defaultStraboStyle, sanitizeStraboStyle, STRABO_SIZE_LIMITS } from '../src/strabo/style.js';
 
 let fails = 0;
 const ok = (name, cond, extra = '') => {
@@ -202,6 +210,109 @@ console.log('== pairOrientations sin datos ==');
 {
   ok('devuelve un par vacío, no una lista vacía', pairOrientations([]).length === 1);
   ok('y no revienta con basura', pairOrientations(null).length === 1);
+}
+
+console.log('== defaultStraboStyle / sanitizeStraboStyle ==');
+{
+  ok('el tamaño por defecto es 1×', defaultStraboStyle().structureSize === 1);
+  ok('sin datos devuelve el default', JSON.stringify(sanitizeStraboStyle(null)) === JSON.stringify(defaultStraboStyle()));
+  ok('ignora basura', JSON.stringify(sanitizeStraboStyle('nope')) === JSON.stringify(defaultStraboStyle()));
+
+  const acotado = sanitizeStraboStyle({ structureSize: 99, observationSize: -5 });
+  ok('acota el máximo', acotado.structureSize === STRABO_SIZE_LIMITS.max, String(acotado.structureSize));
+  ok('acota el mínimo', acotado.observationSize === STRABO_SIZE_LIMITS.min, String(acotado.observationSize));
+
+  const texto = sanitizeStraboStyle({ structureSize: '1.8' });
+  ok('convierte números en texto', texto.structureSize === 1.8);
+}
+
+console.log('== distinctValues ==');
+{
+  const fc = rowsToGeoJSON([
+    { Name: 'a', Longitude: 0, Latitude: 0, Type: 'fault normal' },
+    { Name: 'b', Longitude: 1, Latitude: 1, Type: 'bedding' },
+    { Name: 'c', Longitude: 2, Latitude: 2, Type: 'fault normal' },
+    { Name: 'd', Longitude: 3, Latitude: 3, Type: '' },
+    { Name: 'e', Longitude: 4, Latitude: 4 },
+  ]);
+  const vals = distinctValues(fc, 'Type');
+  ok('sin duplicados', vals.length === 2, JSON.stringify(vals));
+  ok('ordenado alfabéticamente', vals[0] === 'bedding' && vals[1] === 'fault normal', JSON.stringify(vals));
+  ok('vacíos y ausentes no cuentan', !vals.includes(''));
+  ok('campo desconocido no revienta, da lista vacía', distinctValues(fc, 'NoExiste').length === 0);
+  ok('colección vacía no revienta', distinctValues(null, 'Type').length === 0);
+}
+
+console.log('== tamaño de símbolo aplicado a las capas ==');
+{
+  const layers = straboLayers({ structureSize: 2, observationSize: 0.5 });
+  const structures = layers.find((l) => l.id === 'strabo-structures');
+  const observations = layers.find((l) => l.id === 'strabo-observations');
+  ok('icon-size sigue interpolando por zoom', structures.layout['icon-size'][0] === 'interpolate');
+  ok('con las paradas escaladas ×2', structures.layout['icon-size'][6] === 2, JSON.stringify(structures.layout['icon-size']));
+  ok('circle-radius escalado ×0.5', observations.paint['circle-radius'][6] === 3.5, JSON.stringify(observations.paint['circle-radius']));
+}
+
+console.log('== applyStraboStyle reconfigura en caliente ==');
+{
+  const calls = [];
+  const fakeMap = {
+    getLayer: (id) => (['strabo-structures', 'strabo-observations'].includes(id) ? { id } : undefined),
+    setLayoutProperty: (id, prop, v) => calls.push(['layout', id, prop, v]),
+    setPaintProperty: (id, prop, v) => calls.push(['paint', id, prop, v]),
+  };
+  applyStraboStyle(fakeMap, { structureSize: 1.5, observationSize: 2 });
+  const iconSize = calls.find((c) => c[2] === 'icon-size');
+  const radius = calls.find((c) => c[2] === 'circle-radius');
+  ok('toca icon-size de estructuras', !!iconSize && iconSize[1] === 'strabo-structures');
+  ok('toca circle-radius de observación', !!radius && radius[1] === 'strabo-observations');
+  ok('con el valor escalado', iconSize[3][6] === 1.5, JSON.stringify(iconSize[3]));
+}
+
+console.log('== applyStraboFilter combina con el filtro base, no lo reemplaza ==');
+{
+  const calls = [];
+  const ids = new Set([
+    'strabo-structures', 'strabo-structures-labels',
+    'strabo-lines-fill', 'strabo-lines-line',
+  ]);
+  const fakeMap = {
+    getLayer: (id) => (ids.has(id) ? { id } : undefined),
+    setFilter: (id, f) => calls.push([id, f]),
+  };
+
+  applyStraboFilter(fakeMap, 'structures', ['bedding', 'fault normal']);
+  const struct = calls.find((c) => c[0] === 'strabo-structures');
+  ok('filtra por el campo correcto', JSON.stringify(struct[1]) === JSON.stringify(['in', ['get', 'Type'], ['literal', ['bedding', 'fault normal']]]));
+  ok('también filtra la etiqueta', calls.some((c) => c[0] === 'strabo-structures-labels'));
+
+  calls.length = 0;
+  applyStraboFilter(fakeMap, 'lines', ['Contact']);
+  const fill = calls.find((c) => c[0] === 'strabo-lines-fill');
+  ok(
+    'el relleno conserva su filtro de geometría Y suma el de tipo',
+    JSON.stringify(fill[1]) === JSON.stringify(['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'Type'], ['literal', ['Contact']]]]),
+    JSON.stringify(fill[1]),
+  );
+  const line = calls.find((c) => c[0] === 'strabo-lines-line');
+  ok('la línea no tenía filtro base, así que solo lleva el de tipo', JSON.stringify(line[1]) === JSON.stringify(['in', ['get', 'Type'], ['literal', ['Contact']]]));
+
+  calls.length = 0;
+  applyStraboFilter(fakeMap, 'lines', null);
+  const fillSinFiltro = calls.find((c) => c[0] === 'strabo-lines-fill');
+  ok(
+    'sin filtro de tipo, el relleno vuelve a quedarse solo con su filtro de geometría',
+    JSON.stringify(fillSinFiltro[1]) === JSON.stringify(['==', ['geometry-type'], 'Polygon']),
+  );
+  const lineSinFiltro = calls.find((c) => c[0] === 'strabo-lines-line');
+  ok('y la línea queda sin filtro alguno', lineSinFiltro[1] === null);
+}
+
+console.log('== STRABO_FILTER_FIELD ==');
+{
+  ok('estructuras filtra por Type', STRABO_FILTER_FIELD.structures === 'Type');
+  ok('observación filtra por Process', STRABO_FILTER_FIELD.observations === 'Process');
+  ok('líneas/polígonos filtran por Type', STRABO_FILTER_FIELD.lines === 'Type');
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

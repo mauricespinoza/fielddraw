@@ -251,6 +251,15 @@
         <div id="props-body"></div>
       </div>
 
+      <!-- Atributos de un spot de StraboSpot: solo lectura, es dato ajeno. -->
+      <div class="props-menu hidden" id="strabo-attrs">
+        <header>
+          <h2 id="strabo-attrs-title">Attributes</h2>
+          <button class="icon-btn" id="btn-close-strabo-attrs" aria-label="Close">✕</button>
+        </header>
+        <div id="strabo-attrs-body"></div>
+      </div>
+
       <aside class="layer-panel" id="units-panel">
         <header>
           <h2>Geological units</h2>
@@ -309,6 +318,30 @@
 
           <div id="strabo-loaded" class="hidden">
             <p class="hint footnote" id="strabo-loaded-text"></p>
+
+            <div class="strabo-size">
+              <div class="head">
+                <span class="palette-label">Symbol size</span>
+                <button type="button" id="strabo-size-reset">Reset</button>
+              </div>
+              <label class="field">
+                <span>Structures</span>
+                <span class="tol-row">
+                  <input type="range" id="strabo-size-structures" min="0.4" max="3" step="0.1" value="1" />
+                  <span class="num" id="strabo-size-structures-num">1.0×</span>
+                </span>
+              </label>
+              <label class="field">
+                <span>Observations</span>
+                <span class="tol-row">
+                  <input type="range" id="strabo-size-observations" min="0.4" max="3" step="0.1" value="1" />
+                  <span class="num" id="strabo-size-observations-num">1.0×</span>
+                </span>
+              </label>
+            </div>
+
+            <div id="strabo-filters"></div>
+
             <button class="pill wide" id="strabo-clear">Remove StraboSpot layers</button>
           </div>
 

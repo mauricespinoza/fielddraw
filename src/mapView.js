@@ -32,12 +32,15 @@ import {
   ornamentLayers,
 } from './ornaments.js';
 import {
+  STRABO_INTERACTIVE_LAYER_IDS,
   STRABO_LAYER_IDS,
   STRABO_LINES_SOURCE,
   STRABO_OBSERVATIONS_SOURCE,
   STRABO_SOURCES,
   STRABO_STRUCTURES_SOURCE,
   addStraboImages,
+  applyStraboFilter,
+  applyStraboStyle,
   straboLayers,
 } from './strabo/layers.js';
 import {
@@ -149,6 +152,7 @@ export function createMapView({
   onEditMessage,
   onOpenProps,
   onMapTap,
+  onStraboFeatureTap,
 }) {
   const host = document.getElementById('map-host');
   const container = document.getElementById('map-container');
@@ -310,8 +314,32 @@ export function createMapView({
     for (const src of STRABO_SOURCES) {
       map.addSource(src, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     }
-    for (const l of straboLayers()) map.addLayer(l);
+    for (const l of straboLayers(store.getState().straboStyle)) map.addLayer(l);
     addStraboImages(map).then(() => map.triggerRepaint());
+    for (const cat of ['structures', 'observations', 'lines']) {
+      applyStraboFilter(map, cat, store.getState().straboFilters[cat]);
+    }
+
+    // Ver atributos: solo cuando nadie más está reclamando el toque. Fuera de
+    // Navegar, DrawController ya consume el puntero para dibujar o arrastrar,
+    // así que este listener nunca compite con esas herramientas — recibe el
+    // evento nativo de MapLibre solo cuando pasó libre.
+    if (onStraboFeatureTap) {
+      map.on('click', (e) => {
+        const hits = map.queryRenderedFeatures(e.point, { layers: STRABO_INTERACTIVE_LAYER_IDS });
+        if (hits.length) onStraboFeatureTap(hits[0], [e.point.x, e.point.y]);
+      });
+      // Cursor de mano al pasar por encima, como cualquier elemento con el que
+      // se puede interactuar: es la única pista de que ahí hay algo que tocar.
+      for (const id of STRABO_INTERACTIVE_LAYER_IDS) {
+        map.on('mouseenter', id, () => {
+          if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', id, () => {
+          if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = '';
+        });
+      }
+    }
 
     map.addSource(EDIT_SOURCE, {
       type: 'geojson',
@@ -1096,6 +1124,13 @@ export function createMapView({
       syncStrabo();
       applyLayerStack(map, store.getState().layers);
       if (store.getState().strabo) fitToStrabo();
+    }
+    if (store.changed('straboStyle')) applyStraboStyle(map, store.getState().straboStyle);
+    if (store.changed('straboFilters')) {
+      const filters = store.getState().straboFilters;
+      for (const cat of ['structures', 'observations', 'lines']) {
+        applyStraboFilter(map, cat, filters[cat]);
+      }
     }
     if (store.changed('imported')) syncImported();
     else if (store.changed('tileSets')) syncTileSets();

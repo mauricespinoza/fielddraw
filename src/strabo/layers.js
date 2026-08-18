@@ -1,4 +1,5 @@
 import { vendorUrl } from '../vendorPaths.js';
+import { defaultStraboStyle } from './style.js';
 
 /**
  * Simbología de las capas de StraboSpot, replicando la del plugin de QGIS
@@ -105,7 +106,14 @@ const PROCESS_COLORS = [
   '#B0BEC5',
 ];
 
-export function straboLayers() {
+const structureIconSize = (scale) => [
+  'interpolate', ['linear'], ['zoom'], 10, 0.55 * scale, 16, 1 * scale,
+];
+const observationRadius = (scale) => [
+  'interpolate', ['linear'], ['zoom'], 10, 3.5 * scale, 16, 7 * scale,
+];
+
+export function straboLayers(style = defaultStraboStyle()) {
   return [
     /* ---------------- líneas y polígonos del dataset ---------------- */
     {
@@ -129,7 +137,7 @@ export function straboLayers() {
       type: 'circle',
       source: STRABO_OBSERVATIONS_SOURCE,
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 16, 7],
+        'circle-radius': observationRadius(style.observationSize),
         'circle-color': PROCESS_COLORS,
         'circle-stroke-color': '#0d1117',
         'circle-stroke-width': 1.4,
@@ -170,7 +178,7 @@ export function straboLayers() {
         'icon-rotation-alignment': 'map',
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 16, 1],
+        'icon-size': structureIconSize(style.structureSize),
       },
       paint: { 'icon-opacity': 1 },
     },
@@ -204,8 +212,80 @@ export function straboLayers() {
 
 export const STRABO_LAYER_IDS = straboLayers().map((l) => l.id);
 
+/** Las capas con contenido real, sin las de etiqueta: sobre estas se hace clic. */
+export const STRABO_INTERACTIVE_LAYER_IDS = [
+  'strabo-structures',
+  'strabo-observations',
+  'strabo-lines-fill',
+  'strabo-lines-line',
+];
+
 export const STRABO_SOURCES = [
   STRABO_LINES_SOURCE,
   STRABO_OBSERVATIONS_SOURCE,
   STRABO_STRUCTURES_SOURCE,
 ];
+
+/** Reaplica el tamaño sobre las capas ya añadidas, sin recrearlas. */
+export function applyStraboStyle(map, style) {
+  if (map.getLayer('strabo-structures')) {
+    map.setLayoutProperty('strabo-structures', 'icon-size', structureIconSize(style.structureSize));
+  }
+  if (map.getLayer('strabo-observations')) {
+    map.setPaintProperty('strabo-observations', 'circle-radius', observationRadius(style.observationSize));
+  }
+}
+
+/**
+ * Campo por el que se filtra cada categoría, y las capas que ese filtro debe
+ * tocar (la de contenido y su etiqueta, cuando la tiene).
+ */
+export const STRABO_FILTER_FIELD = {
+  structures: 'Type',
+  observations: 'Process',
+  lines: 'Type',
+};
+
+export const STRABO_FILTER_LAYERS = {
+  structures: ['strabo-structures', 'strabo-structures-labels'],
+  observations: ['strabo-observations', 'strabo-observations-labels'],
+  lines: ['strabo-lines-fill', 'strabo-lines-line'],
+};
+
+/**
+ * Filtro propio de cada capa antes de tocar nada — `strabo-lines-fill` ya
+ * distingue Polygon de LineString para no rellenar una línea suelta. El
+ * filtro de categoría se combina con este, nunca lo reemplaza.
+ */
+const BASE_FILTER = {
+  'strabo-lines-fill': ['==', ['geometry-type'], 'Polygon'],
+};
+
+/**
+ * Aplica el filtro de una categoría. `values === null` quita el filtro de
+ * tipo —a propósito no se construye un `in` con la lista completa de
+ * valores: un dataset nuevo puede traer valores que el filtro anterior no
+ * conocía, y con `null` esos elementos nuevos aparecen visibles en vez de
+ * ocultos por omisión.
+ */
+export function applyStraboFilter(map, category, values) {
+  const field = STRABO_FILTER_FIELD[category];
+  const layers = STRABO_FILTER_LAYERS[category] || [];
+  const typeFilter = values === null ? null : ['in', ['get', field], ['literal', values]];
+  for (const id of layers) {
+    if (!map.getLayer(id)) continue;
+    const base = BASE_FILTER[id];
+    const combined = base && typeFilter ? ['all', base, typeFilter] : typeFilter || base || null;
+    map.setFilter(id, combined);
+  }
+}
+
+/** Valores distintos de un campo presentes en una FeatureCollection, ordenados. */
+export function distinctValues(featureCollection, field) {
+  const set = new Set();
+  for (const f of (featureCollection && featureCollection.features) || []) {
+    const v = f.properties && f.properties[field];
+    if (v !== undefined && v !== null && v !== '') set.add(String(v));
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}

@@ -1,5 +1,6 @@
 import { BASEMAPS } from './basemaps.js';
 import { POLYGON_TYPES, defaultOrnaments, sanitizeOrnaments } from './symbology.js';
+import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
 
 /** Unidades sembradas para que la paleta no arranque vacía. */
 const DEFAULT_CODES = {
@@ -100,6 +101,19 @@ let state = {
    * observacion, lineas} con las tres colecciones ya en GeoJSON.
    */
   strabo: null,
+  /**
+   * Escala del icono de las capas de StraboSpot. Independiente de los
+   * ornamentos de falla propios: son símbolos ajenos, importados, y quien los
+   * mira quiere poder agrandarlos sin tocar la simbología del dibujo propio.
+   */
+  straboStyle: defaultStraboStyle(),
+  /**
+   * Valores visibles por campo categórico, uno por capa de StraboSpot. `null`
+   * significa "todos visibles" — es el estado por omisión y el que se recupera
+   * al vaciar la selección, para no dejar al usuario con un filtro vacío que
+   * parece que la capa desapareció.
+   */
+  straboFilters: { structures: null, observations: null, lines: null },
 };
 
 /* ---------- historial ---------- */
@@ -619,11 +633,29 @@ export function setStraboData(data) {
       opacity: 1,
     });
   }
-  set({ strabo: data, layers });
+  // Un dataset nuevo (o ninguno) puede no traer los mismos valores
+  // categóricos que el anterior; un filtro heredado dejaría capas en blanco
+  // sin explicación. Se resetea con cada cambio de datos, no solo al limpiar.
+  set({ strabo: data, layers, straboFilters: { structures: null, observations: null, lines: null } });
 }
 
 export function clearStraboData() {
   setStraboData(null);
+}
+
+/** Fusiona un cambio parcial (deslizador) o un objeto completo (localStorage). */
+export function setStraboStyle(patch) {
+  set({ straboStyle: sanitizeStraboStyle({ ...state.straboStyle, ...patch }) });
+}
+
+export function resetStraboStyle() {
+  set({ straboStyle: defaultStraboStyle() });
+}
+
+/** @param {'structures'|'observations'|'lines'} category
+ *  @param {string[]|null} values null = sin filtro, todos visibles */
+export function setStraboFilter(category, values) {
+  set({ straboFilters: { ...state.straboFilters, [category]: values } });
 }
 
 /* ---------- capas importadas ---------- */

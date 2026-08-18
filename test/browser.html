@@ -455,7 +455,7 @@
         store.toggleSelection('P');
         let msg = '';
         try { await edit.applyMerge(); } catch (e) { msg = e.message; }
-        ok('no deja unir línea con polígono', /líneas con polígonos/.test(msg), msg);
+        ok('no deja unir línea con polígono', /[Ll]ines and polygons/.test(msg), msg);
         store.clearFeatures();
         store.clearSelection();
       }
@@ -505,7 +505,7 @@
         // Cortador inexistente: error claro, no excepción opaca.
         let msg = '';
         try { await edit.applyCut({ type: 'feature', id: 'no-existe' }); } catch (e) { msg = e.message; }
-        ok('cortador inexistente da un error legible', /ya no existe/.test(msg), msg);
+        ok('cortador inexistente da un error legible', /no longer exists/.test(msg), msg);
 
         store.clearFeatures();
         store.clearSelection();
