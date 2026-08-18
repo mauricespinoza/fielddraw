@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 const TILES = `fielddraw-tiles-${VERSION}`;
 
@@ -47,6 +47,7 @@ const SHELL = [
   './src/ornaments.js',
   './src/persistence.js',
   './src/project.js',
+  './src/reshape.js',
   './src/simplify.js',
   './src/snapping.js',
   './src/store.js',

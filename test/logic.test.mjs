@@ -89,7 +89,15 @@ console.log('== color editable ==');
 console.log('== geologyStyle ==');
 const G = await import(BASE + 'geologyStyle.js');
 const gl = G.geologyLayers();
-ok('una capa de línea por certeza (+casing)', gl.filter(l => l.id.startsWith('geology-line-')).length === 6, `-> ${gl.filter(l=>l.id.startsWith('geology-line-')).length}`);
+ok('una capa de traza por certeza', G.GEOLOGY_LINE_LAYER_IDS.length === 3);
+// El halo solo va en las continuas: sobre una segmentada, el patrón blanco de
+// atrás asoma entre los guiones y ensucia justo lo que hay que distinguir.
+{
+  const casings = gl.filter((l) => l.id.startsWith('geology-line-casing-'));
+  ok('un solo casing, el de observado', casings.length === 1 && casings[0].id === 'geology-line-casing-observed',
+     JSON.stringify(casings.map((l) => l.id)));
+  ok('y ese casing no lleva dasharray', !('line-dasharray' in casings[0].paint));
+}
 ok('ids de capa únicos', new Set(gl.map(l=>l.id)).size === gl.length);
 ok('BASE_OPACITY cubre todas las capas', gl.every(l => typeof G.BASE_OPACITY[l.id] === 'number'));
 const obs = gl.find(l => l.id === 'geology-line-observed');

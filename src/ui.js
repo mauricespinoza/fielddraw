@@ -15,7 +15,13 @@ import { chaikin, simplifyDP } from './simplify.js';
 import { downloadBlob, downloadGeoJSON } from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { MBTILES_WARN_BYTES, openTileFile } from './tiles.js';
-import { applyCut, applyLinesToPolygon, applyMerge, applyTopology } from './editOps.js';
+import {
+  applyCut,
+  applyLinesToPolygon,
+  applyMerge,
+  applyReshape,
+  applyTopology,
+} from './editOps.js';
 import { openProject, parseProject, saveProject } from './project.js';
 import { initStraboPanel } from './strabo/panel.js';
 
@@ -112,7 +118,7 @@ function buildPalette() {
   }
 
   // Estas herramientas no crean elementos, así que no hay tipo que escoger.
-  if (['navigate', 'select', 'cut'].includes(s.tool)) {
+  if (['navigate', 'select', 'cut', 'reshape'].includes(s.tool)) {
     el.classList.add('hidden');
     return;
   }
@@ -662,6 +668,14 @@ export function openPropsMenu(screen) {
   menu.style.top = `${Math.max(12, y)}px`;
 }
 
+/**
+ * Cablea el botón de GPS. Va aparte del resto de la barra porque su manejador
+ * lo provee mapView, que se construye después de `initUI()`.
+ */
+export function wireLocate(handler) {
+  $('t-locate').addEventListener('click', handler);
+}
+
 export function closePropsMenu() {
   $('props-menu').classList.add('hidden');
 }
@@ -841,6 +855,31 @@ async function doOpenTiles(file) {
 /* ---------- cortar y unir ---------- */
 
 let editBusy = false;
+
+/**
+ * Aplica la línea de reshape. Síncrono: la geometría es propia y no hay que
+ * cargar JSTS.
+ */
+function runReshape(linea) {
+  try {
+    const { redibujados, intactos } = applyReshape(linea);
+    if (redibujados === 0) {
+      showBanner(
+        'The line did not cross the outline twice, so nothing was reshaped. Draw it so it enters and leaves the feature.',
+        'warn',
+      );
+    } else {
+      showBanner(
+        `${redibujados} feature(s) reshaped${intactos ? `; ${intactos} left alone (the line did not cross them)` : ''}.`,
+        'info',
+      );
+    }
+  } catch (err) {
+    showBanner(err.message, 'warn');
+  } finally {
+    store.clearPendingReshape();
+  }
+}
 
 async function runCut(cut) {
   if (editBusy) return;
@@ -1029,6 +1068,7 @@ function renderToolbar() {
     ['t-select', 'select'],
     ['t-vertices', 'vertices'],
     ['t-cut', 'cut'],
+    ['t-reshape', 'reshape'],
   ]) {
     $(id).classList.toggle('active', s.tool === tool);
   }
@@ -1077,6 +1117,12 @@ function renderStatus() {
     $('status-text').textContent = s.topoEdit
       ? `${base} · topological editing on: magenta ones move together`
       : base;
+  } else if (s.tool === 'reshape') {
+    $('status-text').textContent = !s.selection.length
+      ? 'Select the feature to reshape first (Select tool), then come back'
+      : n > 0
+        ? `Reshape line with ${n} vertices · close it to redraw that stretch`
+        : `Draw a line that enters and leaves the ${s.selection.length} selected feature(s)`;
   } else if (s.tool === 'cut') {
     if (s.cutSource === 'feature') {
       $('status-text').textContent = s.selection.length
@@ -1155,6 +1201,7 @@ export function initUI() {
   $('t-select').addEventListener('click', () => store.setTool('select'));
   $('t-vertices').addEventListener('click', () => store.setTool('vertices'));
   $('t-cut').addEventListener('click', () => store.setTool('cut'));
+  $('t-reshape').addEventListener('click', () => store.setTool('reshape'));
   $('t-merge').addEventListener('click', runMerge);
   // El botón abre el desplegable en vez de aplicar a ciegas: el umbral es el
   // parámetro que decide el resultado y tiene que verse antes de tocarlo.
@@ -1318,6 +1365,10 @@ export function initUI() {
     if (store.changed('pendingCut')) {
       const cut = store.getState().pendingCut;
       if (cut) runCut(cut);
+    }
+    if (store.changed('pendingReshape')) {
+      const linea = store.getState().pendingReshape;
+      if (linea) runReshape(linea);
     }
   });
 }

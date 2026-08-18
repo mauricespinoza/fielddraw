@@ -103,6 +103,19 @@
           </svg>
           <span>Split</span>
         </button>
+        <button
+          class="tool"
+          id="t-reshape"
+          title="Reshape: draw a line across the selected feature to redraw that stretch of its outline"
+        >
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M4 16.5c0-6 4-9.5 8-9.5s5.5 2 7.5 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="3 2.5" />
+            <path d="M3.5 8.5h6.5v10H3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            <circle cx="4" cy="16.5" r="1.9" fill="currentColor" />
+            <circle cx="19.5" cy="9" r="1.9" fill="currentColor" />
+          </svg>
+          <span>Reshape</span>
+        </button>
         <button class="tool" id="t-merge" title="Merge the selected features" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 6h5a5 5 0 0 1 5 5v2a5 5 0 0 0 5 5h1M4 18h5a5 5 0 0 0 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
@@ -139,6 +152,17 @@
             <circle cx="21" cy="12" r="2" fill="currentColor" />
           </svg>
           <span>Trace</span>
+        </button>
+
+        <div class="tool-sep"></div>
+
+        <button class="tool" id="t-locate" title="Centre the map on your GPS position">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          <span>Locate</span>
         </button>
 
         <div class="tool-sep"></div>

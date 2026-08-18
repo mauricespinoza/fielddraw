@@ -25,10 +25,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape; do node test/$f.test.mjs; done
 ```
 
-453 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+563 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -125,6 +125,8 @@ carga.
 | Cortar | seleccionar, luego **Cortar**: dibujar la línea, o tocar otro elemento |
 | Unir | seleccionar dos o más y pulsar **Unir** |
 | Compartir vértices | **Topología** (sobre la selección, o sobre todo el dibujo) |
+| Redibujar un contorno | seleccionar, luego **Reshape**: trazar una línea que entre y salga |
+| Ir a mi posición | botón **Locate** |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
 mapa renderizando, el hilo principal se satura y el `pointerup` puede llegar
@@ -247,7 +249,13 @@ Provisional, según lo acordado: el **tipo** se codifica en color y la
 | Dique | café `#6D4C41` |
 
 Certeza: **observado** continua · **inferido** segmentada · **cubierto**
-punteada. Los ejes de pliegue son la excepción: **solo observados** (ver
+punteada.
+
+El halo blanco que despega la traza del satélite solo lo llevan las líneas
+**continuas**. En una segmentada o punteada el halo es un segundo patrón de
+guiones por detrás del primero, más ancho, que nunca calza: los guiones blancos
+asoman entre los del trazo y emborronan justo el patrón de certeza que hay que
+distinguir a ojo. Una línea segmentada ya se separa del fondo por su ritmo. Los ejes de pliegue son la excepción: **solo observados** (ver
 *Pliegues*).
 
 El color de los tipos que llevan ornamento —las cuatro fallas y los dos
@@ -328,6 +336,37 @@ Dos detalles que no son obvios y que están cubiertos por pruebas:
 - Un borrado que dejaría la geometría degenerada (una línea con menos de dos
   puntos, un anillo con menos de tres) se omite y se avisa, en vez de destruir
   la geometría del vecino.
+
+## Reshape
+
+**Reshape** redibuja un tramo del contorno de un elemento trazando una línea
+nueva, como la herramienta homónima de QGIS. Exige seleccionar antes qué se
+redibuja, por lo mismo que Cortar: el gesto es una línea cualquiera sobre el
+mapa y, sin acotar, afectaría de golpe a todo lo que cruce.
+
+La línea tiene que **entrar y salir** de la geometría. Entre el primer y el
+último cruce quedan dos candidatos —cada uno de los dos arcos del contorno,
+cerrado con el tramo dibujado— y se queda el de **mayor área**. Esa regla, que
+suena arbitraria, es la que hace que la herramienta responda como uno espera en
+los dos usos reales:
+
+- Trazando **por fuera** y volviendo a entrar, los candidatos son "el polígono
+  entero más la panza" y "solo la panza": gana el primero, o sea el polígono
+  **crece**.
+- Trazando **de lado a lado**, los candidatos son los dos trozos en que queda
+  partido: gana el mayor, o sea se **recorta** el pequeño, que es justo el lado
+  que uno acaba de dejar fuera al trazar.
+
+Solo toca el anillo exterior: reformar un hueco es otra operación, y mezclarlas
+haría impredecible un gesto que ya es ambiguo de por sí. En una línea abierta no
+hay nada que elegir — se sustituye el tramo entre los dos cruces y se conservan
+las dos puntas.
+
+Va sin JSTS: es geometría propia (`src/reshape.js`) sobre las coordenadas, lo
+que además evita descargar 500 KB en terreno. El motivo de fondo es que el
+algoritmo necesita saber *por dónde* del contorno pasa la línea —una posición a
+lo largo del anillo, no solo un conjunto de puntos de corte— y eso es justo lo
+que las operaciones booleanas pierden.
 
 ## Confirmación topológica
 
@@ -739,6 +778,8 @@ manda, nunca se topó con esto.
   simbología que el plugin de QGIS), subida del dibujo como dataset nuevo, ver
   atributos desde Navegar y desde Elegir, filtrar por tipo y tamaño de símbolo
   ajustable.
+- ✅ Reshape de polígonos y líneas, sin dependencias.
+- ✅ Botón de GPS para centrar el mapa en la posición propia.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
   pulsar **Topología**), subtipos por categoría, y descarga dirigida de un área
   de basemap para llevar al terreno (hoy se resuelve importando un PMTiles).

@@ -1,6 +1,13 @@
 import * as store from './store.js';
 import { createMapView } from './mapView.js';
-import { closeOverlays, initUI, openPropsMenu, renderPointerInfo, showBanner } from './ui.js';
+import {
+  closeOverlays,
+  initUI,
+  openPropsMenu,
+  renderPointerInfo,
+  showBanner,
+  wireLocate,
+} from './ui.js';
 import { openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedFeatures,
@@ -15,7 +22,7 @@ import {
 
 initUI();
 
-createMapView({
+const view = createMapView({
   onPointerInfo: renderPointerInfo,
   onContourError: (msg) => showBanner(`Curvas de nivel no disponibles: ${msg}`),
   onEditMessage: showBanner,
@@ -24,6 +31,8 @@ createMapView({
   onMapTap: closeOverlays,
   onStraboFeatureTap: openStraboAttrs,
 });
+
+wireLocate(() => view.locateMe());
 
 // Restaurar el trabajo previo. Las unidades primero: los polígonos guardados
 // referencian sus ids, y sin ellas se dibujarían con el color por defecto.

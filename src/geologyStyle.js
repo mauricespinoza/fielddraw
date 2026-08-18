@@ -127,22 +127,32 @@ export function geologyLayers() {
   }
 
   for (const c of CERTAINTIES) {
-    // Halo blanco: sin esto las líneas oscuras desaparecen sobre el satélite.
-    const casingId = `geology-line-casing-${c.id}`;
-    layers.push({
-      id: casingId,
-      type: 'line',
-      source: GEOLOGY_SOURCE,
-      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'certainty'], c.id]],
-      layout: { 'line-cap': c.cap, 'line-join': 'round' },
-      paint: {
-        'line-color': '#ffffff',
-        'line-width': casingWidthExpr,
-        'line-opacity': 0.55,
-        ...(c.dash ? { 'line-dasharray': scaleDash(c.dash, 0.75) } : {}),
-      },
-    });
-    BASE_OPACITY[casingId] = 0.55;
+    /*
+     * Halo blanco: sin esto las líneas oscuras desaparecen sobre el satélite.
+     *
+     * Solo lo llevan las líneas CONTINUAS. En una segmentada o punteada el
+     * halo es un segundo patrón de guiones por detrás del primero, más ancho y
+     * con la escala corregida, así que nunca calza: los guiones blancos asoman
+     * entre los del trazo y el patrón de certeza —que es justo lo que hay que
+     * distinguir a ojo— se lee emborronado. Una línea segmentada ya se separa
+     * del fondo por su propio ritmo.
+     */
+    if (!c.dash) {
+      const casingId = `geology-line-casing-${c.id}`;
+      layers.push({
+        id: casingId,
+        type: 'line',
+        source: GEOLOGY_SOURCE,
+        filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'certainty'], c.id]],
+        layout: { 'line-cap': c.cap, 'line-join': 'round' },
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': casingWidthExpr,
+          'line-opacity': 0.55,
+        },
+      });
+      BASE_OPACITY[casingId] = 0.55;
+    }
 
     const id = `geology-line-${c.id}`;
     layers.push({
@@ -269,9 +279,4 @@ function shade(hex, factor = 0.62) {
   const g = Math.round(((n >> 8) & 255) * factor);
   const b = Math.round((n & 255) * factor);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
-/** El casing es más ancho, así que su dasharray debe encogerse para calzar. */
-function scaleDash(dash, f) {
-  return dash.map((d) => Math.max(0.05, d * f));
 }

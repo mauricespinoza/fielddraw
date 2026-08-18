@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { chainLines } from './geom.js';
 import { mergeLines, splitLine, splitPolygon, unionPolygons } from './geometryOps.js';
 import { confirmTopology } from './topology.js';
+import { reshapeGeometry } from './reshape.js';
 
 /**
  * Orquestación de las herramientas de edición avanzada. Aísla al store de
@@ -52,6 +53,47 @@ export async function applyCut(cut) {
   if (removed.length === 0) return { cortados: 0, piezas: 0 };
   store.replaceFeatures(removed, added);
   return { cortados: removed.length, piezas: added.length };
+}
+
+/**
+ * Aplica una línea de reshape a los elementos seleccionados.
+ *
+ * Exige selección, por lo mismo que Cortar: el gesto es una línea cualquiera
+ * sobre el mapa y, sin acotar a qué afecta, redibujaría de golpe todo lo que
+ * cruce. Los que la línea no cruce lo suficiente se quedan como estaban, sin
+ * que eso sea un error — es lo normal al trazar sobre un mapa con varias
+ * geometrías cerca.
+ *
+ * Es síncrono: no usa JSTS, así que no hay nada que descargar ni esperar.
+ *
+ * @returns {{redibujados: number, intactos: number}}
+ */
+export function applyReshape(linea) {
+  const st = store.getState();
+  if (!linea || !Array.isArray(linea.coords) || linea.coords.length < 2) {
+    throw new Error('Invalid reshape line');
+  }
+  if (st.selection.length === 0) {
+    throw new Error(
+      'Select what you want to reshape first: Select tool, tap it, then come back to Reshape.',
+    );
+  }
+
+  const ids = new Set(st.selection);
+  let redibujados = 0;
+  const features = st.features.map((f) => {
+    if (!ids.has(f.properties.id)) return f;
+    const geometry = reshapeGeometry(f.geometry, linea.coords);
+    if (!geometry) return f;
+    redibujados++;
+    return { ...f, geometry };
+  });
+
+  if (redibujados > 0) {
+    store.pushHistory();
+    store.setFeatures(features);
+  }
+  return { redibujados, intactos: st.selection.length - redibujados };
 }
 
 /**

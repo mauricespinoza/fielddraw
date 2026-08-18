@@ -97,7 +97,7 @@ const DRAWINGS = {
     },
   },
 
-  // Tic de falla normal: cuadradito colgando del bloque hundido.
+  // Tic de falla normal: bolita colgando del bloque hundido.
   'normal-fault': {
     w: 7,
     h: 9,
@@ -109,7 +109,11 @@ const DRAWINGS = {
       ctx.lineTo(3.5, 5);
       ctx.stroke();
       ctx.fillStyle = color;
-      ctx.fillRect(1, 0, 5, 5);
+      // El círculo se apoya donde terminaba el cuadrado, con el mismo
+      // diámetro que su lado, para no alterar el tamaño aparente del tic.
+      ctx.beginPath();
+      ctx.arc(3.5, 2.5, 2.5, 0, Math.PI * 2);
+      ctx.fill();
     },
   },
 

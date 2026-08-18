@@ -191,13 +191,50 @@ export function createMapView({
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
-  map.addControl(
-    new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: true,
-    }),
-    'bottom-right',
-  );
+  /*
+   * Control de GPS de MapLibre. Se conserva tal cual —trae el marcador, el
+   * círculo de precisión y el seguimiento ya resueltos— pero además se expone
+   * su `trigger()` a la barra de herramientas: el botón del control queda
+   * pequeño y abajo a la derecha, que es justo donde estorban los dedos al
+   * sujetar la tablet.
+   */
+  const geolocate = new maplibregl.GeolocateControl({
+    positionOptions: { enableHighAccuracy: true },
+    trackUserLocation: true,
+  });
+  map.addControl(geolocate, 'bottom-right');
+
+  geolocate.on('error', (err) => {
+    // `code` 1 es permiso denegado; el resto son "no hay señal" o timeout.
+    const msg =
+      err && err.code === 1
+        ? 'Location permission denied. Allow it in the browser settings to centre on your position.'
+        : 'Could not get a GPS fix. WiFi-only iPads have no GPS receiver.';
+    onEditMessage(msg, 'warn');
+  });
+
+  /**
+   * Centra el mapa en la posición del GPS.
+   *
+   * Requiere contexto seguro (HTTPS o localhost), igual que el service worker:
+   * servida por IP en la red local, `navigator.geolocation` ni siquiera
+   * pregunta por el permiso, así que conviene decirlo en vez de dejar un botón
+   * que no hace nada.
+   */
+  function locateMe() {
+    if (!('geolocation' in navigator)) {
+      onEditMessage('This device has no geolocation available.', 'warn');
+      return;
+    }
+    if (!window.isSecureContext) {
+      onEditMessage(
+        'Location needs HTTPS. It works on the published site, not over a local IP address.',
+        'warn',
+      );
+      return;
+    }
+    geolocate.trigger();
+  }
 
   map.on('error', (e) => {
     const msg = (e && e.error && e.error.message) || '';
@@ -1217,13 +1254,19 @@ export function createMapView({
     }
 
     if (store.changed('tool')) {
-      // La línea de corte se pinta en rojo: es una operación destructiva y no
-      // debe confundirse con el elemento que se está digitalizando.
-      const cutting = store.getState().tool === 'cut';
+      /*
+       * Las líneas auxiliares se pintan distinto del elemento que se está
+       * digitalizando, para que no se confundan con él: rojo para cortar,
+       * porque es destructivo, y ámbar para reshape, que modifica pero no
+       * destruye.
+       */
+      const herramienta = store.getState().tool;
+      const auxColor =
+        herramienta === 'cut' ? '#ff3b30' : herramienta === 'reshape' ? '#ffa726' : '#00E5FF';
       if (map.getLayer('draft-line')) {
-        map.setPaintProperty('draft-line', 'line-color', cutting ? '#ff3b30' : '#00E5FF');
-        map.setPaintProperty('draft-fill', 'fill-color', cutting ? '#ff3b30' : '#00E5FF');
-        map.setPaintProperty('draft-vertices', 'circle-stroke-color', cutting ? '#ff3b30' : '#00E5FF');
+        map.setPaintProperty('draft-line', 'line-color', auxColor);
+        map.setPaintProperty('draft-fill', 'fill-color', auxColor);
+        map.setPaintProperty('draft-vertices', 'circle-stroke-color', auxColor);
       }
       const drawing = store.getState().tool !== 'navigate';
       host.classList.toggle('is-drawing', drawing);
@@ -1270,6 +1313,7 @@ export function createMapView({
 
   return {
     map,
+    locateMe,
     destroy() {
       controller.destroy();
       map.remove();

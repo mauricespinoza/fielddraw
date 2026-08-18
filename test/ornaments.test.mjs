@@ -17,7 +17,7 @@ function fakeContext(ops) {
       return { data: new Uint8ClampedArray(w * h * 4) };
     },
   };
-  for (const m of ['scale', 'beginPath', 'moveTo', 'lineTo', 'closePath', 'fillRect']) {
+  for (const m of ['scale', 'beginPath', 'moveTo', 'lineTo', 'closePath', 'fillRect', 'arc']) {
     ctx[m] = () => {};
   }
   for (const m of ['fill', 'stroke']) {

@@ -97,6 +97,8 @@ let state = {
   selection: [],
   /** Línea de corte recién terminada, a la espera de que se aplique. */
   pendingCut: null,
+  /** Línea de reshape recién terminada, a la espera de que se aplique. */
+  pendingReshape: null,
   /** Unidades geológicas definidas por el usuario. */
   units: defaultUnits(),
   /** Línea que se va a continuar en cuanto se ponga el primer vértice. */
@@ -178,7 +180,7 @@ export function redo() {
 }
 
 const geomKindForTool = (tool) =>
-  tool === 'polygon' ? 'polygon' : tool === 'cut' ? 'cut' : 'line';
+  tool === 'polygon' ? 'polygon' : tool === 'cut' ? 'cut' : tool === 'reshape' ? 'reshape' : 'line';
 
 export function getState() {
   return state;
@@ -219,12 +221,16 @@ export function setTool(tool) {
   if (state.draft) {
     // Cambiar de herramienta cierra lo abierto, como en QGIS. Una línea de
     // corte a medias se descarta: aplicarla sin querer sería destructivo.
-    if (state.draft.kind === 'cut') cancelDraft();
+    // Una línea de corte o de reshape a medias se descarta: aplicarla sin
+    // querer sería destructivo en los dos casos.
+    if (state.draft.kind === 'cut' || state.draft.kind === 'reshape') cancelDraft();
     else finishDraft();
   }
-  // La selección sobrevive al pasar a Vértices, Cortar o a extender una
-  // línea: en los tres casos define sobre qué se va a operar.
-  if (!['select', 'vertices', 'cut'].includes(tool) && !extendFrom) set({ selection: [] });
+  // La selección sobrevive al pasar a Vértices, Cortar, Reshape o a extender
+  // una línea: en todos ellos define sobre qué se va a operar.
+  if (!['select', 'vertices', 'cut', 'reshape'].includes(tool) && !extendFrom) {
+    set({ selection: [] });
+  }
   set({ tool, extendFrom });
 }
 
@@ -353,6 +359,16 @@ export function finishDraft() {
     return;
   }
 
+  // La línea de reshape tampoco es un elemento del mapa: redibuja el contorno
+  // de lo que esté seleccionado y desaparece.
+  if (d.kind === 'reshape') {
+    set({
+      draft: null,
+      pendingReshape: d.coords.length >= 2 ? { coords: d.coords } : null,
+    });
+    return;
+  }
+
   const minPts = d.kind === 'polygon' ? 3 : 2;
   if (d.coords.length < minPts) {
     set({ draft: null });
@@ -426,6 +442,10 @@ export function setSelection(ids) {
 export function selectedFeatures() {
   const ids = new Set(state.selection);
   return state.features.filter((f) => ids.has(f.properties.id));
+}
+
+export function clearPendingReshape() {
+  set({ pendingReshape: null });
 }
 
 export function clearPendingCut() {
@@ -617,6 +637,7 @@ export function loadProject({ features, units, ornaments, settings, layers } = {
     selection: [],
     extendFrom: null,
     pendingCut: null,
+    pendingReshape: null,
   };
   if (Array.isArray(units) && units.length) patch.units = units;
   if (ornaments) patch.ornaments = sanitizeOrnaments(ornaments);

@@ -1,5 +1,5 @@
 import { chainLines, pickFeature, pointInPolygon, pointInRing } from '../src/geom.js';
-import { applyLinesToPolygon } from '../src/editOps.js';
+import { applyLinesToPolygon, applyReshape } from '../src/editOps.js';
 import * as store from '../src/store.js';
 
 let fails = 0;
@@ -452,6 +452,72 @@ console.log('== pliegues: la certeza queda acotada ==');
   ok('la falla queda volteada', byId.y.flip === true);
   ok('el pliegue no', byId.x.flip === undefined);
   ok('el dique tampoco', byId.z.flip === undefined);
+}
+
+
+console.log('== reshape a través del store ==');
+{
+  const area = (ring) => {
+    let acc = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      acc += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    }
+    return Math.abs(acc) / 2;
+  };
+
+  const cuadrado = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
+  store.loadFeatures([poly('p1', [cuadrado]), poly('p2', [[[50, 50], [60, 50], [60, 60], [50, 60], [50, 50]]])]);
+
+  // Sin selección no se toca nada: el gesto es una línea suelta sobre el mapa
+  // y, sin acotar, redibujaría todo lo que cruce.
+  let err = null;
+  try { applyReshape({ coords: [[8, -5], [8, 15]] }); } catch (e) { err = e; }
+  ok('sin selección da un error legible', !!err && /Select what you want to reshape/.test(err.message), err && err.message);
+  ok('y no cambió nada', store.getState().features[0].geometry.coordinates[0].length === 5);
+
+  store.setSelection(['p1']);
+  const r = applyReshape({ coords: [[8, -5], [8, 15]] });
+  ok('redibuja el seleccionado', r.redibujados === 1, JSON.stringify(r));
+  const p1 = store.getState().features.find((f) => f.properties.id === 'p1');
+  ok('se recortó el trozo pequeño', Math.abs(area(p1.geometry.coordinates[0].slice(0, -1)) - 80) < 1e-6,
+     String(area(p1.geometry.coordinates[0].slice(0, -1))));
+  ok('el no seleccionado queda intacto',
+     eq(store.getState().features.find((f) => f.properties.id === 'p2').geometry.coordinates[0],
+        [[50, 50], [60, 50], [60, 60], [50, 60], [50, 50]]));
+  ok('conserva los atributos', p1.properties.type === 'volcanic-unit' && p1.properties.id === 'p1');
+  ok('es deshacible', store.canUndo());
+  store.undo();
+  ok('deshacer devuelve el cuadrado', Math.abs(area(store.getState().features[0].geometry.coordinates[0].slice(0, -1)) - 100) < 1e-6);
+
+  // Una línea que no cruza lo suficiente no es un error: es lo normal cuando
+  // hay varias geometrías cerca.
+  store.setSelection(['p1']);
+  const nada = applyReshape({ coords: [[20, 20], [30, 30]] });
+  ok('línea que no cruza => 0 redibujados', nada.redibujados === 0 && nada.intactos === 1, JSON.stringify(nada));
+  ok('y no ensucia el historial', !store.canUndo());
+
+  // La panza hacia fuera agranda.
+  store.setSelection(['p1']);
+  applyReshape({ coords: [[10, 2], [16, 2], [16, 8], [10, 8]] });
+  const crecido = store.getState().features.find((f) => f.properties.id === 'p1');
+  ok('trazar por fuera agranda el polígono',
+     area(crecido.geometry.coordinates[0].slice(0, -1)) > 100,
+     String(area(crecido.geometry.coordinates[0].slice(0, -1))));
+
+  // Líneas también se pueden redibujar.
+  store.loadFeatures([line('l1', [[0, 0], [10, 0], [20, 0]])]);
+  store.setSelection(['l1']);
+  const rl = applyReshape({ coords: [[5, -3], [5, 4], [15, 4], [15, -3]] });
+  ok('una línea también se redibuja', rl.redibujados === 1);
+  const l1 = store.getState().features[0].geometry.coordinates;
+  ok('conserva sus dos puntas', eq(l1[0], [0, 0]) && eq(l1.at(-1), [20, 0]));
+
+  let err2 = null;
+  try { applyReshape({ coords: [[1, 1]] }); } catch (e) { err2 = e; }
+  ok('línea de un punto es error', !!err2 && /Invalid reshape line/.test(err2.message));
+
+  store.loadFeatures([]);
+  store.clearSelection();
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
