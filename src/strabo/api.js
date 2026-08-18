@@ -57,8 +57,15 @@ async function request(method, url, { body, auth: needsAuth = true, timeout = 60
   try {
     const res = await fetch(url, {
       method,
+      // Deliberadamente SIN `Accept`. StraboSpot responde 406 "Not
+      // Acceptable" si se manda `Accept: application/json` — comprobado
+      // contra el servidor con curl antes de escribir esto, aislando la
+      // cabecera exacta: `Accept: */*` y la ausencia total de `Accept`
+      // funcionan los dos, solo el valor `application/json` falla. El plugin
+      // de QGIS tampoco la manda. (`Accept-Charset`, que el plugin sí manda,
+      // ni se intenta aquí: es una cabecera prohibida para `fetch()` y el
+      // navegador la descarta en silencio.)
       headers: {
-        Accept: 'application/json',
         ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...(needsAuth ? { Authorization: authHeader() } : {}),
       },
