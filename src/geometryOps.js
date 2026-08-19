@@ -154,14 +154,96 @@ export async function unionPolygons(geometries, { clean = true } = {}) {
 }
 
 /**
- * Deja un polígono con un único anillo exterior y sin vértices redundantes.
+ * Resta un área a un polígono.
+ *
+ * Es la operación que abre una ventana dentro de una unidad: un stock que la
+ * atraviesa, una laguna, un techo colgante. El resultado puede ser de tres
+ * formas, y las tres son legítimas:
+ *
+ * - un polígono CON ANILLO INTERIOR, si lo restado cae entero dentro;
+ * - varias piezas, si lo restado lo atraviesa de lado a lado — ahí restar
+ *   parte en dos, igual que un corte;
+ * - nada, si lo restado lo cubre por completo. Eso se devuelve como lista
+ *   vacía y NO como null: quien llama tiene que poder distinguir "no se tocaron"
+ *   de "no queda nada", porque borrar el elemento entero sin decirlo sería la
+ *   peor manera de responder a un trazo mal cerrado.
+ *
+ * @returns {object[]|null} piezas GeoJSON, [] si no queda nada, null si no se
+ *   tocan y por tanto no hay nada que hacer.
+ */
+export async function differencePolygons(polygonGeoJSON, holeGeoJSON) {
+  const jsts = await loadJsts();
+  const reader = new jsts.io.GeoJSONReader();
+  const writer = new jsts.io.GeoJSONWriter();
+
+  // `buffer(0)` normaliza un trazo a mano que se cruza a sí mismo; sin esto,
+  // un anillo con un lazo hace fallar la resta en vez de dar el hueco.
+  const normaliza = (g) => {
+    const geom = reader.read(g);
+    return geom.isValid() ? geom : geom.buffer(0);
+  };
+
+  const poly = normaliza(polygonGeoJSON);
+  const hueco = normaliza(holeGeoJSON);
+  if (poly.isEmpty() || hueco.isEmpty()) return null;
+  if (!poly.intersects(hueco)) return null;
+
+  const resto = poly.difference(hueco);
+  if (resto.isEmpty()) return [];
+
+  const piezas = parts(resto).filter((g) => !g.isEmpty() && g.getArea() > 0);
+  if (!piezas.length) return [];
+  // Nada cambió de verdad: el área restada caía fuera salvo por el contacto.
+  if (piezas.length === 1 && Math.abs(piezas[0].getArea() - poly.getArea()) < poly.getArea() * 1e-12) {
+    return null;
+  }
+  return piezas.map((g) => writer.write(g));
+}
+
+/**
+ * Compacidad de Polsby-Popper: 4π·área/perímetro².
+ *
+ * Vale 1 en un círculo y tiende a 0 en una astilla larga y fina. Es lo que
+ * separa un hueco de verdad —un stock, una laguna: formas compactas— de un
+ * sliver, que es el hilo que dejan dos bordes que no coincidían al milímetro.
+ */
+function compacidad(ring) {
+  let area = 0;
+  let perimetro = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    area += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+    perimetro += Math.hypot(ring[i][0] - ring[j][0], ring[i][1] - ring[j][1]);
+  }
+  if (perimetro === 0) return 0;
+  return (4 * Math.PI * Math.abs(area / 2)) / (perimetro * perimetro);
+}
+
+/** Por debajo de esto un anillo interior es un hilo, no una ventana. */
+const SLIVER_MAX = 0.02;
+
+/**
+ * Quita los vértices redundantes de un polígono y descarta los anillos
+ * interiores que son slivers.
+ *
+ * Antes tiraba TODOS los anillos interiores, porque los únicos que aparecían
+ * eran los slivers que deja unir dos unidades contiguas. Desde que se puede
+ * restar un área, un anillo interior puede ser un dato: una ventana
+ * cartografiada a mano que fusionar la unidad con su vecina no tiene por qué
+ * borrar. Se distinguen por la forma, no por el tamaño — un stock chico y un
+ * sliver enorme existen los dos, pero solo el sliver es un hilo.
+ *
  * La tolerancia de colinealidad va en grados: 1e-9° son ~0,1 mm, así que solo
  * cae lo que de verdad está sobre la recta.
  */
 export function cleanPolygon(geometry) {
   if (!geometry || geometry.type !== 'Polygon' || !geometry.coordinates.length) return geometry;
   const shell = removeCollinear(geometry.coordinates[0]);
-  return { type: 'Polygon', coordinates: [shell] };
+  const huecos = geometry.coordinates
+    .slice(1)
+    .filter((r) => r.length >= 4 && compacidad(r) >= SLIVER_MAX)
+    .map((r) => removeCollinear(r))
+    .filter((r) => r.length >= 4);
+  return { type: 'Polygon', coordinates: [shell, ...huecos] };
 }
 
 /** ¿La línea de corte toca esta geometría? Filtro previo antes de cortar. */

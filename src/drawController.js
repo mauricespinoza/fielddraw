@@ -54,10 +54,19 @@ const SWALLOWED = [
  *    palma genera eventos `touch`, que en ese caso nunca dibujan.
  */
 export class DrawController {
-  constructor(host, mapContainer, callbacks) {
+  /**
+   * @param {EventTarget} host       elemento sobre el que se dibuja
+   * @param {object} mapContainer    contenedor del mapa, para las coordenadas
+   * @param {object} callbacks       acciones que emite el controlador
+   * @param {Window} [root]          dónde se escucha el fin de un gesto; ver
+   *   `attach`. Se inyecta para poder probarlo fuera de un navegador.
+   */
+  constructor(host, mapContainer, callbacks, root = typeof window === 'undefined' ? null : window) {
     this.host = host;
     this.mapContainer = mapContainer;
     this.cb = callbacks;
+    this.root = root;
+    this.doc = root && root.document ? root.document : null;
 
     this.penSeen = false;
     /** pointerId -> pointerType de todo lo que está tocando la pantalla. */
@@ -83,20 +92,40 @@ export class DrawController {
     this.onPointerUp = this.onPointerUp.bind(this);
     this.onPointerCancel = this.onPointerCancel.bind(this);
     this.onPointerLeave = this.onPointerLeave.bind(this);
+    this.onWindowBlur = this.onWindowBlur.bind(this);
     this.swallow = this.swallow.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
 
     this.attach();
   }
 
+  /**
+   * `pointerup` y `pointercancel` van en la VENTANA, no en el host.
+   *
+   * Es la corrección de un cuelgue real, no una precaución. Mientras
+   * `consuming` está puesta, `swallow` detiene todos los eventos de
+   * touch/mouse del mapa; la bandera solo se levanta al recibir el `pointerup`
+   * del gesto. Colgado del host, ese evento se pierde en cuanto el dedo o el
+   * lápiz se levantan fuera de él —soltar sobre un panel que acaba de abrirse,
+   * salirse por el borde de la pantalla, o que `setPointerCapture` haya sido
+   * rechazado— y entonces la bandera se queda puesta PARA SIEMPRE: el mapa deja
+   * de responder al tacto y al ratón, y solo recargando vuelve.
+   *
+   * En la ventana el evento llega siempre, se suelte donde se suelte.
+   */
   attach() {
     const opts = { capture: true, passive: false };
     this.host.addEventListener('pointerdown', this.onPointerDown, opts);
     this.host.addEventListener('pointermove', this.onPointerMove, opts);
-    this.host.addEventListener('pointerup', this.onPointerUp, opts);
-    this.host.addEventListener('pointercancel', this.onPointerCancel, opts);
     this.host.addEventListener('pointerleave', this.onPointerLeave, opts);
     this.host.addEventListener('contextmenu', this.onContextMenu, opts);
+    // Sin ventana —en las pruebas— se cae al host, que es lo que había antes.
+    const fin = this.root || this.host;
+    fin.addEventListener('pointerup', this.onPointerUp, opts);
+    fin.addEventListener('pointercancel', this.onPointerCancel, opts);
+    // Cambiar de app o de pestaña con el dedo apoyado no genera `pointerup`.
+    if (this.root) this.root.addEventListener('blur', this.onWindowBlur);
+    if (this.doc) this.doc.addEventListener('visibilitychange', this.onWindowBlur);
     for (const type of SWALLOWED) this.host.addEventListener(type, this.swallow, opts);
   }
 
@@ -104,13 +133,48 @@ export class DrawController {
     const opts = { capture: true };
     this.host.removeEventListener('pointerdown', this.onPointerDown, opts);
     this.host.removeEventListener('pointermove', this.onPointerMove, opts);
-    this.host.removeEventListener('pointerup', this.onPointerUp, opts);
-    this.host.removeEventListener('pointercancel', this.onPointerCancel, opts);
     this.host.removeEventListener('pointerleave', this.onPointerLeave, opts);
     this.host.removeEventListener('contextmenu', this.onContextMenu, opts);
+    const fin = this.root || this.host;
+    fin.removeEventListener('pointerup', this.onPointerUp, opts);
+    fin.removeEventListener('pointercancel', this.onPointerCancel, opts);
+    if (this.root) this.root.removeEventListener('blur', this.onWindowBlur);
+    if (this.doc) this.doc.removeEventListener('visibilitychange', this.onWindowBlur);
     for (const type of SWALLOWED) this.host.removeEventListener(type, this.swallow, opts);
     this.clearLongPress();
     this.clearObserved();
+  }
+
+  /**
+   * Se pierde el foco con dedos apoyados: no habrá `pointerup` para ellos.
+   * Se da todo por soltado, que es lo que de verdad ocurrió.
+   */
+  onWindowBlur() {
+    const d = this.doc;
+    if (d && d.visibilityState === 'visible' && d.hasFocus && d.hasFocus()) return;
+    // Un trazo en curso NO se aborta aquí: perder lo dibujado porque el foco se
+    // fue a la barra del navegador sería peor que el problema. Su `pointerup`
+    // en la ventana todavía puede llegar, y si no llega, el purgado de
+    // `isPrimary` del siguiente toque lo recoge. Lo que se limpia es el rastro
+    // de los punteros que ya no están.
+    if (this.gesture) return;
+    this.resetPointers();
+  }
+
+  /**
+   * Estado de punteros a cero. Es la red de seguridad de todo lo anterior: sin
+   * ella, un puntero fantasma en `this.pointers` hace que `touchCount()` nunca
+   * baje de uno, y a partir de ahí CADA toque de un dedo se toma por el segundo
+   * de un gesto de navegación — el dedo deja de seleccionar, de cerrar el
+   * elemento y de abrir el menú, sin que nada lo anuncie.
+   */
+  resetPointers() {
+    this.pointers.clear();
+    this.touchStarts.clear();
+    this.multi = null;
+    this.clearObserved();
+    if (this.gesture) this.abort();
+    else this.consuming = false;
   }
 
   toLocal(e) {
@@ -176,6 +240,14 @@ export class DrawController {
   }
 
   onPointerDown(e) {
+    /*
+     * `isPrimary` es el PRIMER contacto de su tipo: si llega uno y todavía
+     * creemos tener dedos en la pantalla, lo que tenemos es basura de un gesto
+     * cuyo `pointerup` no llegó. Se limpia aquí, que es el único momento en que
+     * se puede afirmar sin riesgo, y no contando punteros al soltar.
+     */
+    if (e.isPrimary && this.pointers.size > 0) this.resetPointers();
+
     this.pointers.set(e.pointerId, e.pointerType);
     if (e.pointerType === 'pen') this.penSeen = true;
 

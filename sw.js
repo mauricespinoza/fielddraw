@@ -16,12 +16,18 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 const TILES = `fielddraw-tiles-${VERSION}`;
 
 /** Tope de teselas guardadas. A ~15 KB cada una son unos 90 MB. */
 const TILE_LIMIT = 6000;
+
+/** Plazo de una tesela que alguien está esperando para pintar, en ms. */
+const TILE_TIMEOUT_MS = 15000;
+
+/** Plazo del refresco en segundo plano. Nadie lo espera: se corta antes. */
+const TILE_REFRESH_TIMEOUT_MS = 8000;
 
 /**
  * Todo lo que la app necesita para arrancar. Las rutas son relativas al scope,
@@ -50,6 +56,7 @@ const SHELL = [
   './src/profile.js',
   './src/project.js',
   './src/reshape.js',
+  './src/scale.js',
   './src/shortcuts.js',
   './src/simplify.js',
   './src/snapping.js',
@@ -216,12 +223,31 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (esTesela(url)) {
-    // Teselas: red primero para tener lo más nuevo, con la caché de respaldo.
+    /*
+     * Teselas: CACHÉ PRIMERO, con refresco por detrás.
+     *
+     * Antes era al revés —red primero, caché de respaldo— y ese orden era la
+     * causa principal de que la app pareciera colgada en terreno. Una tesela
+     * z/x/y no cambia nunca, así que pedirla a la red no aporta nada; pero con
+     * señal débil el `fetch` no falla: se queda esperando en un socket muerto
+     * durante minutos, y solo DESPUÉS se miraba la caché. Como por aquí pasan
+     * el basemap, las curvas, el sombreado, el relieve 3D y las cotas del
+     * perfil, todo eso se detenía a la vez aunque estuviera ya descargado.
+     *
+     * Ahora lo cacheado se sirve al instante y la copia se refresca aparte. La
+     * red solo se espera cuando no hay copia, y con plazo: fallar en 15 s deja
+     * un hueco en el mapa, colgarse deja la app inservible.
+     */
     event.respondWith(
       (async () => {
         const cache = await caches.open(TILES);
+        const hit = await cache.match(request);
+        if (hit) {
+          event.waitUntil(refrescarTesela(cache, request));
+          return hit;
+        }
         try {
-          const res = await fetch(request);
+          const res = await conPlazo(request, TILE_TIMEOUT_MS);
           // Las respuestas opacas (sin CORS) también sirven para pintar.
           if (res.ok || res.type === 'opaque') {
             await cache.put(request, res.clone());
@@ -229,14 +255,43 @@ self.addEventListener('fetch', (event) => {
           }
           return res;
         } catch (err) {
-          const hit = await cache.match(request);
-          if (hit) return hit;
-          throw err;
+          // Sin copia y sin red: que falle rápido y con un código claro. El
+          // mapa deja el hueco y sigue; una promesa colgada, no.
+          return new Response('Tesela no disponible sin conexión', {
+            status: 504,
+            statusText: 'Offline',
+          });
         }
       })(),
     );
   }
 });
+
+/** Petición con plazo. Sin esto, "sin señal" y "esperando" son lo mismo. */
+function conPlazo(request, ms) {
+  const abort = new AbortController();
+  const corte = setTimeout(() => abort.abort(), ms);
+  return fetch(request, { signal: abort.signal }).finally(() => clearTimeout(corte));
+}
+
+/**
+ * Refresca una tesela ya servida desde la caché, sin que nadie la espere.
+ *
+ * Se limita a las que se piden de verdad y con plazo corto: es trabajo de
+ * fondo, y en terreno el ancho de banda que consuma se lo quita a las teselas
+ * que sí hacen falta ahora.
+ */
+async function refrescarTesela(cache, request) {
+  try {
+    const fresh = await conPlazo(request, TILE_REFRESH_TIMEOUT_MS);
+    if (fresh.ok || fresh.type === 'opaque') {
+      await cache.put(request, fresh.clone());
+      await podarTeselas();
+    }
+  } catch {
+    /* sin red: la copia que ya se sirvió sigue siendo la buena */
+  }
+}
 
 /** Permite a la app forzar la actualización y consultar el estado. */
 self.addEventListener('message', (event) => {

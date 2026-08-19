@@ -1,6 +1,12 @@
 import * as store from './store.js';
 import { chainLines } from './geom.js';
-import { mergeLines, splitLine, splitPolygon, unionPolygons } from './geometryOps.js';
+import {
+  differencePolygons,
+  mergeLines,
+  splitLine,
+  splitPolygon,
+  unionPolygons,
+} from './geometryOps.js';
 import { confirmTopology } from './topology.js';
 import { reshapeGeometry } from './reshape.js';
 
@@ -53,6 +59,91 @@ export async function applyCut(cut) {
   if (removed.length === 0) return { cortados: 0, piezas: 0 };
   store.replaceFeatures(removed, added);
   return { cortados: removed.length, piezas: added.length };
+}
+
+/**
+ * Resta un área dibujada a los polígonos: abre una ventana dentro de ellos.
+ *
+ * A qué se aplica:
+ *
+ * - con selección, a los polígonos seleccionados y a nadie más;
+ * - sin selección, SOLO si hay exactamente un polígono que contenga el área
+ *   dibujada. Ahí no hay ambigüedad posible y pedir que se seleccione primero
+ *   sería un paso de más en terreno.
+ *
+ * Con dos o más candidatos se para y se pide elegir. Restarle el mismo hueco a
+ * todo lo que se solape borraría área de unidades que nadie nombró, y eso es
+ * justo lo que hace que una herramienta destructiva dé miedo usarla.
+ *
+ * @returns {{abiertos: number, piezas: number, partidos: number}}
+ */
+export async function applyHole(hole) {
+  const st = store.getState();
+  if (!hole || !Array.isArray(hole.coords) || hole.coords.length < 3) {
+    throw new Error('The area to remove needs at least three vertices.');
+  }
+  const ring = closeRing(hole.coords);
+  if (!ring) {
+    throw new Error('That outline encloses no area: it needs three distinct vertices.');
+  }
+  const cutter = { type: 'Polygon', coordinates: [ring] };
+
+  const base = st.selection.length ? store.selectedFeatures() : st.features;
+  let targets = base.filter((f) => f.geometry && f.geometry.type === 'Polygon');
+
+  if (!st.selection.length) {
+    // Sin selección: solo el que de verdad contiene lo dibujado, y solo si es
+    // uno. `pointInPolygon` no vale aquí —el hueco puede asomar por el borde—
+    // así que se pregunta por el solape real, que es lo que importa.
+    const dentro = [];
+    for (const f of targets) {
+      const r = await differencePolygons(f.geometry, cutter);
+      if (r !== null) dentro.push(f);
+    }
+    if (dentro.length === 0) {
+      throw new Error('That area does not fall on any polygon.');
+    }
+    if (dentro.length > 1) {
+      throw new Error(
+        `That area overlaps ${dentro.length} polygons. Select the one to open first (Select tool).`,
+      );
+    }
+    targets = dentro;
+  }
+
+  if (targets.length === 0) {
+    throw new Error('Holes are only cut out of polygons; nothing selected is one.');
+  }
+
+  const removed = [];
+  const added = [];
+  let partidos = 0;
+  let vaciados = 0;
+  for (const f of targets) {
+    const piezas = await differencePolygons(f.geometry, cutter);
+    if (piezas === null) continue;
+    if (piezas.length === 0) {
+      // El área cubría el polígono entero. Borrarlo sin decirlo sería la peor
+      // respuesta posible a un trazo que se pasó de largo.
+      vaciados++;
+      continue;
+    }
+    removed.push(f.properties.id);
+    if (piezas.length > 1) partidos++;
+    for (const g of piezas) added.push(store.derivedFeature(f, g));
+  }
+
+  if (removed.length === 0) {
+    if (vaciados) {
+      throw new Error(
+        `That area covers ${vaciados === 1 ? 'the whole polygon' : 'the whole of every polygon'}. Nothing was removed: draw the hole inside it.`,
+      );
+    }
+    return { abiertos: 0, piezas: 0, partidos: 0 };
+  }
+
+  store.replaceFeatures(removed, added);
+  return { abiertos: removed.length, piezas: added.length, partidos };
 }
 
 /**

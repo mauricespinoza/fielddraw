@@ -1,4 +1,5 @@
 import { BASEMAPS } from './basemaps.js';
+import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
 import {
   FLIPPABLE_ORNAMENT_TYPES,
   POLYGON_TYPES,
@@ -92,6 +93,20 @@ let state = {
   /** Parámetros de los ornamentos de falla (tamaño, espaciado, posición). */
   ornaments: defaultOrnaments(),
 
+  /*
+   * Escala de trabajo.
+   *
+   * `scaleLock` es el denominador al que el mapa queda fijado, o null para
+   * navegar libre. Fijarla es lo que hace que un levantamiento salga con un
+   * detalle homogéneo: sin ella se digitaliza un tramo muy de cerca y el
+   * siguiente muy de lejos, y el mapa resultante no está a ninguna escala.
+   */
+  scaleLock: null,
+  /** Escalas ofrecidas en el desplegable. El usuario puede añadir las suyas. */
+  scalePresets: [...DEFAULT_SCALES],
+  /** Tamaño supuesto del píxel de pantalla, en mm. Ver scale.js. */
+  scalePixelMm: 0.28,
+
   features: [],
   draft: null,
   layers: defaultLayers(),
@@ -105,6 +120,8 @@ let state = {
   pendingCut: null,
   /** Línea de reshape recién terminada, a la espera de que se aplique. */
   pendingReshape: null,
+  /** Área dibujada para restarla a un polígono; la consume la interfaz. */
+  pendingHole: null,
   /** Traza recién terminada de la que hay que calcular el perfil. */
   pendingProfile: null,
   /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
@@ -238,6 +255,7 @@ export function redo() {
 
 const GEOM_KIND_FOR_TOOL = {
   polygon: 'polygon',
+  hole: 'hole',
   cut: 'cut',
   reshape: 'reshape',
   profile: 'profile',
@@ -253,7 +271,7 @@ const geomKindForTool = (tool) => GEOM_KIND_FOR_TOOL[tool] || 'line';
  * herramienta con uno a medias lo descarta, porque aplicarlo sin querer sería
  * destructivo en los dos primeros casos y desconcertante en el tercero.
  */
-const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane']);
+const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane', 'hole']);
 
 /**
  * Herramientas que crean o mueven geometría, y que por eso no se ofrecen con
@@ -263,6 +281,7 @@ const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane']);
 export const DRAWING_TOOLS = [
   'line',
   'polygon',
+  'hole',
   'vertices',
   'cut',
   'reshape',
@@ -283,6 +302,19 @@ export function subscribe(fn) {
   return () => listeners.delete(fn);
 }
 
+/** ¿Estamos dentro del recorrido de suscriptores de un `set`? */
+let notifying = false;
+/** Claves cambiadas por un `set` disparado DESDE un suscriptor. */
+let queued = null;
+
+/**
+ * Corta un ciclo entre suscriptores. Dos que se contesten el uno al otro
+ * colgarían el hilo principal —la app entera congelada, sin ningún error— así
+ * que se para y se deja dicho dónde mirar, en vez de repartir el bloqueo entre
+ * las funciones que después parecen no responder.
+ */
+const MAX_ROUNDS = 24;
+
 function set(patch) {
   const next = typeof patch === 'function' ? patch(state) : patch;
   if (!next) return;
@@ -290,8 +322,42 @@ function set(patch) {
   const dirty = keys.filter((k) => next[k] !== state[k]);
   if (dirty.length === 0) return;
   state = { ...state, ...next };
-  lastChanged = new Set(dirty);
-  for (const fn of listeners) fn(state);
+
+  /*
+   * Cambio disparado desde dentro de un suscriptor.
+   *
+   * NO se puede pisar `lastChanged` a mitad del recorrido: los suscriptores
+   * que todavía no han corrido preguntarían por el cambio equivocado y se
+   * saltarían el suyo. Era la vía por la que un aviso nacido en el mapa
+   * —revertir el relieve 3D al fallar, por ejemplo— dejaba a la barra de
+   * herramientas y al panel mostrando un estado que ya no era el vigente.
+   *
+   * Se encola y se emite en una ronda aparte, cuando la actual termine.
+   */
+  if (notifying) {
+    if (!queued) queued = new Set();
+    for (const k of dirty) queued.add(k);
+    return;
+  }
+
+  let ronda = new Set(dirty);
+  notifying = true;
+  try {
+    for (let i = 0; ronda; i++) {
+      if (i >= MAX_ROUNDS) {
+        console.warn('[store] ciclo entre suscriptores; se corta en:', [...ronda].join(', '));
+        break;
+      }
+      lastChanged = ronda;
+      // Copia: un suscriptor puede darse de baja mientras se recorre.
+      for (const fn of [...listeners]) fn(state);
+      ronda = queued;
+      queued = null;
+    }
+  } finally {
+    notifying = false;
+    queued = null;
+  }
 }
 
 /* ---------- herramientas ---------- */
@@ -471,6 +537,19 @@ export function finishDraft() {
     return;
   }
 
+  /*
+   * El contorno del hueco tampoco es un elemento del mapa: es un área que se
+   * le RESTA a un polígono y desaparece. Se piden tres vértices, los mismos
+   * que un polígono, porque con dos no se encierra nada que restar.
+   */
+  if (d.kind === 'hole') {
+    set({
+      draft: null,
+      pendingHole: d.coords.length >= 3 ? { coords: d.coords } : null,
+    });
+    return;
+  }
+
   // La línea de reshape tampoco es un elemento del mapa: redibuja el contorno
   // de lo que esté seleccionado y desaparece.
   if (d.kind === 'reshape') {
@@ -609,6 +688,10 @@ export function selectedFeatures() {
 
 export function clearPendingReshape() {
   set({ pendingReshape: null });
+}
+
+export function clearPendingHole() {
+  set({ pendingHole: null });
 }
 
 export function clearPendingCut() {
@@ -773,6 +856,45 @@ export function requestProfileFor(id) {
  * que se sigan poniendo vértices sobre un terreno inclinado, donde no caen
  * donde parece.
  */
+/* ---------- escala ---------- */
+
+/**
+ * Fija el mapa a una escala, o lo suelta con null.
+ *
+ * El store solo guarda la intención; llevar el mapa a ese zoom y mantenerlo
+ * ahí es cosa de la vista, que es la única que sabe cuántos metros mide un
+ * píxel en la latitud en la que se está.
+ */
+export function setScaleLock(denominator) {
+  set({ scaleLock: denominator === null ? null : clampScale(denominator) });
+}
+
+/** Añade una escala a la lista del desplegable. Devuelve la ya normalizada. */
+export function addScalePreset(denominator) {
+  const n = clampScale(denominator);
+  if (state.scalePresets.includes(n)) return n;
+  set({ scalePresets: sanitizeScales([...state.scalePresets, n]) });
+  return n;
+}
+
+export function removeScalePreset(denominator) {
+  const resto = state.scalePresets.filter((d) => d !== denominator);
+  // Vaciar la lista dejaría el desplegable sin nada a lo que fijarse; se
+  // vuelve a la de fábrica antes que quedarse sin ninguna.
+  set({ scalePresets: sanitizeScales(resto) });
+}
+
+export function resetScalePresets() {
+  set({ scalePresets: [...DEFAULT_SCALES] });
+}
+
+export function setScalePixelMm(mm) {
+  const v = Number(mm);
+  if (!Number.isFinite(v) || v <= 0) return;
+  // Fuera de este rango no hay pantalla: es un dedo gordo en el teclado.
+  set({ scalePixelMm: Math.min(1, Math.max(0.05, Math.round(v * 1000) / 1000)) });
+}
+
 export function setTerrain3d(terrain3d) {
   if (terrain3d && DRAWING_TOOLS.includes(state.tool)) {
     if (state.draft) cancelDraft();
@@ -953,6 +1075,9 @@ export const SETTING_KEYS = [
   'opentopoDem',
   'profileSamples',
   'terrainExaggeration',
+  'scaleLock',
+  'scalePresets',
+  'scalePixelMm',
 ];
 
 /*
@@ -993,6 +1118,7 @@ export function loadProject({ features, units, ornaments, structureStyle, settin
     extendFrom: null,
     pendingCut: null,
     pendingReshape: null,
+    pendingHole: null,
   };
   if (Array.isArray(units) && units.length) patch.units = units;
   if (ornaments) patch.ornaments = sanitizeOrnaments(ornaments);
@@ -1001,6 +1127,13 @@ export function loadProject({ features, units, ornaments, structureStyle, settin
     for (const k of SETTING_KEYS) {
       if (settings[k] !== undefined) patch[k] = settings[k];
     }
+    // La lista de escalas viene de un archivo que se puede editar a mano; si
+    // llega rota, el desplegable se quedaría vacío o con basura.
+    patch.scalePresets = sanitizeScales(settings.scalePresets);
+    patch.scaleLock =
+      Number.isFinite(Number(settings.scaleLock)) && Number(settings.scaleLock) > 0
+        ? clampScale(Number(settings.scaleLock))
+        : null;
   }
   if (Array.isArray(layers) && layers.length) {
     const saved = new Map(layers.map((l) => [l.id, l]));

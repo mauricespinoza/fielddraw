@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole; do node test/$f.test.mjs; done
 ```
 
-809 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+882 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -42,7 +42,11 @@ aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot,
 decodificación de teselas terrarium, muestreo y estadística de perfiles,
 parseo de ASCII grid e interpolación bilineal, ajuste de plano por mínimos
 cuadrados, propagación de la incertidumbre del manteo, los avisos de calidad,
-la tabla de atajos de teclado y el hover del ratón.
+la tabla de atajos de teclado y el hover del ratón, conversión escala↔zoom en
+ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
+—incluido el hueco que se convierte en anillo interior— y las regresiones de
+los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
+`pointerup` se pierde y la tesela del DEM que no contesta nunca.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -98,7 +102,13 @@ Las pesadas (JSTS, sql.js, PMTiles) se siguen pidiendo bajo demanda, ahora desde
 Un service worker no puede precachear un basemap mundial: son teselas
 ilimitadas. Lo que hace es guardar en una caché aparte —con tope de 6000
 teselas— todo lo que se haya mirado, así que la zona que revisaste antes de
-salir sigue ahí. **Para cobertura garantizada en terreno, la respuesta es
+salir sigue ahí.
+
+Esa caché se sirve **primero**, antes que la red, y se refresca por detrás. Una
+tesela z/x/y no cambia nunca, así que preguntarle a la red no aportaba nada y sí
+costaba: con media barra de señal el `fetch` no falla, se queda esperando, y
+mientras tanto no se pinta lo que ya estaba descargado. Ver
+[Por qué la app se quedaba colgada](#por-qué-la-app-se-quedaba-colgada). **Para cobertura garantizada en terreno, la respuesta es
 importar un PMTiles de la zona**, que es justo para lo que está esa función.
 
 ### Instalar en la tablet
@@ -136,9 +146,11 @@ carga.
 | Unir | seleccionar dos o más y pulsar **Unir** |
 | Compartir vértices | **Topología** (sobre la selección, o sobre todo el dibujo) |
 | Redibujar un contorno | seleccionar, luego **Reshape**: trazar una línea que entre y salga |
+| Quitar un área interior | **Hole**: dibujar el contorno de lo que sobra dentro del polígono |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
 | Relieve 3D | botón **3D**; con él puesto no se digitaliza |
+| Fijar la escala | píldora `1:…` abajo a la izquierda, o `K` |
 | Ir a mi posición | botón **Locate** |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
@@ -169,6 +181,66 @@ explican fallos que parecen aleatorios:
   no hay forma de arrastrar el lazo ni de agarrar una manija con el dedo. El
   precio es que en esas dos herramientas el paneo con un dedo no está
   disponible; se navega con dos, como en el resto de la app.
+
+## Escala de trabajo
+
+Un mapa web se navega por **nivel de zoom**, que no significa nada
+cartográficamente: z14 no es una escala, es una potencia de dos. Al levantar
+geología eso no sirve. Cuánto detalle tiene sentido meter en un contacto, qué se
+generaliza y qué no, depende de la escala de trabajo; y una memoria o una carta
+se entrega **a** una escala. Un mapa levantado deslizando el zoom libremente sale
+con el detalle repartido a capricho: un tramo digitalizado a 1:5.000 junto a otro
+a 1:60.000, y ninguno de los dos es el mapa que se declaró.
+
+La píldora de abajo a la izquierda —justo bajo la barra gráfica de MapLibre—
+muestra la escala vigente y abre la lista (`K`):
+
+- **Tocar una escala** lleva el mapa a ella.
+- **El candado** la fija: el mapa se desplaza pero no hace zoom. Se apagan los
+  gestos cuyo único efecto es el zoom —rueda, pellizco y caja—; el teclado se
+  deja en paz, porque en MapLibre las flechas y el `+`/`-` son el mismo
+  manejador y apagarlo costaría el paneo por teclado a cambio de nada. Lo que no
+  pasa por los gestos —los botones de la brújula, el `+`/`-`, cualquier zoom por
+  programa— se corrige al terminar el movimiento. Mientras dura, el giro a dos
+  dedos queda apagado junto con el pellizco: MapLibre los sirve el mismo
+  manejador y no admite apagar solo el zoom.
+- **La escala se mantiene al desplazarse**, no solo el zoom. El denominador
+  depende del coseno de la latitud, así que un paneo norte-sur la corre sola: en
+  Ñuble-Biobío, un grado son cerca de un 1,5 %. Fijada, el zoom se reajusta para
+  compensarlo. Por debajo de medio por ciento no se toca nada: corregir ahí sería
+  un temblor, no una corrección.
+- **Fijar sin elegir** toma la escala que se está viendo y la redondea a una de
+  mapeo. Fijar un 1:37.412 sería fijar el accidente de dónde quedó el zoom. El
+  redondeo se hace en logaritmo y no en resta, porque una escala es una razón:
+  1:37.400 está a un factor 1,50 de 1:25.000 y a 1:1,34 de 1:50.000, así que la
+  que se le parece es la segunda aunque restando salga la primera.
+
+La lista de fábrica es 1:1.000, 2.500, 5.000, 10.000, 25.000, 50.000, 100.000 y
+250.000 —las de las series topográficas y de las cartas del Sernageomin—, y es
+**editable**: se añaden escalas escritas a mano (`1:12 500`, `12500` o `25k`, todo
+vale) y se quitan con la ✕ de cada una. Viaja en el proyecto, junto con el
+candado.
+
+### El píxel, que es la parte incómoda
+
+Una escala relaciona una distancia del terreno con una distancia **física** sobre
+el mapa. En papel eso está definido; en una pantalla no, porque el navegador no
+expone el tamaño real de sus píxeles. Un mismo "1:25.000" en un monitor y en un
+iPad no mide lo mismo con una regla encima.
+
+La convención —de la OGC, y lo que usan QGIS, OpenLayers y ArcGIS— es suponer un
+píxel de **0,28 mm** (~90,7 ppp). No es el píxel de ninguna pantalla concreta,
+pero es el mismo supuesto que hace el resto del gremio: un 1:25.000 de FieldDraw
+es el mismo 1:25.000 que vería QGIS, y eso es lo que hace que la cifra sirva para
+comunicarse. Quien además quiera que cuadre con una regla sobre **su** pantalla
+tiene el valor configurable en la misma lista.
+
+La escala se **mide sobre el propio mapa** —dos puntos separados cien píxeles y
+cuánto terreno hay entre ellos— en vez de despejarla del nivel de zoom. Así no
+depende de la convención interna de MapLibre (teselas de 512 px, no de 256; usar
+la equivocada da un factor 2 de error) y sigue siendo correcta con la cámara
+inclinada, donde la escala ya no es la misma en toda la pantalla y la del centro
+es la única que se puede declarar.
 
 ## Desde un PC
 
@@ -213,6 +285,7 @@ grosería.
 | `V` | Elegir |
 | `L` | Línea — con una línea seleccionada, la **continúa** |
 | `P` | Polígono |
+| `O` | Hole — restar un área a un polígono |
 | `N` | Nodos (vértices) |
 | `X` | Cortar |
 | `R` | Reshape |
@@ -229,6 +302,7 @@ grosería.
 | `Ctrl+Z` · `Ctrl+Shift+Z` | Deshacer · rehacer |
 | `Ctrl+A` | Seleccionar todo |
 | `Shift+L` · `Shift+U` · `Shift+Y` · `Shift+B` | Capas · Unidades · Símbolos · StraboSpot |
+| `K` | Escala de trabajo (elegir y fijar) |
 | `Ctrl+,` | Ajustes |
 | `Ctrl+S` · `Ctrl+O` · `Ctrl+E` | Guardar proyecto · abrir · exportar GeoPackage |
 | `?` · `F1` | Esta lista |
@@ -380,6 +454,13 @@ inclinado, el punto que se toca y el punto del terreno dejan de coincidir como
 en planta, así que digitalizar en 3D produce geometría desplazada sin que se
 note al momento. Activarlo devuelve a **Navegar** y descarta lo que hubiera a
 medias; apagarlo devuelve el dibujo.
+
+Al encenderlo se **comprueba que quedó puesto**. `setTerrain` no siempre lanza
+cuando no puede: en un contexto WebGL sin las extensiones que necesita vuelve sin
+terreno y sin excepción, y entonces el botón quedaba encendido sobre un mapa
+plano y con el dibujo bloqueado —el peor de los dos mundos, y sin nada que lo
+explicara. Ahora se consulta `getTerrain()` después de ponerlo y, si no está, se
+revierte con el motivo.
 
 Dos advertencias honestas: el terreno sube bastante el coste de render, así que
 conviene probarlo en la tablet real antes de darlo por bueno; y necesita las
@@ -894,15 +975,20 @@ Al unir polígonos se fuerza que el resultado quede **limpio por dentro**:
 1. Primero se aplica la confirmación topológica a la selección. Dos bordes que
    no coincidían al milímetro producirían slivers, y un sliver es exactamente un
    hueco interior en la unión; snapear antes es más barato que limpiar después.
-2. Del resultado se conserva solo el **anillo exterior**: los huecos que queden
-   se descartan.
+2. De los anillos interiores que queden se descartan los **slivers** y se
+   conservan los **huecos de verdad**. Se distinguen por la forma y no por el
+   tamaño: un sliver es el hilo largo y fino que dejan dos bordes que no
+   coincidían, y un hueco cartografiado es compacto. La medida es la compacidad
+   de Polsby-Popper (4π·área/perímetro²), que vale 1 en un círculo y tiende a 0
+   en una astilla; por debajo de 0,02 el anillo es un hilo. Un stock chico y un
+   sliver enorme existen los dos, así que el área no serviría para separarlos.
 3. Y se quitan los vértices colineales, que es lo que deja el borde común al
    desaparecer: una fila de nodos alineados que no aportan forma.
 
-El paso 2 tiene un coste que conviene saber: si de verdad se querían unir dos
-polígonos que **encierran un hueco real** —una ventana erosiva, un roof pendant
-dentro de un plutón— ese hueco también se pierde. Para ese caso, unir y luego
-recortar el hueco con **Cortar** da el resultado correcto.
+Antes el paso 2 tiraba **todos** los anillos interiores, y con ellos las ventanas
+erosivas y los roof pendants; desde que existe **Hole**, un anillo interior puede
+ser un dato cartografiado y no un artefacto, así que fusionar una unidad con su
+vecina ya no lo borra.
 
 Si las líneas **no se tocan**, no falla: se encadenan por sus extremos más
 próximos, evaluando los cuatro emparejamientos posibles en cada paso e
@@ -910,6 +996,41 @@ invirtiendo o anteponiendo la pieza según convenga. El salto entre tramos queda
 como un segmento recto, que es lo que uno dibujaría a mano para cerrar un
 contacto partido. En polígonos disjuntos las piezas se guardan por separado,
 porque el modelo de datos usa polígonos simples, no multiparte.
+
+### Quitar un área interior
+
+**Hole** resta un área a un polígono: se dibuja el contorno de lo que sobra y al
+cerrarlo desaparece de la unidad. Es la operación para una ventana erosiva, una
+laguna, un roof pendant o un stock que atraviesa la unidad en la que se está
+mapeando.
+
+Lo que queda **no es un contorno recortado, es un anillo interior de verdad**: un
+polígono GeoJSON con dos anillos, que el GeoPackage guarda como tal y QGIS abre
+como un polígono con hueco. Los atributos —unidad, certeza, opacidad— se heredan
+sin tocar nada.
+
+A qué afecta:
+
+- **Con selección**, a los polígonos seleccionados y a nadie más.
+- **Sin selección**, solo si hay **exactamente uno** que contenga el área. Ahí no
+  hay ambigüedad posible y pedir que se seleccione primero sería un paso de más
+  en terreno. Si acaban solapando dos, se detiene y lo pide: restarle el mismo
+  hueco a todo lo que se solape borraría área de unidades que nadie nombró.
+
+Los dos casos en que el resultado no es un hueco se dicen en vez de dejarlos
+pasar:
+
+- **El área atraviesa el polígono de lado a lado**: entonces no deja un hueco,
+  lo parte en dos. Es un resultado legítimo —el mismo que daría Cortar— pero no
+  es el que se pidió, así que la app dice cuántas piezas salieron.
+- **El área cubre el polígono entero**: no se borra nada. Hacer desaparecer un
+  elemento sin avisar es la peor respuesta posible a un trazo que se pasó de
+  largo.
+
+Un contorno dibujado a pulso que se cruza a sí mismo tampoco falla: se normaliza
+con `buffer(0)` antes de restar, igual que en Unir.
+
+Todo va al historial en un solo paso: **deshacer** devuelve el polígono entero.
 
 ### De línea a polígono
 
@@ -1015,6 +1136,61 @@ devuelve. El cliente no manda esa cabecera —comprobado con curl aislando cabec
 por cabecera contra el servidor real— y por eso el plugin de QGIS, que tampoco la
 manda, nunca se topó con esto.
 
+## Por qué la app se quedaba colgada
+
+Se reportaban tres síntomas que parecían tres fallos distintos —el 3D no
+arrancaba, los perfiles no se generaban, el dedo dejaba de seleccionar— y eran
+cuatro defectos, ninguno en la función que fallaba a la vista.
+
+**1. Teselas: red primero.** El service worker pedía cada tesela a la red y solo
+usaba la caché si el `fetch` fallaba. Con señal débil —lo normal en terreno— el
+`fetch` no falla: se queda esperando en un socket muerto durante minutos. Como
+por ahí pasan el basemap, las curvas, el sombreado, el relieve 3D y las cotas del
+perfil, todo se detenía a la vez aunque estuviera ya descargado. Ahora es **caché
+primero** con refresco por detrás: una tesela z/x/y no cambia nunca, así que
+pedirla a la red no aportaba nada. La red solo se espera cuando no hay copia, y
+con plazo.
+
+**2. Teselas del DEM sin plazo.** El muestreador de cotas usa `Image`, que no
+trae temporizador: si no llegan ni `onload` ni `onerror`, la promesa **no se
+resuelve nunca**. El perfil las espera todas con `Promise.all`, así que se quedaba
+calculando para siempre y con él bloqueada la herramienta, porque la bandera de
+"ocupado" tampoco bajaba. Ahora hay plazo de 12 s, un fallo caduca a los 20 s
+—volver con señal recuperada reintenta— y una segunda petición mientras hay una
+en curso lo dice en vez de no hacer nada. OpenTopography lleva su propio plazo de
+45 s con `AbortController`.
+
+**3. Un gesto que termina fuera del mapa.** Mientras se dibuja, el controlador
+detiene todos los eventos de touch y ratón del mapa —MapLibre no usa Pointer
+Events y esa es la única forma de que no haga pan a la vez—, y levanta esa
+bandera al recibir el `pointerup`. El `pointerup` estaba colgado del contenedor
+del mapa, así que se perdía si el dedo o el lápiz se levantaban fuera de él:
+sobre un panel recién abierto, por el borde de la pantalla, o si
+`setPointerCapture` había sido rechazado. La bandera se quedaba puesta **para
+siempre** y el mapa dejaba de responder a todo. Ahora el fin de gesto se escucha
+en la **ventana**, donde llega siempre.
+
+**4. El dedo fantasma.** Mismo origen: un `pointerup` perdido dejaba un puntero
+registrado que ya no estaba en la pantalla. El controlador cuenta dedos para
+distinguir un trazo de un gesto de navegación, así que con un fantasma en la
+cuenta **cada** toque siguiente se tomaba por el segundo dedo de un gesto a dos
+manos: el dedo dejaba de seleccionar, de cerrar el elemento y de abrir el menú, y
+nada lo anunciaba. Ahora el primer contacto de un gesto nuevo (`isPrimary`) purga
+lo que haya quedado, y perder el foco de la ventana o cambiar de app también
+limpia.
+
+Y uno más, que no colgaba pero hacía perder actualizaciones: **la notificación
+del store no era reentrante**. Un suscriptor que cambiaba el estado desde dentro
+de la notificación pisaba la lista de "qué cambió" a mitad del recorrido, y los
+suscriptores que aún no habían corrido preguntaban por la clave equivocada. Era
+la vía por la que un aviso nacido en el mapa —revertir el relieve 3D cuando el
+dispositivo no puede con él— dejaba la barra y el panel mostrando un estado que
+ya no era. Ahora los cambios encadenados se emiten en una ronda aparte, con un
+corte a las 24 rondas por si dos suscriptores se contestan el uno al otro, que
+congelaría el hilo principal sin ningún error.
+
+Las cinco cosas tienen prueba de regresión.
+
 ## Estado
 
 - ✅ Basemaps, orden de capas y transparencia por capa.
@@ -1064,6 +1240,10 @@ manda, nunca se topó con esto.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.
+- ✅ Escala de trabajo: lectura 1:N, salto a una escala de mapeo y candado que la
+  mantiene al desplazarse, con lista editable y píxel de pantalla configurable.
+- ✅ Quitar un área interior de un polígono, dejando un anillo interior real que
+  sobrevive a la fusión con la unidad vecina.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
   pulsar **Topología**), subtipos por categoría, descarga dirigida de un área
   de basemap para llevar al terreno (hoy se resuelve importando un PMTiles), y

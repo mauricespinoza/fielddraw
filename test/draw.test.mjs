@@ -47,12 +47,20 @@ function harness(opts = {}) {
     cb.onDragEnd = (p, info) => log.push(['dragEnd', p, info]);
   }
   if (opts.longPress !== false) cb.onLongPress = (p) => log.push(['longPress', p]);
-  const c = new DrawController(host, container, cb);
-  const ev = (type, props) => host.dispatchEvent(new PE(type, {
-    pointerId: 1, pointerType: 'pen', buttons: 1, pressure: 0.5, tiltX: 0, tiltY: 0,
-    getCoalescedEvents: () => [], ...props,
-  }));
-  return { host, log, controller: c, ev, kinds: () => log.map((l) => l[0]) };
+  // La "ventana" donde el controlador escucha el fin de un gesto. Se reproduce
+  // aquí porque en el navegador `pointerup` NO llega por el host: llega por la
+  // ventana, y esa diferencia es justo la que evita que un gesto terminado
+  // fuera del mapa deje la app tragándose todos los eventos.
+  const root = new EventTarget();
+  const c = new DrawController(host, container, cb, root);
+  const ev = (type, props) => {
+    const destino = type === 'pointerup' || type === 'pointercancel' ? root : host;
+    return destino.dispatchEvent(new PE(type, {
+      pointerId: 1, pointerType: 'pen', buttons: 1, pressure: 0.5, tiltX: 0, tiltY: 0,
+      getCoalescedEvents: () => [], ...props,
+    }));
+  };
+  return { host, root, log, controller: c, ev, kinds: () => log.map((l) => l[0]) };
 }
 
 console.log('== toque simple => vértice ==');
@@ -417,6 +425,52 @@ console.log('== hover: previsualización con lápiz y con ratón ==');
   const h = harness();
   h.ev('pointermove', { pointerId: 7, pointerType: 'mouse', buttons: 1, clientX: 200, clientY: 150 });
   ok('con el botón pulsado no hay hover', !h.log.some((l) => l[0] === 'hover' && l[1]));
+}
+
+console.log('== el gesto que termina fuera del mapa no deja la app sorda ==');
+{
+  // Reproduce el cuelgue: se dibuja, y el `pointerup` ocurre sobre otra cosa
+  // —un panel recién abierto encima— en vez de sobre el mapa. Antes de colgar
+  // los listeners de la ventana, `consuming` se quedaba puesta, y a partir de
+  // ahí el mapa no respondía ni al dedo ni al ratón hasta recargar.
+  const h = harness();
+  h.ev('pointerdown', { clientX: 100, clientY: 100 });
+  ok('mientras dibuja traga los eventos del mapa', h.controller.consuming === true);
+  h.ev('pointerup', { clientX: 100, clientY: 100 });
+  await sleep(10);
+  ok('al soltar deja de tragarlos', h.controller.consuming === false);
+}
+
+console.log('== un pointerup perdido no inutiliza el dedo ==');
+{
+  /*
+   * El toque cuyo `pointerup` nunca llega deja un puntero fantasma. Con él,
+   * `touchCount()` no vuelve a bajar de uno y CADA toque siguiente se toma por
+   * el segundo dedo de un gesto de navegación: el dedo deja de seleccionar sin
+   * que nada lo diga. El primer contacto de un gesto nuevo tiene que limpiarlo.
+   */
+  const h = harness({ drawing: true, finger: false });
+  h.ev('pointerdown', { pointerId: 7, pointerType: 'touch', clientX: 10, clientY: 10 });
+  ok('el dedo queda registrado', h.controller.touchCount() === 1);
+
+  // No se manda su pointerup: se pierde, igual que en el fallo real.
+  h.ev('pointerdown', {
+    pointerId: 8, pointerType: 'touch', clientX: 300, clientY: 300, isPrimary: true,
+  });
+  ok('el primer contacto nuevo purga el fantasma', h.controller.touchCount() === 1);
+  h.ev('pointerup', { pointerId: 8, pointerType: 'touch', clientX: 300, clientY: 300 });
+  await sleep(10);
+  ok('y ese toque sí selecciona', h.kinds().includes('fingerTap'), JSON.stringify(h.kinds()));
+}
+
+console.log('== resetPointers deja el controlador utilizable ==');
+{
+  const h = harness();
+  h.ev('pointerdown', { clientX: 50, clientY: 50 });
+  h.controller.resetPointers();
+  ok('suelta la bandera de consumo', h.controller.consuming === false);
+  ok('no deja gesto en curso', h.controller.gesture === null);
+  ok('no deja punteros', h.controller.touchCount() === 0);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

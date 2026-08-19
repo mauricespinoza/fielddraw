@@ -186,6 +186,27 @@ export const TERRARIUM_NOMINAL_M = 30;
 export const DEM_VERTICAL_SIGMA_M = 5;
 
 /**
+ * Plazo máximo para una tesela del DEM, en ms.
+ *
+ * Existe porque `Image` no lo trae: con señal débil —lo normal en terreno— el
+ * navegador puede dejar la petición abierta indefinidamente, y ni `onload` ni
+ * `onerror` llegan nunca. Esa promesa que no se resuelve era lo que dejaba el
+ * perfil "calculándose" para siempre y, con él, bloqueada la herramienta hasta
+ * recargar la app. Antes esperar de más que no contestar.
+ */
+export const TILE_TIMEOUT_MS = 12000;
+
+/**
+ * Cuánto se recuerda que una tesela falló, en ms.
+ *
+ * Sin esto un fallo se cachea para siempre y volver a perfilar la misma ladera
+ * con señal ya recuperada seguiría dando el mismo hueco. Con esto se reintenta,
+ * pero no en cada una de las 200 muestras del mismo perfil: sobre mar abierto o
+ * fuera de cobertura eso serían 200 peticiones para el mismo hueco.
+ */
+export const TILE_RETRY_MS = 20000;
+
+/**
  * @typedef {object} ProfileResult
  * @property {Array<{lngLat: [number, number], distance: number, elevation: number|null}>} samples
  * @property {object} stats
@@ -213,11 +234,22 @@ export async function buildProfile(coords, samples, elevationAt, meta) {
  * misma decenas de veces.
  */
 export class DemSampler {
-  constructor({ url = TERRARIUM_URL, zoom = DEM_DEFAULT_ZOOM, tileSize = 256 } = {}) {
+  constructor({
+    url = TERRARIUM_URL,
+    zoom = DEM_DEFAULT_ZOOM,
+    tileSize = 256,
+    timeout = TILE_TIMEOUT_MS,
+    retryAfter = TILE_RETRY_MS,
+    // Inyectables para poder probar el plazo y el reintento sin red ni DOM.
+    imageImpl,
+  } = {}) {
     this.url = url;
     this.zoom = Math.min(zoom, DEM_MAX_ZOOM);
     this.tileSize = tileSize;
-    /** clave "z/x/y" -> Promise<Float32Array|null> */
+    this.timeout = timeout;
+    this.retryAfter = retryAfter;
+    this.Image = imageImpl || (typeof Image === 'undefined' ? null : Image);
+    /** clave "z/x/y" -> {promise: Promise<Float32Array|null>, failedAt: number} */
     this.tiles = new Map();
   }
 
@@ -225,16 +257,49 @@ export class DemSampler {
     return this.url.replace('{z}', z).replace('{x}', x).replace('{y}', y);
   }
 
-  /** Descarga y decodifica una tesela a un array de cotas. */
+  /**
+   * Descarga y decodifica una tesela a un array de cotas.
+   *
+   * Siempre se resuelve: con las alturas, o con `null` si no se pudo. Lo que
+   * NO hace nunca es quedarse pendiente, que es lo que colgaba el perfil.
+   */
   loadTile(z, x, y) {
     const key = `${z}/${x}/${y}`;
-    let pendiente = this.tiles.get(key);
-    if (pendiente) return pendiente;
+    const guardada = this.tiles.get(key);
+    if (guardada) {
+      // Un fallo caduca; un acierto no: las cotas del terreno no cambian.
+      if (!guardada.failedAt || Date.now() - guardada.failedAt < this.retryAfter) {
+        return guardada.promise;
+      }
+      this.tiles.delete(key);
+    }
 
-    pendiente = new Promise((resolve) => {
-      const img = new Image();
+    const entrada = { promise: null, failedAt: 0 };
+    entrada.promise = new Promise((resolve) => {
+      if (!this.Image) {
+        entrada.failedAt = Date.now();
+        resolve(null);
+        return;
+      }
+      const Img = this.Image;
+      const img = new Img();
       // Sin esto el canvas queda contaminado y getImageData lanza.
       img.crossOrigin = 'anonymous';
+      let hecho = false;
+      const acabar = (valor) => {
+        if (hecho) return;
+        hecho = true;
+        clearTimeout(temporizador);
+        if (valor === null) entrada.failedAt = Date.now();
+        resolve(valor);
+      };
+      const temporizador = setTimeout(() => {
+        // Cortar el `src` cancela la descarga en curso: si no, la tesela sigue
+        // ocupando una de las pocas conexiones que quedan.
+        img.src = '';
+        acabar(null);
+      }, this.timeout);
+
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -247,19 +312,19 @@ export class DemSampler {
           for (let i = 0, j = 0; i < data.length; i += 4, j++) {
             out[j] = decodeElevation(data[i], data[i + 1], data[i + 2]);
           }
-          resolve(out);
+          acabar(out);
         } catch {
-          resolve(null);
+          acabar(null);
         }
       };
       // Mar abierto, hueco de cobertura o falta de red: no hay cota, y eso no
       // es un error que deba tumbar el perfil entero.
-      img.onerror = () => resolve(null);
+      img.onerror = () => acabar(null);
       img.src = this.tileUrl(z, x, y);
     });
 
-    this.tiles.set(key, pendiente);
-    return pendiente;
+    this.tiles.set(key, entrada);
+    return entrada.promise;
   }
 
   async elevationAt(lng, lat) {
@@ -308,6 +373,9 @@ export class DemSampler {
  * varios cientos de KB en `vendor/` para leer un recorte que cabe en memoria.
  */
 export const OPENTOPO_URL = 'https://portal.opentopography.org/API/globaldem';
+
+/** Plazo del recorte, en ms. Más largo que el de una tesela: es un archivo. */
+export const OPENTOPO_TIMEOUT_MS = 45000;
 
 /** Dónde se saca la clave, para poder enlazarlo desde la interfaz. */
 export const OPENTOPO_SIGNUP = 'https://portal.opentopography.org/myopentopo';
@@ -471,7 +539,28 @@ export class OpenTopoSampler {
       );
     }
 
-    const res = await this.fetch(this.requestUrl(bbox));
+    /*
+     * Un recorte de OpenTopography puede tardar, pero no eternamente. Sin
+     * plazo, una conexión que se queda a medias —captive portal de un hotel,
+     * una barra de señal en la quebrada— dejaba la promesa viva para siempre y
+     * con ella la herramienta bloqueada. El mensaje distingue el corte de un
+     * error del servidor: son cosas distintas y se arreglan distinto.
+     */
+    const abort = new AbortController();
+    const corte = setTimeout(() => abort.abort(), OPENTOPO_TIMEOUT_MS);
+    let res;
+    try {
+      res = await this.fetch(this.requestUrl(bbox), { signal: abort.signal });
+    } catch (err) {
+      if (abort.signal.aborted) {
+        throw new Error(
+          `OpenTopography did not answer within ${Math.round(OPENTOPO_TIMEOUT_MS / 1000)} s. With no signal use the terrarium source, which works offline.`,
+        );
+      }
+      throw new Error(`Could not reach OpenTopography: ${err.message}`);
+    } finally {
+      clearTimeout(corte);
+    }
     if (!res.ok) {
       let cuerpo = '';
       try {

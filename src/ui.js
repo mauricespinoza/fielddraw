@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import { STANDARD_PIXEL_MM, formatScale, niceScale, parseScale } from './scale.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
@@ -49,6 +50,7 @@ import {
   applyCut,
   applyLinesToPolygon,
   applyMerge,
+  applyHole,
   applyReshape,
   applyTopology,
 } from './editOps.js';
@@ -891,7 +893,7 @@ export function closePropsMenu() {
 /** Cajones laterales: solo uno abierto a la vez. */
 const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'strabo-attrs', 'shortcuts'];
+const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'scale-menu', 'strabo-attrs', 'shortcuts'];
 
 /**
  * Elementos que NO cuentan como "fuera" al cerrar por clic.
@@ -903,7 +905,7 @@ const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'strabo-attrs', 'shor
  * herramientas porque cambiar de herramienta no debería cerrar el panel que se
  * está consultando.
  */
-const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet'];
+const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet', 'btn-scale'];
 
 /**
  * Cierra los paneles al hacer clic fuera de ellos.
@@ -1023,6 +1025,133 @@ function simplifyGeometry(g) {
     const tol = Math.hypot(maxX - minX, maxY - minY) * 0.0005;
     const out = simplifyDP(coords, tol);
     return out.length >= 3 ? out : coords;
+  });
+}
+
+/* ---------- escala de trabajo ---------- */
+
+/**
+ * Última escala publicada por el mapa. Se guarda porque el desplegable la
+ * necesita para proponer una escala nueva y para marcar cuál está vigente, y
+ * el mapa solo la manda cuando cambia.
+ */
+let escalaActual = NaN;
+
+/**
+ * Lectura de la escala. La manda el mapa cada vez que se mueve, así que este
+ * camino tiene que ser barato: se escriben dos nodos de texto y una clase.
+ */
+export function renderScale(denominator) {
+  escalaActual = denominator;
+  const fijada = store.getState().scaleLock;
+  $('scale-value').textContent = formatScale(denominator);
+  $('scale-lock-mark').hidden = !fijada;
+  $('btn-scale').classList.toggle('locked', !!fijada);
+  if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
+}
+
+/** Contenido del desplegable: la lista, lo que está vigente y los controles. */
+function renderScaleMenu() {
+  const s = store.getState();
+  const fijada = s.scaleLock;
+
+  $('scale-current').textContent = fijada
+    ? `Locked at ${formatScale(fijada)}. The map pans; the zoom is held.`
+    : `Now showing ${formatScale(escalaActual)}. Pick one to snap the map to it.`;
+
+  const grid = $('scale-presets');
+  grid.textContent = '';
+  for (const d of s.scalePresets) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    // Vigente es la fijada; sin fijar, la que esté a menos de un 2 % de lo que
+    // se ve — marcar una exacta con el zoom libre no significaría nada.
+    const vigente = fijada
+      ? d === fijada
+      : Number.isFinite(escalaActual) && Math.abs(escalaActual - d) / d < 0.02;
+    b.className = vigente ? 'active' : '';
+    b.append(document.createTextNode(formatScale(d)));
+    b.addEventListener('click', () => pickScale(d));
+
+    const quitar = document.createElement('span');
+    quitar.className = 'drop';
+    quitar.textContent = '✕';
+    quitar.title = 'Remove from the list';
+    quitar.addEventListener('click', (e) => {
+      // Sin esto, quitar una escala además saltaría a ella.
+      e.stopPropagation();
+      store.removeScalePreset(d);
+      renderScaleMenu();
+    });
+    b.appendChild(quitar);
+    grid.appendChild(b);
+  }
+
+  $('scale-lock').checked = !!fijada;
+  const px = $('scale-pixel-mm');
+  if (document.activeElement !== px) px.value = String(s.scalePixelMm);
+}
+
+/**
+ * Toque en una escala de la lista.
+ *
+ * Con el candado puesto, elegir otra cambia a esa escala y la deja fijada; sin
+ * él, solo lleva el mapa ahí y el zoom sigue libre. Es la diferencia entre
+ * "ponme a 1:25.000" y "trabajo a 1:25.000".
+ */
+function pickScale(denominator) {
+  if (store.getState().scaleLock) store.setScaleLock(denominator);
+  else if (mapBridge) mapBridge.goToScale(denominator);
+  renderScaleMenu();
+}
+
+function wireScale() {
+  $('btn-scale').addEventListener('click', () => {
+    togglePanel('scale-menu');
+    if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
+  });
+  $('btn-close-scale').addEventListener('click', () => closeOverlays());
+
+  $('scale-lock').addEventListener('change', (e) => {
+    if (!e.target.checked) {
+      store.setScaleLock(null);
+    } else {
+      /*
+       * Al fijar sin haber elegido antes se toma la escala que se está viendo,
+       * redondeada a una de mapeo. Fijar un 1:37.412 sería fijar el accidente
+       * de dónde quedó el zoom, no una escala de trabajo.
+       */
+      const s = store.getState();
+      const propuesta = Number.isFinite(escalaActual) ? niceScale(escalaActual) : s.scalePresets[0];
+      store.setScaleLock(s.scalePresets.includes(propuesta) ? propuesta : store.addScalePreset(propuesta));
+    }
+    renderScaleMenu();
+  });
+
+  const añadir = () => {
+    const campo = $('scale-custom');
+    const d = parseScale(campo.value);
+    if (d === null) {
+      showBanner('That is not a scale. Write it as 1:12 500, 12500 or 25k.');
+      return;
+    }
+    store.addScalePreset(d);
+    campo.value = '';
+    pickScale(d);
+  };
+  $('scale-add').addEventListener('click', añadir);
+  $('scale-custom').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') añadir();
+  });
+
+  $('scale-pixel-mm').addEventListener('change', (e) => store.setScalePixelMm(e.target.value));
+  $('scale-pixel-reset').addEventListener('click', () => {
+    store.setScalePixelMm(STANDARD_PIXEL_MM);
+    renderScaleMenu();
+  });
+  $('scale-reset').addEventListener('click', () => {
+    store.resetScalePresets();
+    renderScaleMenu();
   });
 }
 
@@ -1152,6 +1281,42 @@ function runReshape(linea) {
     showBanner(err.message, 'warn');
   } finally {
     store.clearPendingReshape();
+  }
+}
+
+/**
+ * Resta el área dibujada. Asíncrono como el corte: usa JSTS, que se descarga
+ * la primera vez que hace falta.
+ */
+async function runHole(hole) {
+  if (editBusy) {
+    store.clearPendingHole();
+    showBanner('Another geometry operation is still running.');
+    return;
+  }
+  editBusy = true;
+  setBusy('Removing the area…');
+  try {
+    const { abiertos, piezas, partidos } = await applyHole(hole);
+    if (abiertos === 0) {
+      showBanner('That area did not overlap the polygon, so nothing was removed.');
+    } else if (partidos) {
+      // Que se parta en dos no es un error: es lo que pasa cuando el área
+      // atraviesa el polígono de lado a lado. Se dice, porque el resultado no
+      // es el hueco que se esperaba.
+      showBanner(
+        `${abiertos} polygon(s) cut through into ${piezas} pieces: the area crossed them from side to side instead of leaving a hole.`,
+        'info',
+      );
+    } else {
+      showBanner(`Hole removed from ${abiertos} polygon(s).`, 'info');
+    }
+  } catch (err) {
+    showBanner(err.message);
+  } finally {
+    store.clearPendingHole();
+    setBusy(null);
+    editBusy = false;
   }
 }
 
@@ -1296,6 +1461,7 @@ function shortcutActions() {
     'tool-select': () => pickTool('select'),
     'tool-line': () => pickTool('line'),
     'tool-polygon': () => pickTool('polygon'),
+    'tool-hole': () => pickTool('hole'),
     'tool-vertices': () => pickTool('vertices'),
     'tool-cut': () => pickTool('cut'),
     'tool-reshape': () => pickTool('reshape'),
@@ -1343,6 +1509,10 @@ function shortcutActions() {
     'panel-units': () => togglePanel('units-panel'),
     'panel-symbology': () => togglePanel('symbology-panel'),
     'panel-strabo': () => togglePanel('strabo-panel'),
+    'panel-scale': () => {
+      togglePanel('scale-menu');
+      if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
+    },
     'panel-settings': () => togglePanel('settings'),
     'project-save': doSaveProject,
     'project-open': () => $('file-project').click(),
@@ -1393,6 +1563,7 @@ function annotateToolbarShortcuts() {
     't-poly': 'tool-polygon',
     't-vertices': 'tool-vertices',
     't-cut': 'tool-cut',
+    't-hole': 'tool-hole',
     't-reshape': 'tool-reshape',
     't-measure': 'tool-measure',
     't-profile': 'tool-profile',
@@ -1406,6 +1577,7 @@ function annotateToolbarShortcuts() {
     'btn-units': 'panel-units',
     'btn-symbology': 'panel-symbology',
     'btn-strabo': 'panel-strabo',
+    'btn-scale': 'panel-scale',
     'btn-settings': 'panel-settings',
     'btn-project': 'project-save',
     'btn-export': 'export-gpkg',
@@ -1497,7 +1669,15 @@ function samplerFor(state) {
  * store publica la traza y aquí se muestrea el DEM, igual que con el corte.
  */
 async function runProfile(pending) {
-  if (profileBusy) return;
+  // Descartar en silencio dejaba a la herramienta pareciendo rota: se cerraba
+  // la traza, no pasaba nada, y no había forma de saber que había otra en
+  // curso. Ahora se dice; y como el muestreo del DEM ya no puede quedarse
+  // pendiente para siempre, la bandera siempre acaba bajando.
+  if (profileBusy) {
+    store.clearPendingProfile();
+    showBanner('Still reading the elevations of the previous profile.');
+    return;
+  }
   const coords = pending && pending.coords;
   if (!coords || coords.length < 2) {
     store.clearPendingProfile();
@@ -1697,7 +1877,11 @@ let planeBusy = false;
  * y aquí se dice en vez de dibujarlo como si fuera un dato.
  */
 async function runPlane(pending) {
-  if (planeBusy) return;
+  if (planeBusy) {
+    store.clearPendingPlane();
+    showBanner('Still reading the elevations of the previous measurement.');
+    return;
+  }
   const coords = pending && pending.coords;
   if (!coords || coords.length < 3) {
     store.clearPendingPlane();
@@ -1958,6 +2142,7 @@ async function doImportGeoPackage(file) {
 const GEOMETRY_TOOL_BUTTONS = [
   't-line',
   't-poly',
+  't-hole',
   't-measure',
   't-vertices',
   't-cut',
@@ -1986,6 +2171,7 @@ function renderToolbar() {
     ['t-nav', 'navigate'],
     ['t-line', 'line'],
     ['t-poly', 'polygon'],
+    ['t-hole', 'hole'],
     ['t-select', 'select'],
     ['t-vertices', 'vertices'],
     ['t-cut', 'cut'],
@@ -2080,6 +2266,18 @@ function renderStatus() {
     $('status-text').textContent = s.topoEdit
       ? `${base} · topological editing on: magenta ones move together`
       : base;
+  } else if (s.tool === 'hole') {
+    /*
+     * Se dice a QUÉ va a afectar antes de dibujarlo, no después. Con una
+     * selección es a ella; sin selección, al único polígono que contenga el
+     * área — y si acaban solapando varios, la operación se detiene y lo pide.
+     */
+    $('status-text').textContent =
+      n > 0
+        ? `Hole outline with ${n} vertices · close it to remove that area`
+        : s.selection.length
+          ? `Draw the area to remove from the ${s.selection.length} selected polygon(s)`
+          : 'Draw the area to remove · it comes out of the polygon it falls inside';
   } else if (s.tool === 'reshape') {
     $('status-text').textContent = !s.selection.length
       ? 'Select the feature to reshape first (Select tool), then come back'
@@ -2188,6 +2386,7 @@ export function initUI() {
   $('t-select').addEventListener('click', () => store.setTool('select'));
   $('t-vertices').addEventListener('click', () => store.setTool('vertices'));
   $('t-cut').addEventListener('click', () => store.setTool('cut'));
+  $('t-hole').addEventListener('click', () => pickTool('hole'));
   $('t-reshape').addEventListener('click', () => store.setTool('reshape'));
   $('t-profile').addEventListener('click', () => store.setTool('profile'));
   $('t-measure').addEventListener('click', () => store.setTool('measure'));
@@ -2373,6 +2572,7 @@ export function initUI() {
   // Anotar ANTES de que renderToolbar cachee las ayudas originales, para que
   // el bloqueo por relieve 3D restaure la versión con el atajo incluido.
   annotateToolbarShortcuts();
+  wireScale();
   wireShortcuts();
   wireClickOutside();
 
@@ -2444,6 +2644,10 @@ export function initUI() {
       const linea = store.getState().pendingReshape;
       if (linea) runReshape(linea);
     }
+    if (store.changed('pendingHole')) {
+      const area = store.getState().pendingHole;
+      if (area) runHole(area);
+    }
     // Mismo patrón que el corte: el store publica la traza y aquí se muestrea
     // el DEM, que es asíncrono.
     if (store.changed('pendingProfile')) {
@@ -2453,6 +2657,17 @@ export function initUI() {
     if (store.changed('pendingPlane')) {
       const puntos = store.getState().pendingPlane;
       if (puntos) runPlane(puntos);
+    }
+    if (
+      store.changed('scaleLock') ||
+      store.changed('scalePresets') ||
+      store.changed('scalePixelMm')
+    ) {
+      // La píldora refleja el candado; la escala en sí la manda el mapa.
+      const fijada = store.getState().scaleLock;
+      $('scale-lock-mark').hidden = !fijada;
+      $('btn-scale').classList.toggle('locked', !!fijada);
+      if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
     }
     if (store.changed('structureStyle')) syncStructureControls();
     if (store.changed('profile')) renderProfilePanel();

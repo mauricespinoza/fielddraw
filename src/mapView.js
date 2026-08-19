@@ -2,9 +2,10 @@ import maplibregl from 'maplibre-gl';
 import mlcontour from 'maplibre-contour';
 
 import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
-import { DEM_MAX_ZOOM } from './dem.js';
+import { DEM_MAX_ZOOM, haversine } from './dem.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
+import { denominatorFromMpp, scaleDrifted, zoomDelta } from './scale.js';
 import { DrawController } from './drawController.js';
 import { processStroke } from './simplify.js';
 import { bboxIntersects, bboxOf, nearestOnPolyline, pickFeature, ringsOf } from './geom.js';
@@ -188,6 +189,7 @@ export function createMapView({
   onOpenProps,
   onMapTap,
   onStraboFeatureTap,
+  onScale,
 }) {
   const host = document.getElementById('map-host');
   const container = document.getElementById('map-container');
@@ -544,6 +546,7 @@ export function createMapView({
     });
 
     ready = true;
+    applyScaleLock();
     applyLayerStack(map, store.getState().layers);
     syncGeology();
     syncStrabo();
@@ -621,7 +624,10 @@ export function createMapView({
     const out = [];
 
     if (all.length >= 2) {
-      if (d && d.kind === 'polygon' && all.length >= 3) {
+      // El contorno de un hueco se previsualiza cerrado igual que un polígono:
+      // lo que se está decidiendo es un ÁREA, y verla como línea abierta no
+      // deja juzgar qué se va a quitar.
+      if (d && (d.kind === 'polygon' || d.kind === 'hole') && all.length >= 3) {
         out.push({
           type: 'Feature',
           properties: {},
@@ -656,11 +662,34 @@ export function createMapView({
    * activara pensaría que no funcionó.
    */
   function applyTerrain() {
-    if (!ready || !map.getSource(TERRAIN_SOURCE)) return;
+    if (!ready) return;
     const { terrain3d, terrainExaggeration } = store.getState();
+
+    if (!map.getSource(TERRAIN_SOURCE)) {
+      // La fuente se declara en 'load'; si no está, el estilo no llegó a
+      // montarse entero. Encender el interruptor sin ella dejaría el botón
+      // iluminado y el mapa plano, que es exactamente el fallo que se reporta
+      // como "el 3D no funciona".
+      if (terrain3d) {
+        store.setTerrain3d(false);
+        onEditMessage('The elevation source is not loaded yet; try again in a moment.', 'warn');
+      }
+      return;
+    }
+
     try {
       if (terrain3d) {
         map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: terrainExaggeration });
+        /*
+         * Se comprueba que quedó puesto. `setTerrain` no siempre lanza cuando
+         * no puede: en un contexto WebGL sin las extensiones que necesita
+         * vuelve sin terreno y sin excepción, y entonces el botón se quedaba
+         * encendido sobre un mapa plano y con el dibujo bloqueado — el peor de
+         * los dos mundos, y sin nada que lo explicara.
+         */
+        if (!map.getTerrain || !map.getTerrain()) {
+          throw new Error('the renderer did not accept the terrain');
+        }
         if (map.getPitch() < 20) map.easeTo({ pitch: 58, duration: 600 });
       } else {
         map.setTerrain(null);
@@ -669,6 +698,11 @@ export function createMapView({
     } catch (err) {
       // Un dispositivo sin el soporte de WebGL que pide el terreno no debe
       // dejar la app en un estado a medias.
+      try {
+        map.setTerrain(null);
+      } catch {
+        /* ya estaba sin terreno */
+      }
       store.setTerrain3d(false);
       onEditMessage(
         `3D terrain could not be enabled on this device (${err && err.message ? err.message : err}).`,
@@ -1009,6 +1043,99 @@ export function createMapView({
   map.on('move', () => {
     indexDirty = true;
     if (store.getState().tool === 'vertices' && !drag) rebuildHandles();
+  });
+
+  /* ---------- escala de trabajo ---------- */
+
+  /**
+   * Metros de terreno por píxel en el CENTRO de la pantalla.
+   *
+   * Se mide sobre el propio mapa —dos puntos separados cien píxeles, y cuánto
+   * terreno hay entre ellos— en vez de despejarla del nivel de zoom. Así no
+   * depende de la convención interna de MapLibre y, con la cámara inclinada,
+   * da la del centro, que es la única escala que se puede declarar cuando el
+   * resto de la pantalla ya no está a la misma.
+   */
+  function metresPerPixelNow() {
+    const c = map.getContainer();
+    const y = c.clientHeight / 2;
+    const x = c.clientWidth / 2;
+    const a = map.unproject([x - 50, y]);
+    const b = map.unproject([x + 50, y]);
+    return haversine([a.lng, a.lat], [b.lng, b.lat]) / 100;
+  }
+
+  function currentDenominator() {
+    return denominatorFromMpp(metresPerPixelNow(), store.getState().scalePixelMm);
+  }
+
+  /**
+   * Lleva el mapa a una escala. Un solo salto basta: a latitud fija los metros
+   * por píxel van con 2^-zoom, así que el delta es exacto.
+   */
+  function goToScale(denominator, { animate = true } = {}) {
+    if (!ready || !Number.isFinite(denominator) || denominator <= 0) return;
+    const z = map.getZoom() + zoomDelta(currentDenominator(), denominator);
+    const objetivo = Math.min(map.getMaxZoom(), Math.max(map.getMinZoom(), z));
+    if (Math.abs(objetivo - map.getZoom()) < 1e-4) return;
+    if (animate) map.easeTo({ zoom: objetivo, duration: 260 });
+    else map.jumpTo({ zoom: objetivo });
+  }
+
+  /**
+   * Con la escala fijada, el zoom deja de ser del usuario.
+   *
+   * Se apagan los gestos cuyo ÚNICO efecto es hacer zoom: la rueda, el pellizco
+   * y la caja. El teclado NO se toca, porque en MapLibre las flechas que
+   * desplazan y el +/- que hace zoom son el mismo manejador, y apagarlo dejaría
+   * sin paneo por teclado a cambio de nada — el +/- se corrige igual por el
+   * otro camino.
+   *
+   * Ese otro camino es la corrección al terminar cada movimiento, que recoge lo
+   * que no pasa por los gestos: los botones de la brújula, cualquier zoom por
+   * programa, y sobre todo el desplazamiento en latitud, que corre la escala
+   * sola sin tocar el zoom.
+   */
+  function applyScaleLock() {
+    if (!ready) return;
+    const fijada = store.getState().scaleLock;
+    const gestos = [map.scrollZoom, map.touchZoomRotate, map.boxZoom];
+    for (const g of gestos) {
+      if (!g) continue;
+      if (fijada) g.disable();
+      else g.enable();
+    }
+    if (fijada) goToScale(fijada);
+    publishScale(true);
+  }
+
+  let scaleUltimo = null;
+  /**
+   * Publica la escala vigente.
+   *
+   * Durante el movimiento se salta lo que no cambia la lectura —un 0,2 %—
+   * porque esto corre en cada frame del paneo. Al terminar se publica `force`:
+   * si no, la banda muerta dejaba el número parado un pelo antes del real, y
+   * con la escala fijada en 1:25.000 el rótulo decía 1:24.954. La diferencia no
+   * significa nada en el mapa, pero un número que no cuadra con el que se
+   * acaba de elegir hace dudar de todo lo demás.
+   */
+  function publishScale(force = false) {
+    if (!ready || !onScale) return;
+    const d = currentDenominator();
+    if (!Number.isFinite(d)) return;
+    if (!force && scaleUltimo !== null && Math.abs(d - scaleUltimo) / scaleUltimo < 0.002) return;
+    scaleUltimo = d;
+    onScale(d);
+  }
+
+  map.on('move', () => publishScale());
+  map.on('moveend', () => {
+    const fijada = store.getState().scaleLock;
+    // Mantener la escala al desplazarse: el denominador depende del coseno de
+    // la latitud, así que un paneo norte-sur la corre sin tocar el zoom.
+    if (fijada && scaleDrifted(currentDenominator(), fijada)) goToScale(fijada, { animate: false });
+    publishScale(true);
   });
 
   /* ---------- edición de vértices ---------- */
@@ -1481,6 +1608,14 @@ export function createMapView({
 
   store.subscribe(() => {
     if (store.changed('terrain3d') || store.changed('terrainExaggeration')) applyTerrain();
+    if (store.changed('scaleLock')) applyScaleLock();
+    if (store.changed('scalePixelMm')) {
+      // Cambia lo que "1:25.000" significa, no dónde está el mapa: se recalcula
+      // el número y, si hay escala fijada, se vuelve a llevar el mapa a ella.
+      scaleUltimo = null;
+      if (store.getState().scaleLock) goToScale(store.getState().scaleLock);
+      publishScale(true);
+    }
     if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
     if (store.changed('units')) applyUnitColors();
     if (store.changed('ornaments')) {
@@ -1605,6 +1740,8 @@ export function createMapView({
   return {
     map,
     locateMe,
+    /** Lleva el mapa a una escala concreta, sin fijarla. */
+    goToScale,
     /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */
     fitToCoords(coords) {
       if (!Array.isArray(coords) || coords.length === 0) return;

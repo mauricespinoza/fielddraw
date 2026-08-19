@@ -5,6 +5,7 @@ import {
   initUI,
   openPropsMenu,
   renderPointerInfo,
+  renderScale,
   showBanner,
   wireLocate,
   wireMapView,
@@ -34,6 +35,7 @@ const view = createMapView({
   // Cualquier toque sobre el mapa cierra lo que estuviera abierto encima.
   onMapTap: closeOverlays,
   onStraboFeatureTap: openStraboAttrs,
+  onScale: renderScale,
 });
 
 wireLocate(() => view.locateMe());

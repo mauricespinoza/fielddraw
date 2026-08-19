@@ -77,6 +77,30 @@
           <span>Polygon</span>
         </button>
 
+        <button
+          class="tool"
+          id="t-hole"
+          title="Remove an inner area: draw it and it is subtracted from the polygon, leaving a hole"
+        >
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path
+              d="M12 2.6 21.2 9.4 17.7 20.4H6.3L2.8 9.4z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M12 8.4c2.4 0 4 1.7 4 3.7s-1.6 3.9-4 3.9-4-1.9-4-3.9 1.6-3.7 4-3.7z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-dasharray="2.6 2.2"
+            />
+          </svg>
+          <span>Hole</span>
+        </button>
+
         <button class="tool" id="t-measure" title="Strike and dip: by compass, from three points, or fitted to a trace">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M6 20 18 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -291,6 +315,45 @@
           is inserted there. Undoable in one step.
         </p>
         <button class="pill wide" id="topo-apply">Apply</button>
+      </div>
+
+      <div class="dropdown hidden" id="scale-menu">
+        <header>
+          <h2>Working scale</h2>
+          <button class="icon-btn" id="btn-close-scale" aria-label="Close">✕</button>
+        </header>
+        <p class="hint" id="scale-current"></p>
+        <div class="scale-grid" id="scale-presets"></div>
+        <label class="check">
+          <input type="checkbox" id="scale-lock" />
+          Lock the map to this scale
+        </label>
+        <p class="hint footnote">
+          Locked, the map pans but does not zoom, and the scale is held as you move north or
+          south — the denominator drifts with latitude on its own. Pinch zoom and two-finger
+          rotate are off while it lasts.
+        </p>
+        <label class="field">
+          <span>Add a scale</span>
+          <span class="tol-row">
+            <input type="text" id="scale-custom" placeholder="1:12 500 · 12500 · 25k" />
+            <button class="pill" id="scale-add">Add</button>
+          </span>
+        </label>
+        <label class="field">
+          <span>Assumed screen pixel (mm)</span>
+          <span class="tol-row">
+            <input type="number" id="scale-pixel-mm" min="0.05" max="1" step="0.005" value="0.28" />
+            <button class="pill" id="scale-pixel-reset">0.28</button>
+          </span>
+        </label>
+        <p class="hint footnote">
+          0.28 mm is the OGC standard pixel — the same assumption QGIS and ArcGIS make, so a
+          1:25 000 here is their 1:25 000. It is not the true pixel of any particular screen: to
+          make the scale match a ruler held against <em>this</em> one, adjust until the scale bar
+          measures what it says.
+        </p>
+        <button class="pill wide" id="scale-reset">Restore the default list</button>
       </div>
 
       <!-- Se rellena desde la tabla de src/shortcuts.js, para que no pueda
@@ -625,7 +688,19 @@
         <p class="hint footnote" id="profile-note"></p>
       </div>
 
+      <!-- La escala numérica va pegada a la izquierda, justo debajo de la barra
+           gráfica de MapLibre: las dos dicen lo mismo de dos maneras y se leen
+           juntas. Además así no se mueve cuando el texto de estado cambia de
+           largo, que es constantemente. -->
       <div class="statusbar">
+        <button
+          class="scale-pill"
+          id="btn-scale"
+          title="Working scale — pick one to snap the map to it, or lock it"
+        >
+          <span id="scale-value">1:—</span>
+          <span class="lock" id="scale-lock-mark" hidden>🔒</span>
+        </button>
         <span id="status-text">Navigation mode — pick Line or Polygon to draw</span>
         <span class="count" id="status-count">0 features</span>
       </div>

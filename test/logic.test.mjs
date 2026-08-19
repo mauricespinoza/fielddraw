@@ -182,5 +182,31 @@ St.setLayerOpacity('osm', 0.5);
 ok('changed() discrimina la clave', hits === 1, `-> ${hits}`);
 unsub();
 
+/*
+ * Reentrada: un suscriptor que cambia el estado desde dentro de la
+ * notificación. Pasa de verdad —el mapa revierte el relieve 3D cuando el
+ * dispositivo no puede con él— y antes pisaba `lastChanged` a mitad del
+ * recorrido: los suscriptores que aún no habían corrido preguntaban por la
+ * clave equivocada y se saltaban su propia actualización.
+ */
+console.log('== reentrada en las notificaciones ==');
+{
+  const visto = [];
+  const primero = St.subscribe(() => {
+    if (St.changed('snapTolerance')) St.setTraceTolerance(31);
+  });
+  const segundo = St.subscribe(() => {
+    if (St.changed('snapTolerance')) visto.push('snap');
+    if (St.changed('traceTolerance')) visto.push('trace');
+  });
+  St.setSnapTolerance(19);
+  ok('el segundo suscriptor ve el cambio original', visto.includes('snap'), visto.join(','));
+  ok('y también el que provocó el primero', visto.includes('trace'), visto.join(','));
+  ok('el orden es original y luego encadenado', visto.join(',') === 'snap,trace', visto.join(','));
+  ok('el estado encadenado queda aplicado', St.getState().traceTolerance === 31);
+  primero();
+  segundo();
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

@@ -232,5 +232,49 @@ ok('indexAtDistance satura por abajo', P.indexAtDistance(resultado.samples, -10)
 ok('indexAtDistance satura por arriba', P.indexAtDistance(resultado.samples, 999) === 2);
 ok('indexAtDistance sin muestras devuelve -1', P.indexAtDistance([], 0) === -1);
 
+
+console.log('== el muestreador siempre contesta ==');
+{
+  /*
+   * La prueba del cuelgue. `Image` no trae plazo: con señal débil el navegador
+   * deja la petición abierta y no llegan ni `onload` ni `onerror`, así que la
+   * promesa de la tesela no se resolvía NUNCA. Como el perfil las espera todas
+   * con `Promise.all`, se quedaba calculando para siempre y dejaba la
+   * herramienta bloqueada hasta recargar la app.
+   */
+  class ImagenMuda {
+    set src(_v) {
+      /* nunca contesta, como un socket muerto */
+    }
+  }
+  const muestreador = new D.DemSampler({ timeout: 40, imageImpl: ImagenMuda });
+  const t0 = Date.now();
+  const cota = await muestreador.elevationAt(-71.35, -37.4);
+  ok('una tesela que no contesta se resuelve igual', cota === null);
+  ok('y lo hace dentro del plazo', Date.now() - t0 < 1500, `${Date.now() - t0} ms`);
+}
+
+{
+  // Un fallo no se puede cachear para siempre: volver a la misma ladera con la
+  // señal ya recuperada seguiría dando el mismo hueco.
+  let intentos = 0;
+  class ImagenQueFalla {
+    set src(_v) {
+      intentos++;
+      setTimeout(() => this.onerror(), 0);
+    }
+  }
+  const rapido = new D.DemSampler({ imageImpl: ImagenQueFalla, retryAfter: 0 });
+  await rapido.elevationAt(-71.35, -37.4);
+  await rapido.elevationAt(-71.35, -37.4);
+  ok('un fallo caduca y se reintenta', intentos === 2, `${intentos} intentos`);
+
+  const memorioso = new D.DemSampler({ imageImpl: ImagenQueFalla, retryAfter: 60000 });
+  await memorioso.elevationAt(-71.35, -37.4);
+  const antes = intentos;
+  await memorioso.elevationAt(-71.351, -37.401);
+  ok('pero no se reintenta en cada muestra del mismo perfil', intentos === antes, `${intentos} vs ${antes}`);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

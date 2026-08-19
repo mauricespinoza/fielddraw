@@ -1088,9 +1088,111 @@ input[type='radio'] {
   pointer-events: none;
 }
 
+.statusbar #status-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .statusbar .count {
   color: var(--text);
   flex: none;
+}
+
+/*
+ * Escala de trabajo. Vive en la barra de estado —que por lo demás no recibe
+ * toques— así que recupera los eventos solo para sí.
+ */
+.scale-pill {
+  pointer-events: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.scale-pill.locked {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scale-pill .lock {
+  font-size: 11px;
+}
+
+/* El único desplegable que no cuelga de la fila de píldoras de arriba. */
+#scale-menu {
+  top: auto;
+  right: auto;
+  left: calc(var(--safe-l) + 12px);
+  /* Por encima de la barra de estado Y de la barra gráfica de MapLibre. */
+  bottom: calc(var(--safe-b) + 84px);
+  /*
+   * Anclado abajo, un panel más alto que la ventana crece hacia ARRIBA y se
+   * sale por el borde superior, donde ya no hay forma de alcanzarlo. En una
+   * ventana de portátil apaisada esto pasa; en el iPad no, y por eso es
+   * justamente el tipo de fallo que no se ve probando en la tablet.
+   */
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 100px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.scale-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(94px, 1fr));
+  gap: 6px;
+}
+
+.scale-grid button {
+  position: relative;
+  min-height: 38px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.scale-grid button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Quitar una escala de la lista: aparece al pasar por encima o al tocarla. */
+.scale-grid .drop {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  min-height: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-solid);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.scale-grid button:hover .drop,
+.scale-grid button:focus-within .drop {
+  opacity: 1;
 }
 
 .banner {
