@@ -9,7 +9,6 @@ from qgis.core import (
     QgsProcessingAlgorithm,
     QgsProcessingException,
     QgsProcessingParameterBoolean,
-    QgsProcessingParameterDefinition,
     QgsProcessingParameterEnum,
     QgsProcessingParameterExtent,
     QgsProcessingParameterFileDestination,
@@ -21,6 +20,7 @@ from qgis.core import (
 from .core import encoder as encoder_mod
 from .core import grid, render, tiler
 from .core.pyramid import Cancelled
+from .qgis_compat import PARAMETER_FLAG_ADVANCED, PROCESSING_INTEGER
 
 PLUGIN_DIR = os.path.dirname(__file__)
 
@@ -112,12 +112,12 @@ class RasterToFieldDrawTiles(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterNumber(
             self.MIN_ZOOM, 'Zoom mínimo (−1 = automático)',
-            QgsProcessingParameterNumber.Integer,
+            PROCESSING_INTEGER,
             defaultValue=-1, minValue=-1, maxValue=grid.MAX_ZOOM))
 
         self.addParameter(QgsProcessingParameterNumber(
             self.MAX_ZOOM, 'Zoom máximo (−1 = según la resolución del ráster)',
-            QgsProcessingParameterNumber.Integer,
+            PROCESSING_INTEGER,
             defaultValue=-1, minValue=-1, maxValue=grid.MAX_ZOOM))
 
         self.addParameter(QgsProcessingParameterEnum(
@@ -127,7 +127,7 @@ class RasterToFieldDrawTiles(QgsProcessingAlgorithm):
 
         self.addParameter(QgsProcessingParameterNumber(
             self.QUALITY, 'Calidad JPEG/WebP (1–100)',
-            QgsProcessingParameterNumber.Integer,
+            PROCESSING_INTEGER,
             defaultValue=75, minValue=1, maxValue=100))
 
         self.addParameter(QgsProcessingParameterBoolean(
@@ -150,7 +150,7 @@ class RasterToFieldDrawTiles(QgsProcessingAlgorithm):
         advanced.append(QgsProcessingParameterString(
             self.ATTRIBUTION, 'Atribución', optional=True))
         for param in advanced:
-            param.setFlags(param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+            param.setFlags(param.flags() | PARAMETER_FLAG_ADVANCED)
             self.addParameter(param)
 
     # -- preparación (hilo principal) --------------------------------------

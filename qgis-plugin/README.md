@@ -12,7 +12,7 @@ geoespaciales se convierte en una tarde perdida.
 ## Instalar
 
 El ZIP listo para instalar va en el repo:
-**[`fielddraw_tiles.zip`](fielddraw_tiles.zip)** (29 kB).
+**[`fielddraw_tiles.zip`](fielddraw_tiles.zip)** (30 kB).
 
 Descárgalo y, en QGIS, **Complementos → Administrar e instalar complementos →
 Instalar a partir de ZIP → …**. Aparece un botón nuevo en la barra de
@@ -41,7 +41,10 @@ perfil de QGIS y usar el complemento *Plugin Reloader*:
 ln -s "$PWD/qgis-plugin/fielddraw_tiles" ~/.local/share/QGIS/QGIS3/profiles/default/python/plugins/
 ```
 
-Requiere QGIS 3.16 o posterior.
+Requiere QGIS 3.16 o posterior, **QGIS 4 (Qt6) incluido**. `qgis_compat.py`
+hace de puente para los enums de Processing y de `QAction` que QGIS 4
+reorganizó al pasar a Qt6, así que el mismo código corre en las dos series
+sin ramas por versión repartidas por todo el complemento.
 
 ## Usar
 
@@ -192,7 +195,7 @@ python3 qgis-plugin/tests/run.py
 node qgis-plugin/tests/test_pmtiles_js.mjs
 ```
 
-Más de 4.500 comprobaciones sin dependencias: la grilla Web Mercator y el
+Más de 4.400 comprobaciones sin dependencias: la grilla Web Mercator y el
 volteo TMS, los ids de Hilbert y su inversa, el formato binario de PMTiles
 —varints, deltas, cabecera byte a byte, directorios hoja, deduplicación—, el
 esquema y los metadatos del MBTiles consultados **con el mismo SQL que usa la
@@ -205,6 +208,15 @@ haga lo correcto, sino que *carga* —`classFactory`, `initGui`, el registro del
 proveedor y la declaración de parámetros—, que son los fallos que en QGIS
 aparecen como un diálogo rojo al arrancar y los únicos que se pueden cazar sin
 QGIS delante.
+
+`test_qgis_compat.py` prueba el puente de compatibilidad QGIS 3 / QGIS 4
+(`qgis_compat.py`) contra tres `qgis.core` de mentira, cada uno con la forma
+de una etapa distinta —los enums de Processing sueltos en la clase, luego
+anidados bajo `.Type`/`.Flag`/`.LayerType`, y por último centralizados en
+`Qgis`, que es donde viven en QGIS 4— y comprueba que, sin ninguna de las tres
+formas, la importación falla con un error claro en vez de colarse con `None`.
+No hay manera de instalar aquí un QGIS 4 de verdad para probarlo contra él:
+esto es lo más cerca que se puede llegar sin uno delante.
 
 `test_export.py` hace la exportación completa de un GeoTIFF en UTM 19S a los
 dos contenedores y comprueba, entre otras cosas, que la tesela que dice cubrir

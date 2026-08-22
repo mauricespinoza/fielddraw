@@ -1,9 +1,10 @@
 [general]
 name=FieldDraw Tiles
 qgisMinimumVersion=3.16
+qgisMaximumVersion=4.99
 description=Convierte rásteres (GeoTIFF, ortofotos, cartas escaneadas, DEM simbolizados) en MBTiles y PMTiles listos para cargar en FieldDraw.
-about=Exporta cualquier capa ráster de QGIS a mapas de teselas offline compatibles con FieldDraw (https://github.com/mauricespinoza/fielddraw): teselas de 256 px en EPSG:3857, MBTiles 1.3 con filas TMS y PMTiles v3. Respeta la simbología de la capa, salta las teselas vacías y elige el formato de imagen tesela a tesela (JPEG donde es opaco, PNG donde hay transparencia) para que el archivo que se lleva a terreno sea lo más liviano posible. No necesita GDAL de línea de comandos, tippecanoe ni la utilidad pmtiles: todo se hace con las librerías que ya trae QGIS.
-version=1.0.0
+about=Exporta cualquier capa ráster de QGIS a mapas de teselas offline compatibles con FieldDraw (https://github.com/mauricespinoza/fielddraw): teselas de 256 px en EPSG:3857, MBTiles 1.3 con filas TMS y PMTiles v3. Respeta la simbología de la capa, salta las teselas vacías y elige el formato de imagen tesela a tesela (JPEG donde es opaco, PNG donde hay transparencia) para que el archivo que se lleva a terreno sea lo más liviano posible. No necesita GDAL de línea de comandos, tippecanoe ni la utilidad pmtiles: todo se hace con las librerías que ya trae QGIS. Compatible con QGIS 3.16+ y con QGIS 4 (Qt6).
+version=1.1.0
 author=FieldDraw
 email=mauricio.e.espinoza@gmail.com
 

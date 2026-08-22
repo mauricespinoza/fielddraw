@@ -19,7 +19,7 @@ sys.path.insert(0, HERE)
 import _harness  # noqa: E402
 
 MODULES = ['test_grid', 'test_pmtiles', 'test_mbtiles', 'test_pyramid',
-           'test_compat', 'test_plugin_load', 'test_export']
+           'test_compat', 'test_qgis_compat', 'test_plugin_load', 'test_export']
 
 
 def _has_numpy():

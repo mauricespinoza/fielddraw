@@ -8,10 +8,11 @@ botón de la barra y la entrada de menú solo abren su diálogo.
 import os
 
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
+from qgis.PyQt.QtWidgets import QMessageBox
 from qgis.core import QgsApplication
 
 from .provider import FieldDrawProvider
+from .qgis_compat import QAction, RASTER_LAYER_TYPE
 
 PLUGIN_DIR = os.path.dirname(__file__)
 MENU = '&FieldDraw'
@@ -62,8 +63,7 @@ class FieldDrawTilesPlugin(object):
         layer = self.iface.activeLayer()
         params = {}
         try:
-            from qgis.core import QgsMapLayer
-            if layer is not None and layer.type() == QgsMapLayer.RasterLayer:
+            if layer is not None and layer.type() == RASTER_LAYER_TYPE:
                 params['INPUT'] = layer
         except Exception:
             pass

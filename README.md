@@ -63,7 +63,7 @@ python3 qgis-plugin/tests/run.py
 node qgis-plugin/tests/test_pmtiles_js.mjs
 ```
 
-Más de 4.500 comprobaciones sobre la grilla Web Mercator, el volteo TMS, el
+Más de 4.400 comprobaciones sobre la grilla Web Mercator, el volteo TMS, el
 formato binario de PMTiles y el esquema del MBTiles —consultado con el mismo
 SQL que usa `src/tiles.js`—. La de Node abre un PMTiles recién escrito con
 **`vendor/pmtiles.js`, la misma librería que carga la app**, que es la única
