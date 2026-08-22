@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Arma el ZIP instalable del plugin.
+"""Arma el ZIP instalable del complemento.
 
     python3 qgis-plugin/tools/package.py
 
-Deja `qgis-plugin/dist/fielddraw_tiles-<versión>.zip`, que se instala en QGIS
-con **Complementos → Administrar e instalar complementos → Instalar a partir
-de ZIP**. La versión sale de `metadata.txt`, que es la única fuente.
+Deja `qgis-plugin/fielddraw_tiles.zip`, que va versionado en el repo para que
+se pueda descargar e instalar sin tener que construir nada: en QGIS,
+**Complementos → Administrar e instalar complementos → Instalar a partir de
+ZIP**. El nombre no lleva la versión a propósito —así el enlace del README no
+se queda viejo—; la versión vive en `metadata.txt`, que es la única fuente, y
+viaja dentro del ZIP.
+
+El ZIP es **reproducible**: entradas ordenadas, fecha fija y permisos fijos.
+Reconstruirlo sin tocar el código da un archivo idéntico byte a byte, así que
+no ensucia el historial.
 """
 
 import os
@@ -16,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PACKAGE = 'fielddraw_tiles'
 SOURCE = os.path.join(ROOT, PACKAGE)
-DIST = os.path.join(ROOT, 'dist')
+TARGET = os.path.join(ROOT, PACKAGE + '.zip')
 
 #: Lo que no tiene por qué viajar dentro del complemento.
 SKIP_DIRS = {'__pycache__', '.git'}
@@ -42,9 +49,7 @@ def files():
 
 
 def main():
-    os.makedirs(DIST, exist_ok=True)
-    target = os.path.join(DIST, '%s-%s.zip' % (PACKAGE, version()))
-    with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(TARGET, 'w', zipfile.ZIP_DEFLATED) as archive:
         count = 0
         for path, name in files():
             # Fecha fija: el mismo código produce el mismo ZIP.
@@ -54,8 +59,9 @@ def main():
             with open(path, 'rb') as fh:
                 archive.writestr(info, fh.read())
             count += 1
-    print('%s\n%d archivos, %.1f kB' % (target, count, os.path.getsize(target) / 1024))
-    return target
+    print('%s\nversión %s, %d archivos, %.1f kB'
+          % (TARGET, version(), count, os.path.getsize(TARGET) / 1024))
+    return TARGET
 
 
 if __name__ == '__main__':

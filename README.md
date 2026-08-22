@@ -686,7 +686,10 @@ menos posible: JPEG en el interior opaco, WebP en los bordes con
 transparencia, y las teselas totalmente vacías ni se guardan. Sobre una
 ortofoto de prueba eso son 0,63 MB donde todo en PNG serían 9,5.
 
-Instrucciones, opciones y medidas en [`qgis-plugin/README.md`](qgis-plugin/README.md).
+Se instala descargando [`qgis-plugin/fielddraw_tiles.zip`](qgis-plugin/fielddraw_tiles.zip)
+y usando **Complementos → Administrar e instalar complementos → Instalar a
+partir de ZIP**. Instrucciones, opciones y medidas en
+[`qgis-plugin/README.md`](qgis-plugin/README.md).
 
 ## Edición de vértices y edición topológica
 

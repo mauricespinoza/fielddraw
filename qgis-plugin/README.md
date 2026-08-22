@@ -11,13 +11,22 @@ geoespaciales se convierte en una tarde perdida.
 
 ## Instalar
 
+El ZIP listo para instalar va en el repo:
+**[`fielddraw_tiles.zip`](fielddraw_tiles.zip)** (29 kB).
+
+Descárgalo y, en QGIS, **Complementos → Administrar e instalar complementos →
+Instalar a partir de ZIP → …**. Aparece un botón nuevo en la barra de
+herramientas y la entrada **Ráster → FieldDraw**.
+
+Si tocas el código, se reconstruye con:
+
 ```bash
 python3 qgis-plugin/tools/package.py
 ```
 
-Deja `qgis-plugin/dist/fielddraw_tiles-1.0.0.zip`. En QGIS:
-**Complementos → Administrar e instalar complementos → Instalar a partir de
-ZIP**.
+El ZIP es reproducible —entradas ordenadas, fecha y permisos fijos—, así que
+reconstruirlo sin cambiar nada da un archivo idéntico byte a byte y no ensucia
+el historial.
 
 Para desarrollar, sale más a cuenta enlazar la carpeta directamente en el
 perfil de QGIS y usar el complemento *Plugin Reloader*:

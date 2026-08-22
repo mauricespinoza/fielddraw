@@ -12,7 +12,7 @@ node_modules/
 *.pmtiles
 *.fdproj.json
 
-# Caché de Python y el ZIP que arma `qgis-plugin/tools/package.py`.
+# Caché de Python. El ZIP del complemento sí va versionado: es lo que se
+# descarga para instalarlo, y `tools/package.py` lo reconstruye idéntico.
 __pycache__/
 *.py[co]
-qgis-plugin/dist/
