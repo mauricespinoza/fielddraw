@@ -52,11 +52,32 @@ function parts(geometry) {
 }
 
 /**
+ * Tolerancia para decidir si un trozo cae SOBRE una geometría.
+ *
+ * Relativa al tamaño de la propia geometría, porque las coordenadas pueden
+ * venir en grados (valores ~70) o en metros UTM (~1e6) y una tolerancia fija
+ * sería absurda en uno de los dos casos. A 1e-9 del largo, sobre un corte de
+ * 8 km son ocho micras: muy por encima del ruido de coma flotante —del orden
+ * de 1e-14 sobre valores de 71— y muy por debajo de cualquier geometría real.
+ */
+const ON_LINE_REL_TOL = 1e-9;
+
+/**
  * Corta una línea con otra.
  *
- * `union` noda ambas geometrías en sus intersecciones; después nos quedamos
- * con los trozos que pertenecen a la línea original — los que no aportan nada
- * al restarles la original.
+ * `union` noda ambas geometrías en sus intersecciones; el resultado trae los
+ * trozos de las DOS, así que hay que quedarse con los de la original.
+ *
+ * Esa criba se hace con el PUNTO INTERIOR de cada trozo y su distancia a la
+ * línea, no preguntando si al restarle la original queda algo. Lo segundo es
+ * lo que había y fallaba: un corte oblicuo cualquiera —dos líneas cruzándose
+ * en aspa— devolvía `difference` no vacía para los cuatro trozos, incluidos
+ * los dos que SÍ son de la línea, así que no sobrevivía ninguno y la
+ * herramienta contestaba "no cruzó nada" sobre un cruce evidente. El punto de
+ * intersección que calcula el nodado no es exactamente representable, de modo
+ * que el trozo no queda como subconjunto exacto de la original y el predicado
+ * booleano dice que no. Una distancia con tolerancia no tiene ese problema, y
+ * es además la misma receta que ya usaba el corte de polígonos.
  *
  * @returns {object[]|null} geometrías GeoJSON, o null si no hubo corte real.
  */
@@ -70,11 +91,26 @@ export async function splitLine(lineGeoJSON, cutterGeoJSON) {
   if (!line.intersects(cutter)) return null;
 
   const noded = line.union(cutter);
+  const tol = Math.max(line.getLength(), 1e-12) * ON_LINE_REL_TOL;
   const kept = parts(noded).filter((g) => {
     if (g.isEmpty() || g.getLength() === 0) return false;
-    return g.difference(line).isEmpty();
+    return midpointOf(jsts, g).distance(line) <= tol;
   });
   return kept.length > 1 ? kept.map((g) => writer.write(g)) : null;
+}
+
+/**
+ * Punto a MEDIA LONGITUD de una polilínea.
+ *
+ * No sirve `getInteriorPoint()`: en JTS eso devuelve un VÉRTICE —el más
+ * cercano al centroide— y en un trozo de dos puntos ese vértice es uno de los
+ * extremos. Justo el extremo que toca el cruce está sobre la otra línea, así
+ * que la prueba de distancia daba cero y aceptaba también los trozos del
+ * cortador: el corte devolvía cuatro pedazos donde había dos.
+ */
+function midpointOf(jsts, g) {
+  const idx = new jsts.linearref.LengthIndexedLine(g);
+  return g.getFactory().createPoint(idx.extractPoint(g.getLength() / 2));
 }
 
 /**

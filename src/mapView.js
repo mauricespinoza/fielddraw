@@ -87,6 +87,10 @@ const PROFILE_LAYER_IDS = ['profile-casing', 'profile-line', 'profile-nodes', 'p
  * Es propio y no reutiliza el de la selección porque ese vive en la fuente del
  * dibujo, que no contiene lo importado.
  */
+/** Ancla y segmento de la medida de espesor estratigráfico. */
+const THICKNESS_SOURCE = 'thickness-src';
+const THICKNESS_LAYER_IDS = ['thickness-line', 'thickness-points'];
+
 const PICK_SOURCE = 'foreign-pick-src';
 const PICK_LAYER_IDS = ['foreign-pick-fill', 'foreign-pick-line', 'foreign-pick-point'];
 
@@ -180,6 +184,7 @@ function applyLayerStack(map, layers) {
    */
   for (const id of [
     ...PICK_LAYER_IDS,
+    ...THICKNESS_LAYER_IDS,
     ...PROFILE_LAYER_IDS,
     ...DRAFT_LAYER_IDS,
     ...EDIT_LAYER_IDS,
@@ -518,6 +523,37 @@ export function createMapView({
      * elemento del que estás leyendo»—. Sin él, el recuadro de atributos de un
      * GeoPackage con varios polígonos contiguos no dice de CUÁL habla.
      */
+    /*
+     * Espesor estratigráfico: el ancla mientras se elige el segundo punto, y
+     * después el segmento entre los dos. Sin dibujarlo, el número aparece en un
+     * aviso y no queda constancia en el mapa de ENTRE QUÉ se midió, que es la
+     * mitad del dato.
+     */
+    map.addSource(THICKNESS_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'thickness-line',
+      type: 'line',
+      source: THICKNESS_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': '#2dd4bf', 'line-width': 2.6, 'line-dasharray': [2, 1.4] },
+    });
+    map.addLayer({
+      id: 'thickness-points',
+      type: 'circle',
+      source: THICKNESS_SOURCE,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': ['case', ['==', ['get', 'role'], 'anchor'], 7, 5],
+        'circle-color': '#0d1117',
+        'circle-stroke-color': '#2dd4bf',
+        'circle-stroke-width': 2.6,
+      },
+    });
+
     map.addSource(PICK_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -613,6 +649,7 @@ export function createMapView({
     syncStrabo();
     syncDraft();
     syncProfile();
+    syncThickness();
     applyTerrain();
     collectSnapSources();
     rebuildHandles();
@@ -770,6 +807,33 @@ export function createMapView({
         'warn',
       );
     }
+  }
+
+  /** Ancla y segmento del espesor estratigráfico. */
+  function syncThickness() {
+    if (!ready) return;
+    const src = map.getSource(THICKNESS_SOURCE);
+    if (!src) return;
+    const { thicknessFrom, thickness } = store.getState();
+    const out = [];
+    const punto = (c, role) => ({
+      type: 'Feature',
+      properties: { role },
+      geometry: { type: 'Point', coordinates: c },
+    });
+
+    if (thickness && thickness.from && thickness.to) {
+      out.push({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: [thickness.from, thickness.to] },
+      });
+      out.push(punto(thickness.from, 'anchor'), punto(thickness.to, 'target'));
+    } else if (thicknessFrom) {
+      // Todavía sin segundo punto: se marca de dónde se está midiendo.
+      out.push(punto(thicknessFrom.lngLat, 'anchor'));
+    }
+    src.setData({ type: 'FeatureCollection', features: out });
   }
 
   /** Traza del perfil y la muestra que el gráfico tiene señalada. */
@@ -1775,6 +1839,7 @@ export function createMapView({
       publishScale(true);
     }
     if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
+    if (store.changed('thickness') || store.changed('thicknessFrom')) syncThickness();
     if (store.changed('units')) applyUnitColors();
     if (store.changed('ornaments')) {
       applyOrnamentStyle(map, store.getState().ornaments);

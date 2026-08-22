@@ -41,6 +41,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
 
+  './src/adopt.js',
   './src/app.js',
   './src/attrs.js',
   './src/basemaps.js',
@@ -65,6 +66,7 @@ const SHELL = [
   './src/structure.js',
   './src/structureSymbols.js',
   './src/symbology.js',
+  './src/thickness.js',
   './src/tiles.js',
   './src/topology.js',
   './src/ui.js',

@@ -5,26 +5,48 @@
  */
 
 /**
- * Magenta para los pliegues: sobre imagen satelital no se confunde con ningún
- * contacto ni falla, que es justo lo que se le pide a un eje. Es solo el valor
- * de partida — el módulo de simbología lo cambia, y el nuevo viaja dentro del
- * proyecto.
+ * El color dice el GRUPO, y el ornamento dice el tipo.
+ *
+ * Antes cada tipo tenía su color —el cabalgamiento rojo, la normal naranja, la
+ * dextral morada— y eso obligaba a recordar diez colores para leer un mapa. Es
+ * además al revés de como se publica: en una carta, todas las fallas son del
+ * mismo color y lo que distingue una inversa de una normal son los dientes o
+ * los ticks, que FieldDraw ya dibuja. Moviendo la distinción al ornamento, el
+ * color queda libre para lo que de verdad hay que ver de un vistazo —esto es
+ * una falla, esto es un contacto— y el mapa se lee sin leyenda.
+ *
+ * Son colores puros a propósito: sobre imagen satelital, un rojo apagado y un
+ * café se confunden, y en terreno con sol de frente esa diferencia desaparece
+ * del todo. Todos son el valor de PARTIDA — el módulo de simbología los cambia
+ * uno a uno, y los nuevos viajan dentro del proyecto.
  */
+
+/** Fallas. El azul no aparece en la naturaleza sobre la que se dibuja. */
+export const FAULT_COLOR = '#0000ff';
+
+/** Pliegues. Sobre satelital no se confunde con ningún contacto ni falla. */
 export const FOLD_COLOR = '#ff00ff';
+
+/** Contactos. Negro, como en cualquier carta impresa; el halo blanco lo separa
+ *  del fondo oscuro de la imagen. */
+export const CONTACT_COLOR = '#000000';
+
+/** Diques. Rojo pleno: son cuerpos, no límites, y conviene que salten. */
+export const DIKE_COLOR = '#ff0000';
 
 /** `short` es lo que se ve en la paleta compacta; `label` va en tooltips. */
 export const LINE_TYPES = [
-  { id: 'stratigraphic-contact', short: 'Strat.', label: 'Stratigraphic contact', group: 'Contacts', color: '#212121', weight: 1 },
-  { id: 'intrusive-contact', short: 'Intrus.', label: 'Intrusive contact', group: 'Contacts', color: '#C2185B', weight: 1 },
-  { id: 'structural-contact', short: 'Struct.', label: 'Structural contact', group: 'Contacts', color: '#2E7D32', weight: 1 },
-  { id: 'thrust-fault', short: 'Thrust', label: 'Reverse fault / thrust', group: 'Faults', color: '#D32F2F', weight: 1.35 },
-  { id: 'normal-fault', short: 'Normal', label: 'Normal fault', group: 'Faults', color: '#F57C00', weight: 1.25 },
-  { id: 'dextral-fault', short: 'Dextral', label: 'Dextral fault', group: 'Faults', color: '#7B1FA2', weight: 1.25 },
-  { id: 'sinistral-fault', short: 'Sinistr.', label: 'Sinistral fault', group: 'Faults', color: '#00838F', weight: 1.25 },
-  { id: 'undefined-fault', short: 'Undiff.', label: 'Undifferentiated fault', group: 'Faults', color: '#546E7A', weight: 1.15 },
+  { id: 'stratigraphic-contact', short: 'Strat.', label: 'Stratigraphic contact', group: 'Contacts', color: CONTACT_COLOR, weight: 1 },
+  { id: 'intrusive-contact', short: 'Intrus.', label: 'Intrusive contact', group: 'Contacts', color: CONTACT_COLOR, weight: 1 },
+  { id: 'structural-contact', short: 'Struct.', label: 'Structural contact', group: 'Contacts', color: CONTACT_COLOR, weight: 1 },
+  { id: 'thrust-fault', short: 'Thrust', label: 'Reverse fault / thrust', group: 'Faults', color: FAULT_COLOR, weight: 1.35 },
+  { id: 'normal-fault', short: 'Normal', label: 'Normal fault', group: 'Faults', color: FAULT_COLOR, weight: 1.25 },
+  { id: 'dextral-fault', short: 'Dextral', label: 'Dextral fault', group: 'Faults', color: FAULT_COLOR, weight: 1.25 },
+  { id: 'sinistral-fault', short: 'Sinistr.', label: 'Sinistral fault', group: 'Faults', color: FAULT_COLOR, weight: 1.25 },
+  { id: 'undefined-fault', short: 'Undiff.', label: 'Undifferentiated fault', group: 'Faults', color: FAULT_COLOR, weight: 1.15 },
   { id: 'antiform', short: 'Antif.', label: 'Antiform (anticline axial trace)', group: 'Folds', color: FOLD_COLOR, weight: 1.3 },
   { id: 'synform', short: 'Synf.', label: 'Synform (syncline axial trace)', group: 'Folds', color: FOLD_COLOR, weight: 1.3 },
-  { id: 'dike', short: 'Dyke', label: 'Dyke', group: 'Dykes', color: '#6D4C41', weight: 1.1 },
+  { id: 'dike', short: 'Dyke', label: 'Dyke', group: 'Dykes', color: DIKE_COLOR, weight: 1.1 },
 ];
 
 export const LINE_GROUPS = ['Contacts', 'Faults', 'Folds', 'Dykes'];

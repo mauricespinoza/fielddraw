@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness; do node test/$f.test.mjs; done
 ```
 
-911 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1010 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -48,7 +48,9 @@ ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
 los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
 `pointerup` se pierde y la tesela del DEM que no contesta nunca; y el visor de
 atributos: qué campos se enseñan de una capa importada y de dónde sale su
-título.
+título; el corte de líneas, incluido el cruce oblicuo que estaba roto; la
+traducción de una carta ajena a elementos del dibujo; y el espesor
+estratigráfico con su incertidumbre.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -150,6 +152,8 @@ carga.
 | Compartir vértices | **Topología** (sobre la selección, o sobre todo el dibujo) |
 | Redibujar un contorno | seleccionar, luego **Reshape**: trazar una línea que entre y salga |
 | Quitar un área interior | **Hole**: dibujar el contorno de lo que sobra dentro del polígono |
+| Editar una capa importada | botón **✎** de esa capa, en el panel de Capas |
+| Espesor estratigráfico | seleccionar un dip, **Measure thickness from here**, y tocar la otra superficie |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
 | Relieve 3D | botón **3D**; con él puesto no se digitaliza |
@@ -531,6 +535,49 @@ Corregir a mano el rumbo o el manteo de una medida calculada la marca como
 *editada* y **retira** las barras de error: eran del ajuste, y mantenerlas
 afirmaría una precisión que el número escrito a mano ya no tiene.
 
+### Espesor estratigráfico
+
+Con una medida seleccionada, **Measure thickness from here** en su menú de
+propiedades arma el gesto: el siguiente toque en el mapa marca la otra
+superficie que limita la unidad, y sale el espesor.
+
+El espesor de una unidad **no** es la distancia que se mide en el mapa ni la
+diferencia de cotas: es la distancia entre las dos superficies paralelas que la
+limitan, o sea la componente del vector separación a lo largo de la **normal**
+a la estratificación.
+
+    e = |(p_techo − p_base) · n|
+
+Sobre una capa de 30° de manteo, medir 500 m en planta y anotar 500 m de
+espesor sobra en un factor dos. Es la misma fórmula y la misma convención de
+normal que la herramienta *Dip to Thickness* de Structural Modeller, para que
+un espesor medido en terreno y otro medido en gabinete sobre la misma carta se
+puedan comparar.
+
+La orientación sale de la medida seleccionada y no se vuelve a pedir: el
+espesor se proyecta sobre la normal a **esa** capa, así que medirlo desde un
+punto sin orientación no significaría nada.
+
+Junto al número van las tres maneras en que un espesor puede ser correcto y aun
+así no significar nada:
+
+- **La oblicuidad**, el ángulo entre la separación y la normal. Cerca de 90° los
+  dos puntos están casi en la misma superficie y el espesor es una diferencia
+  pequeña entre números grandes.
+- **La base**, si es menor que dos celdas del modelo: ahí las cotas traen más
+  error que la medida.
+- **El margen**, propagado por Monte Carlo desde el error vertical del DEM —las
+  dos cotas, independientes— y desde la incertidumbre de la orientación: la
+  suya propia si el manteo se calculó sobre el modelo, o el error típico de una
+  lectura de brújula si se tomó a mano. Usar cero ahí daría una barra de error
+  falsamente estrecha, que es la manera de mentir con una barra de error. El
+  generador es determinista, así que volver a calcular el mismo espesor da el
+  mismo margen.
+
+También avisa cuando el segundo punto cae **por debajo** del plano del primero a
+lo largo de la normal: o la capa está invertida, o se marcaron los dos puntos al
+revés, y lo segundo es lo habitual.
+
 ### Exportación
 
 Las medidas salen en una tercera tabla del GeoPackage, `geol_points`, con los
@@ -592,18 +639,21 @@ comprobar en el iPad real qué expone Safari antes de construir nada encima.
 Provisional, según lo acordado: el **tipo** se codifica en color y la
 **certeza** en el patrón de línea.
 
-| Tipo | Color |
-|---|---|
-| Falla inversa / cabalgamiento | rojo `#D32F2F` |
-| Falla normal | naranja `#F57C00` |
-| Falla dextral | morado `#7B1FA2` |
-| Falla sinestral | verde azulado `#00838F` |
-| Falla indiferenciada | gris azulado `#546E7A` |
-| Contacto estratigráfico | casi negro `#212121` |
-| Contacto intrusivo | magenta `#C2185B` |
-| Contacto estructural | verde `#2E7D32` |
-| Antiforme / Sinforme | magenta `#ff00ff` |
-| Dique | café `#6D4C41` |
+| Grupo | Color | Qué distingue a los tipos dentro del grupo |
+|---|---|---|
+| Fallas | azul `#0000ff` | el ornamento: dientes (inversa), tics con cuadrado (normal), pares de medias flechas (rumbo) |
+| Pliegues | magenta `#ff00ff` | hacia dónde apuntan las flechas del eje |
+| Contactos | negro `#000000` | — |
+| Diques | rojo `#ff0000` | — |
+
+El color dice el **grupo** y el ornamento dice el **tipo**. Antes cada tipo
+tenía su color —cabalgamiento rojo, normal naranja, dextral morada— y eso
+obligaba a recordar diez colores para leer un mapa; además es al revés de como
+se publica, porque en una carta todas las fallas son del mismo color. Moviendo
+la distinción al ornamento, el color queda libre para lo que hay que ver de un
+vistazo. Son colores puros a propósito: sobre satelital, un rojo apagado y un
+café se confunden, y con sol de frente esa diferencia desaparece del todo.
+Todos son el valor de partida y el módulo de simbología los cambia uno a uno.
 
 Certeza: **observado** continua · **inferido** segmentada · **cubierto**
 punteada.
@@ -850,6 +900,50 @@ lleva `generateId` y con ese índice se recupera el elemento original completo,
 que es el que se resalta; un GeoPackage no garantiza traer `fid`, así que no se
 puede depender de sus atributos para esto.
 
+### Editar una capa importada
+
+Una capa de GeoPackage entra como **referencia**: se ve, se consulta, no se
+toca. Eso está bien para un mapa de fondo, pero el trabajo real casi siempre es
+continuar un mapa que ya existe. El botón **✎** de cada capa importada, en el
+panel de Capas, la lleva **al dibujo**, y desde ahí funciona todo: nodos,
+cortar, unir, reshape, huecos, deshacer, y sale en el proyecto y en el
+GeoPackage junto al resto.
+
+Es lo mismo que poner una capa en modo edición en QGIS, con una diferencia que
+conviene decir en voz alta: el dibujo tiene **una** simbología, así que al
+adoptar una capa se pierde su estilo QML. Deshacer la devuelve entera —capa,
+elementos y unidades—, y para eso el historial admite instantáneas anchas: la
+operación toca cuatro colecciones a la vez y deshacerla a medias dejaría el
+proyecto en un estado que nunca existió.
+
+La traducción de atributos ([`src/adopt.js`](src/adopt.js)) va en tres
+escalones:
+
+1. **Coincidencia exacta** con un id o una etiqueta de FieldDraw. Un GeoPackage
+   exportado por la propia app vuelve a entrar idéntico, que es el caso que más
+   se repite y el único donde acertar del todo es obligatorio: si el tipo se
+   adivinara, el mapa cambiaría de simbología al ir y volver.
+2. **Palabras**, en castellano y en inglés y sin acentos, porque una carta del
+   Sernageomin y una capa de un paper no coinciden en nada. El orden importa:
+   «falla inversa» tiene que caer en cabalgamiento y no en falla
+   indiferenciada, así que `falla` a secas se prueba la última de su familia.
+   Lo adivinado se cuenta y se dice, para poder revisarlo.
+3. **Lo que quede** cae en contacto estratigráfico o unidad sedimentaria.
+
+Dos cosas que hace por su cuenta y que son las que convierten una carta ajena en
+un proyecto propio:
+
+- **Crea las unidades**. Cada formación nombrada por la carta pasa a ser una
+  unidad de FieldDraw, con su código y su color, editable en el panel de
+  Unidades. Sin esto, veinte formaciones distintas entrarían todas como «unidad
+  sedimentaria» y el mapa perdería justo aquello que lo hacía un mapa. Una
+  unidad que ya existe con ese nombre se reutiliza en vez de duplicarse.
+- **Explota lo multiparte**. El dibujo guarda líneas y polígonos simples;
+  quedarse con la primera parte perdería el resto sin decirlo.
+
+Los atributos del autor original que no son de FieldDraw se **conservan**:
+perderlos al adoptar sería peor que no poder editar.
+
 ## Ornamentos de falla y de pliegue
 
 Las fallas llevan su símbolo estructural: **dientes** en las inversas, **tics
@@ -1007,6 +1101,21 @@ tipo, certeza y demás atributos del elemento original.
 
 - Líneas: se hace `union` con la línea de corte, que noda ambas geometrías en
   sus intersecciones, y se conservan los trozos que pertenecen a la original.
+
+  Cuáles son «los de la original» se decide por el **punto a media longitud** de
+  cada trozo y su distancia a la línea, con tolerancia relativa al tamaño de la
+  geometría —las coordenadas pueden venir en grados o en metros UTM—. Antes se
+  preguntaba si al restarle la original quedaba algo, y eso fallaba en el caso
+  más común que hay: dos líneas cruzándose en aspa devolvían `difference` no
+  vacía para los cuatro trozos, incluidos los dos que sí eran de la línea, así
+  que no sobrevivía ninguno y la herramienta contestaba «no cruzó nada» sobre un
+  cruce evidente. El punto de intersección que calcula el nodado no es
+  exactamente representable, de modo que el trozo no queda como subconjunto
+  exacto de la original y el predicado booleano dice que no; una distancia con
+  tolerancia no tiene ese problema. Tampoco sirve `getInteriorPoint()` de JTS,
+  que devuelve un **vértice** y en un trozo de dos puntos devuelve un extremo:
+  justo el del cruce, que está sobre la otra línea, y entonces se colaban también
+  los trozos del cortador.
 - Polígonos: receta clásica de JTS — se unen los anillos con la línea de corte,
   se poligoniza el resultado y se descartan las piezas que caen fuera del
   polígono de partida. Los huecos se respetan.
@@ -1284,6 +1393,10 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.
+- ✅ Adoptar una capa importada al dibujo, con las unidades creadas desde sus
+  formaciones y todas las herramientas de edición disponibles sobre ella.
+- ✅ Espesor estratigráfico verdadero entre una medida y un punto del mapa, con
+  la incertidumbre propagada y los avisos de oblicuidad y base corta.
 - ✅ Atributos de las capas importadas de un GeoPackage con la pulsación
   sostenida, con el elemento resaltado en el mapa.
 - ✅ Escala de trabajo: lectura 1:N, salto a una escala de mapeo y candado que la

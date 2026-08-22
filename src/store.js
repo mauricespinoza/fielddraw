@@ -1,5 +1,6 @@
 import { BASEMAPS } from './basemaps.js';
 import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
+import { adoptLayer } from './adopt.js';
 import {
   FLIPPABLE_ORNAMENT_TYPES,
   POLYGON_TYPES,
@@ -122,6 +123,15 @@ let state = {
   pendingReshape: null,
   /** Área dibujada para restarla a un polígono; la consume la interfaz. */
   pendingHole: null,
+  /**
+   * Medida desde la que se está midiendo un espesor: {id, lngLat, strike, dip}.
+   * Mientras esté puesta, el siguiente toque marca el segundo punto.
+   */
+  thicknessFrom: null,
+  /** Los dos puntos ya marcados; el muestreo del DEM lo hace la interfaz. */
+  pendingThickness: null,
+  /** Último espesor calculado, para poder mostrarlo y dibujarlo. */
+  thickness: null,
   /** Traza recién terminada de la que hay que calcular el perfil. */
   pendingProfile: null,
   /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
@@ -216,11 +226,36 @@ export function pushHistory() {
  * Guarda un snapshot explícito, que puede no ser el estado actual. Lo usa la
  * edición de vértices: solo al soltar se sabe si el arrastre cambió algo, y
  * para entonces el estado ya se movió, así que hay que archivar el de antes.
+ *
+ * Admite además un snapshot ANCHO —`{features, imported, units, layers}`— para
+ * las operaciones que mueven varias colecciones a la vez. Adoptar una capa es
+ * la primera: quita una capa importada, añade sus elementos al dibujo y puede
+ * crear unidades nuevas, y deshacer eso a medias dejaría el proyecto en un
+ * estado que nunca existió.
  */
-export function pushHistorySnapshot(features) {
-  past.push(features);
+export function pushHistorySnapshot(snapshot) {
+  past.push(snapshot);
   if (past.length > HISTORY_LIMIT) past.shift();
   future = [];
+}
+
+/** Lo que hay que guardar ahora mismo para poder volver aquí. */
+function snapshotOf(claves) {
+  const out = {};
+  for (const k of claves) out[k] = state[k];
+  return out;
+}
+
+/** Un snapshot puede ser el array de features de siempre o el objeto ancho. */
+function restoreSnapshot(snapshot) {
+  const patch = Array.isArray(snapshot) ? { features: snapshot } : { ...snapshot };
+  return { ...patch, draft: null, selection: [] };
+}
+
+/** El estado actual de las mismas claves que trae un snapshot. */
+function mirrorOf(snapshot) {
+  if (Array.isArray(snapshot)) return state.features;
+  return snapshotOf(Object.keys(snapshot));
 }
 
 /** Corta el historial: lo que había antes deja de ser alcanzable. */
@@ -239,22 +274,23 @@ export function canRedo() {
 
 export function undo() {
   if (past.length === 0) return false;
-  future.push(state.features);
-  const features = past.pop();
-  set({ features, draft: null, selection: [] });
+  const anterior = past.pop();
+  future.push(mirrorOf(anterior));
+  set(restoreSnapshot(anterior));
   return true;
 }
 
 export function redo() {
   if (future.length === 0) return false;
-  past.push(state.features);
-  const features = future.pop();
-  set({ features, draft: null, selection: [] });
+  const siguiente = future.pop();
+  past.push(mirrorOf(siguiente));
+  set(restoreSnapshot(siguiente));
   return true;
 }
 
 const GEOM_KIND_FOR_TOOL = {
   polygon: 'polygon',
+  thickness: 'thickness',
   hole: 'hole',
   cut: 'cut',
   reshape: 'reshape',
@@ -271,7 +307,7 @@ const geomKindForTool = (tool) => GEOM_KIND_FOR_TOOL[tool] || 'line';
  * herramienta con uno a medias lo descarta, porque aplicarlo sin querer sería
  * destructivo en los dos primeros casos y desconcertante en el tercero.
  */
-const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane', 'hole']);
+const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane', 'hole', 'thickness']);
 
 /**
  * Herramientas que crean o mueven geometría, y que por eso no se ofrecen con
@@ -282,6 +318,7 @@ export const DRAWING_TOOLS = [
   'line',
   'polygon',
   'hole',
+  'thickness',
   'vertices',
   'cut',
   'reshape',
@@ -363,6 +400,11 @@ function set(patch) {
 /* ---------- herramientas ---------- */
 
 export function setTool(tool) {
+  // Salir a otra herramienta abandona la medida de espesor a medias: dejar el
+  // ancla puesta haría que un toque cualquiera, mucho después, calculara un
+  // espesor desde una medida que ya nadie tenía en mente.
+  if (tool !== 'thickness' && state.thicknessFrom) set({ thicknessFrom: null });
+
   // Con el relieve puesto no se digitaliza: se avisa y no se cambia nada. El
   // aviso lo da la interfaz, que es quien puede explicarlo.
   if (state.terrain3d && DRAWING_TOOLS.includes(tool)) return false;
@@ -455,6 +497,26 @@ export const setTraceEnabled = (traceEnabled) =>
 
 export function addVertex(p) {
   if (state.tool === 'navigate' || state.tool === 'select') return;
+
+  /*
+   * Espesor estratigráfico: un solo toque lo cierra. Se pide el punto y se
+   * publica el par; muestrear las dos cotas en el DEM es asíncrono y de eso se
+   * encarga la interfaz, igual que con el perfil y con el plano de tres puntos.
+   */
+  if (state.tool === 'thickness') {
+    const desde = state.thicknessFrom;
+    if (!desde) {
+      set({ tool: 'navigate' });
+      return;
+    }
+    set({
+      tool: 'navigate',
+      draft: null,
+      thicknessFrom: null,
+      pendingThickness: { from: desde, to: p },
+    });
+    return;
+  }
 
   if (state.tool === 'measure') {
     // Con brújula no hay nada que muestrear: el toque solo dice dónde va la
@@ -688,6 +750,46 @@ export function selectedFeatures() {
 
 export function clearPendingReshape() {
   set({ pendingReshape: null });
+}
+
+/**
+ * Arranca una medida de espesor desde una medida de rumbo y manteo.
+ *
+ * La orientación sale de la medida seleccionada y no se vuelve a pedir: el
+ * espesor es la separación proyectada sobre la normal a ESA capa, así que
+ * medirlo desde un punto sin orientación no significaría nada.
+ */
+export function startThickness(id) {
+  const f = state.features.find((x) => x.properties.id === id);
+  if (!f || f.geometry.type !== 'Point') return false;
+  const { strike, dip } = f.properties;
+  if (!Number.isFinite(Number(strike)) || !Number.isFinite(Number(dip))) return false;
+  set({
+    tool: 'thickness',
+    draft: null,
+    thickness: null,
+    pendingThickness: null,
+    thicknessFrom: {
+      id,
+      lngLat: f.geometry.coordinates,
+      strike: Number(strike),
+      dip: Number(dip),
+      quality: f.properties.quality || null,
+    },
+  });
+  return true;
+}
+
+export function clearPendingThickness() {
+  set({ pendingThickness: null });
+}
+
+export function setThickness(thickness) {
+  set({ thickness, pendingThickness: null });
+}
+
+export function clearThickness() {
+  set({ thickness: null, thicknessFrom: null, pendingThickness: null });
 }
 
 export function clearPendingHole() {
@@ -1221,6 +1323,38 @@ export function addImportedLayers(list) {
   const layers = state.layers.slice();
   layers.splice(at, 0, ...entries);
   set({ imported: [...state.imported, ...added], layers });
+}
+
+/**
+ * Pasa una capa importada al dibujo, donde sí se puede editar.
+ *
+ * La capa deja de existir como tal: sus elementos son ya del dibujo, y
+ * mantener las dos cosas a la vez dejaría el mapa con cada contacto pintado
+ * dos veces, una editable y otra no. Va al historial en un solo paso, así que
+ * deshacer devuelve exactamente el estado anterior — capa incluida.
+ *
+ * @returns {{features, units, warnings, stats}|null} null si la capa ya no está
+ */
+export function adoptImported(id) {
+  const capa = state.imported.find((l) => l.id === id);
+  if (!capa) return null;
+
+  const r = adoptLayer(capa, { units: state.units, newId });
+  if (r.features.length === 0) return r;
+
+  // Snapshot ancho: la operación toca cuatro colecciones y deshacerla a
+  // medias dejaría el proyecto en un estado que nunca existió.
+  pushHistorySnapshot(snapshotOf(['features', 'units', 'imported', 'layers']));
+  set({
+    features: [...state.features, ...r.features],
+    units: r.units,
+    imported: state.imported.filter((l) => l.id !== id),
+    layers: state.layers.filter((l) => l.id !== id),
+    // La selección apuntaba al dibujo anterior; dejarla sería señalar cosas
+    // que ya no son las que se está mirando.
+    selection: [],
+  });
+  return r;
 }
 
 export function removeImported(id) {

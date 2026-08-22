@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { STANDARD_PIXEL_MM, formatScale, niceScale, parseScale } from './scale.js';
 import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
+import { COMPASS_DIP_SIGMA_DEG, COMPASS_STRIKE_SIGMA_DEG, measureThickness } from './thickness.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
@@ -506,6 +507,20 @@ function layerRow(layer) {
 
   const move = document.createElement('div');
   move.className = 'layer-move';
+  if (layer.kind === 'imported') {
+    /*
+     * Adoptar la capa. Va aquí y no en el menú de propiedades porque es una
+     * operación sobre la CAPA entera, no sobre un elemento: lo que decide es
+     * si ese mapa se va a seguir usando como referencia o se va a continuar.
+     */
+    const editar = document.createElement('button');
+    editar.className = 'icon-btn';
+    editar.textContent = '✎';
+    editar.title = 'Move this layer into the drawing so every tool can edit it';
+    editar.setAttribute('aria-label', `Make ${layer.label} editable`);
+    editar.addEventListener('click', () => adoptLayerInto(layer));
+    move.appendChild(editar);
+  }
   if (layer.kind === 'imported' || layer.kind === 'tiles') {
     const del = document.createElement('button');
     del.className = 'icon-btn';
@@ -1030,6 +1045,44 @@ function simplifyGeometry(g) {
     const out = simplifyDP(coords, tol);
     return out.length >= 3 ? out : coords;
   });
+}
+
+/**
+ * Lleva una capa importada al dibujo.
+ *
+ * Se pregunta antes porque no es reversible con un botón: la capa desaparece
+ * como capa y su estilo QML se pierde: el dibujo tiene una sola simbología. Sí
+ * es reversible con Deshacer, y eso se dice, que es lo que de verdad quita el
+ * miedo a probarlo.
+ */
+function adoptLayerInto(layer) {
+  const capa = store.getState().imported.find((l) => l.id === layer.id);
+  const n = capa ? capa.geojson.features.length : 0;
+  if (!n) {
+    showBanner('That layer has no features to edit.');
+    return;
+  }
+  const seguir = confirm(
+    `Move "${layer.label}" (${n} feature(s)) into the drawing?\n\n` +
+      'Every tool will then work on it — vertices, split, merge, reshape, holes — and it ' +
+      'will travel in the project and the GeoPackage.\n\n' +
+      'It stops being a separate layer, and its QGIS style is replaced by the FieldDraw ' +
+      'symbology. Undo puts it back.',
+  );
+  if (!seguir) return;
+
+  const r = store.adoptImported(layer.id);
+  if (!r) return;
+  if (r.features.length === 0) {
+    showBanner('Nothing in that layer could be turned into drawing features.');
+    return;
+  }
+  const partes = [];
+  if (r.stats.lines) partes.push(`${r.stats.lines} line(s)`);
+  if (r.stats.polygons) partes.push(`${r.stats.polygons} polygon(s)`);
+  if (r.stats.points) partes.push(`${r.stats.points} measurement(s)`);
+  const resumen = `${partes.join(', ')} from "${layer.label}" are now editable.`;
+  showBanner(r.warnings.length ? `${resumen} ${r.warnings.join(' ')}` : resumen, 'info');
 }
 
 /* ---------- atributos de una capa importada ---------- */
@@ -1960,6 +2013,93 @@ async function runPlane(pending) {
   }
 }
 
+let thicknessBusy = false;
+
+/**
+ * Espesor estratigráfico entre la medida elegida y el punto marcado.
+ *
+ * Las dos cotas salen del DEM —también la del punto donde está la medida, que
+ * el símbolo no guarda— y por eso esto es asíncrono, igual que el perfil.
+ */
+async function runThickness(pending) {
+  if (thicknessBusy) {
+    store.clearPendingThickness();
+    showBanner('Still reading the elevations of the previous measurement.');
+    return;
+  }
+  const { from, to } = pending || {};
+  if (!from || !to) {
+    store.clearPendingThickness();
+    return;
+  }
+
+  thicknessBusy = true;
+  const st = store.getState();
+  setBusy('Reading elevations…');
+  try {
+    const sampler = samplerFor(st);
+    if (sampler.loadGrid) await sampler.loadGrid([from.lngLat, to]);
+    const [zBase, zTecho] = await Promise.all([
+      sampler.elevationAt(from.lngLat[0], from.lngLat[1]),
+      sampler.elevationAt(to[0], to[1]),
+    ]);
+
+    const dem = OPENTOPO_DEM_BY_ID.get(st.opentopoDem);
+    const nominal = st.profileSource === 'opentopo' && dem ? dem.nominal : TERRARIUM_NOMINAL_M;
+
+    /*
+     * La incertidumbre de la orientación sale de la propia medida cuando se
+     * calculó sobre el modelo; si se tomó con brújula, del error típico de una
+     * lectura de campo. Usar cero en ese caso daría un margen falsamente
+     * estrecho, que es la manera de mentir con una barra de error.
+     */
+    const q = from.quality || {};
+    const sigmaStrike = Number.isFinite(Number(q.strikeSd)) ? Number(q.strikeSd) : COMPASS_STRIKE_SIGMA_DEG;
+    const sigmaDip = Number.isFinite(Number(q.dipSd)) ? Number(q.dipSd) : COMPASS_DIP_SIGMA_DEG;
+
+    const r = measureThickness({
+      base: { lngLat: from.lngLat, elevation: zBase },
+      top: { lngLat: to, elevation: zTecho },
+      strike: from.strike,
+      dip: from.dip,
+      resolution: nominal,
+      sigmaStrike,
+      sigmaDip,
+    });
+    if (!r.ok) {
+      showBanner(r.reason);
+      store.clearPendingThickness();
+      return;
+    }
+
+    store.setThickness({
+      ...r,
+      from: from.lngLat,
+      to,
+      elevations: [zBase, zTecho],
+      demSource: st.profileSource,
+    });
+
+    const resumen = `True thickness ${formatMetres(r.thickness)} ±${formatMetres(r.sd)} · ${Math.round(r.separation)} m apart, ${Math.round(r.obliquity)}° off the bedding normal.`;
+    if (r.warnings.length) showBanner(`${resumen} ${r.warnings.join(' ')}`);
+    else showBanner(resumen, 'info');
+  } catch (err) {
+    showBanner(err.message);
+    store.clearPendingThickness();
+  } finally {
+    setBusy(null);
+    thicknessBusy = false;
+  }
+}
+
+/** Metros con la precisión que el número aguanta, no la que sobra. */
+function formatMetres(v) {
+  if (!Number.isFinite(v)) return '—';
+  if (v >= 1000) return `${(v / 1000).toFixed(2)} km`;
+  if (v >= 100) return `${Math.round(v)} m`;
+  return `${v.toFixed(1)} m`;
+}
+
 const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 
 /** Una fila «clave: valor» del bloque de calidad de una medida. */
@@ -2057,6 +2197,32 @@ function measurementSection(body, medida, reabrir) {
   } else if (p.method === 'edited') {
     measureRow(cal, 'Uncertainty', 'not applicable — typed in by hand');
   }
+
+  /*
+   * Espesor estratigráfico desde esta medida.
+   *
+   * Vive aquí y no en la barra porque necesita una orientación, y la única que
+   * tiene sentido usar es la de la capa sobre la que se está midiendo: el
+   * espesor es la separación proyectada sobre la normal a ESE plano. Desde un
+   * punto cualquiera del mapa no significaría nada.
+   */
+  const esp = section(body, 'Stratigraphic thickness');
+  const btnEsp = document.createElement('button');
+  btnEsp.className = 'pill wide';
+  btnEsp.textContent = 'Measure thickness from here';
+  btnEsp.title = 'Tap the other bounding surface on the map; the DEM supplies both elevations';
+  btnEsp.addEventListener('click', () => {
+    closePropsMenu();
+    if (store.startThickness(p.id)) {
+      showBanner(
+        `Now tap the other surface of the unit. The thickness is measured normal to ${formatStrikeDip(p.strike, p.dip)}.`,
+        'info',
+      );
+    } else {
+      showBanner('That measurement has no strike and dip to measure against.');
+    }
+  });
+  esp.appendChild(btnEsp);
 }
 
 /* ---------- proyectos ---------- */
@@ -2285,6 +2451,10 @@ function renderStatus() {
     $('status-text').textContent = s.topoEdit
       ? `${base} · topological editing on: magenta ones move together`
       : base;
+  } else if (s.tool === 'thickness') {
+    $('status-text').textContent = s.thicknessFrom
+      ? `Tap the other surface of the unit · thickness measured normal to ${formatStrikeDip(s.thicknessFrom.strike, s.thicknessFrom.dip)}`
+      : 'Pick a strike and dip measurement first';
   } else if (s.tool === 'hole') {
     /*
      * Se dice a QUÉ va a afectar antes de dibujarlo, no después. Con una
@@ -2652,7 +2822,8 @@ export function initUI() {
       store.changed('measureMethod') ||
       store.changed('measureType') ||
       store.changed('manualStrike') ||
-      store.changed('manualDip')
+      store.changed('manualDip') ||
+      store.changed('thicknessFrom')
     ) {
       renderToolbar();
       renderStatus();
@@ -2680,6 +2851,10 @@ export function initUI() {
     if (store.changed('pendingPlane')) {
       const puntos = store.getState().pendingPlane;
       if (puntos) runPlane(puntos);
+    }
+    if (store.changed('pendingThickness')) {
+      const par = store.getState().pendingThickness;
+      if (par) runThickness(par);
     }
     if (
       store.changed('scaleLock') ||

@@ -37,14 +37,31 @@ const Sym = await import(BASE + 'symbology.js');
 const ids = Sym.LINE_TYPES.map(t => t.id);
 ok('ids de línea únicos', new Set(ids).size === ids.length);
 ok('todos los tipos tienen color hex', Sym.LINE_TYPES.every(t => /^#[0-9A-F]{6}$/i.test(t.color)));
-// Los dos pliegues comparten el magenta a propósito: lo que distingue un
-// antiforme de un sinforme es hacia dónde apuntan las flechas del eje, no el
-// color. El resto de los tipos sí se distinguen por color.
-const sinPliegues = Sym.LINE_TYPES.filter(t => t.group !== 'Folds');
-ok('los colores de línea son distintos fuera de los pliegues',
-   new Set(sinPliegues.map(t=>t.color)).size === sinPliegues.length);
-ok('los dos pliegues salen del mismo magenta',
-   Sym.LINE_TYPES.filter(t=>t.group === 'Folds').every(t => t.color === Sym.FOLD_COLOR));
+/*
+ * El color dice el GRUPO, no el tipo: en una carta todas las fallas son del
+ * mismo color y lo que distingue una inversa de una normal son los dientes o
+ * los ticks. Las dos mitades de esa regla se comprueban por separado —dentro
+ * del grupo todos iguales, entre grupos todos distintos— porque romper
+ * cualquiera de las dos deja el mapa ilegible de una manera distinta.
+ */
+{
+  const porGrupo = new Map();
+  for (const t of Sym.LINE_TYPES) {
+    if (!porGrupo.has(t.group)) porGrupo.set(t.group, new Set());
+    porGrupo.get(t.group).add(t.color);
+  }
+  ok('cada grupo tiene un solo color',
+     [...porGrupo.values()].every(c => c.size === 1),
+     [...porGrupo].map(([g, c]) => g + ':' + c.size).join(' '));
+  const colores = [...porGrupo.values()].map(c => [...c][0]);
+  ok('y los grupos no comparten color entre sí',
+     new Set(colores).size === colores.length, colores.join(' '));
+  const de = (grupo) => porGrupo.get(grupo) && [...porGrupo.get(grupo)][0];
+  ok('fallas en azul', de('Faults') === Sym.FAULT_COLOR && Sym.FAULT_COLOR === '#0000ff');
+  ok('pliegues en magenta', de('Folds') === Sym.FOLD_COLOR && Sym.FOLD_COLOR === '#ff00ff');
+  ok('contactos en negro', de('Contacts') === Sym.CONTACT_COLOR && Sym.CONTACT_COLOR === '#000000');
+  ok('diques en rojo', de('Dykes') === Sym.DIKE_COLOR && Sym.DIKE_COLOR === '#ff0000');
+}
 ok('cada tipo pertenece a un grupo listado', Sym.LINE_TYPES.every(t => Sym.LINE_GROUPS.includes(t.group)));
 ok('3 certezas: continua, segmentada, punteada',
    Sym.CERTAINTIES.length === 3 && Sym.CERTAINTIES[0].dash === null && Sym.CERTAINTIES[1].dash && Sym.CERTAINTIES[2].dash);
@@ -110,7 +127,7 @@ ok('color es expresión match sobre type', obs.paint['line-color'][0] === 'match
   orn.antiform.color = '#123456';
   const expr = G.lineColorExpr(orn);
   ok('lineColorExpr refleja el color editado', expr[expr.indexOf('antiform') + 1] === '#123456');
-  ok('y deja el resto del catálogo', expr[expr.indexOf('dike') + 1] === '#6D4C41');
+  ok('y deja el resto del catálogo', expr[expr.indexOf('dike') + 1] === Sym.DIKE_COLOR);
   ok('GEOLOGY_LINE_LAYER_IDS son las capas de traza',
      G.GEOLOGY_LINE_LAYER_IDS.length === 3 && G.GEOLOGY_LINE_LAYER_IDS.every(id => gl.some(l => l.id === id)));
 }

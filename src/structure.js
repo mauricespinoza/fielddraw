@@ -168,7 +168,7 @@ export function solvePlane(enu) {
  * mismos puntos: si volver a calcular la misma medida cambiara la
  * incertidumbre, el número dejaría de ser comprobable y nadie podría citarlo.
  */
-function makeRandom(seed) {
+export function makeRandom(seed) {
   let s = seed >>> 0 || 1;
   return () => {
     // xorshift32: barato, sin dependencias y de calidad de sobra para esto.
@@ -182,7 +182,7 @@ function makeRandom(seed) {
 }
 
 /** Semilla derivada de los propios datos, para que sea reproducible. */
-function seedFrom(enu) {
+export function seedFrom(enu) {
   let h = 2166136261;
   for (const p of enu) {
     for (const v of [p.x, p.y, p.z]) {
@@ -194,7 +194,7 @@ function seedFrom(enu) {
 }
 
 /** Par de normales estándar por Box-Muller. */
-function gaussPair(rnd) {
+export function gaussPair(rnd) {
   const u = Math.max(1e-12, rnd());
   const v = rnd();
   const r = Math.sqrt(-2 * Math.log(u));
