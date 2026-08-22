@@ -746,7 +746,11 @@ input[type='radio'] {
   margin-left: auto;
 }
 
-.strabo-attrs-row {
+.attrs-note {
+  margin: 0 0 2px;
+}
+
+.attrs-row {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -755,13 +759,13 @@ input[type='radio'] {
   font-size: 12.5px;
 }
 
-.strabo-attrs-row .k {
+.attrs-row .k {
   color: var(--muted);
   flex: none;
   max-width: 44%;
 }
 
-.strabo-attrs-row .v {
+.attrs-row .v {
   text-align: right;
   word-break: break-word;
 }
@@ -771,16 +775,16 @@ input[type='radio'] {
  * 56% del ancho y alineadas a la derecha, quedaban en una tira ilegible. A
  * ancho completo bajo su etiqueta se leen como lo que son, un párrafo.
  */
-.strabo-attrs-row.long {
+.attrs-row.long {
   flex-direction: column;
   gap: 2px;
 }
 
-.strabo-attrs-row.long .k {
+.attrs-row.long .k {
   max-width: none;
 }
 
-.strabo-attrs-row.long .v {
+.attrs-row.long .v {
   text-align: left;
   white-space: pre-wrap;
 }

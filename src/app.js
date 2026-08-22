@@ -3,6 +3,7 @@ import { createMapView } from './mapView.js';
 import {
   closeOverlays,
   initUI,
+  openImportedAttrs,
   openPropsMenu,
   renderPointerInfo,
   renderScale,
@@ -35,6 +36,7 @@ const view = createMapView({
   // Cualquier toque sobre el mapa cierra lo que estuviera abierto encima.
   onMapTap: closeOverlays,
   onStraboFeatureTap: openStraboAttrs,
+  onImportedFeatureTap: openImportedAttrs,
   onScale: renderScale,
 });
 

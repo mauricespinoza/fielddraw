@@ -82,6 +82,14 @@ const HILLSHADE_LAYER_IDS = ['hillshade'];
 const PROFILE_SOURCE = 'profile-src';
 const PROFILE_LAYER_IDS = ['profile-casing', 'profile-line', 'profile-nodes', 'profile-cursor'];
 
+/**
+ * Resalte del elemento ajeno que se está consultando —una capa importada—.
+ * Es propio y no reutiliza el de la selección porque ese vive en la fuente del
+ * dibujo, que no contiene lo importado.
+ */
+const PICK_SOURCE = 'foreign-pick-src';
+const PICK_LAYER_IDS = ['foreign-pick-fill', 'foreign-pick-line', 'foreign-pick-point'];
+
 /** Un toque de dedo más lejos que esto del trazo en curso lo da por cerrado. */
 const OUTSIDE_TAP_PX = 36;
 
@@ -160,9 +168,22 @@ function applyLayerStack(map, layers) {
       map.moveLayer(id);
     }
   }
-  // El elemento en construcción, la traza del perfil y las manijas de
-  // edición, siempre encima.
-  for (const id of [...PROFILE_LAYER_IDS, ...DRAFT_LAYER_IDS, ...EDIT_LAYER_IDS]) {
+  /*
+   * El resalte de lo consultado, el elemento en construcción, la traza del
+   * perfil y las manijas de edición van siempre encima.
+   *
+   * El resalte tiene que estar aquí y no donde se creó: las capas importadas se
+   * añaden DESPUÉS —al importar el archivo, no al arrancar—, así que quedarían
+   * por encima y el resalte se vería tapado justo por la capa que señala.
+   * Va el primero del grupo, o sea el más bajo de los cuatro: lo que se está
+   * dibujando ahora mismo manda sobre lo que se está consultando.
+   */
+  for (const id of [
+    ...PICK_LAYER_IDS,
+    ...PROFILE_LAYER_IDS,
+    ...DRAFT_LAYER_IDS,
+    ...EDIT_LAYER_IDS,
+  ]) {
     if (map.getLayer(id)) map.moveLayer(id);
   }
 }
@@ -189,6 +210,7 @@ export function createMapView({
   onOpenProps,
   onMapTap,
   onStraboFeatureTap,
+  onImportedFeatureTap,
   onScale,
 }) {
   const host = document.getElementById('map-host');
@@ -488,6 +510,45 @@ export function createMapView({
       });
     }
 
+    /*
+     * Resalte de lo que se está consultando en una capa importada.
+     *
+     * Va en cian, el mismo color con el que se marca la selección propia: no
+     * hace falta aprender dos códigos, y lo que dice es lo mismo —«este es el
+     * elemento del que estás leyendo»—. Sin él, el recuadro de atributos de un
+     * GeoPackage con varios polígonos contiguos no dice de CUÁL habla.
+     */
+    map.addSource(PICK_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'foreign-pick-fill',
+      type: 'fill',
+      source: PICK_SOURCE,
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'fill-color': '#00E5FF', 'fill-opacity': 0.22 },
+    });
+    map.addLayer({
+      id: 'foreign-pick-line',
+      type: 'line',
+      source: PICK_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#00E5FF', 'line-width': 3.5, 'line-opacity': 0.9, 'line-blur': 0.6 },
+    });
+    map.addLayer({
+      id: 'foreign-pick-point',
+      type: 'circle',
+      source: PICK_SOURCE,
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 9,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': '#00E5FF',
+        'circle-stroke-width': 3,
+      },
+    });
+
     map.addSource(EDIT_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -785,7 +846,14 @@ export function createMapView({
     let added = null;
     for (const l of list) {
       if (importedLayerIds.has(l.id)) continue;
-      map.addSource(`src-${l.id}`, { type: 'geojson', data: l.geojson });
+      /*
+       * `generateId` numera las features por su posición en el array. Es lo
+       * que permite volver de un resultado de `queryRenderedFeatures` —que
+       * llega recortado por tesela— a la geometría original completa, que es
+       * la que hay que resaltar. Un GeoPackage no garantiza traer `fid`, así
+       * que no se puede depender de sus atributos para esto.
+       */
+      map.addSource(`src-${l.id}`, { type: 'geojson', data: l.geojson, generateId: true });
       const { layers } = buildImportedLayers({
         id: l.id,
         sourceId: `src-${l.id}`,
@@ -1324,6 +1392,62 @@ export function createMapView({
     return hits.length ? hits[0] : null;
   }
 
+  /**
+   * Elemento de una capa importada bajo el toque.
+   *
+   * Se pregunta a lo RENDERIZADO y no se recorre la geometría a mano: un
+   * GeoPackage de una carta trae decenas de miles de elementos, y proyectar
+   * cada vértice de cada uno en cada pulsación sostenida congelaría la app —el
+   * coste dependería del tamaño del archivo y no de lo que hay en pantalla.
+   * De regalo, respeta lo que de verdad se ve: una capa apagada no contesta.
+   *
+   * Devuelve el elemento ORIGINAL, no el que devuelve MapLibre: ese llega
+   * recortado por tesela y con los valores pasados por texto.
+   */
+  function importedHitAt(screen, tolerance = 14) {
+    if (!ready) return null;
+    const porCapa = new Map();
+    for (const [logico, ids] of importedLayerIds) {
+      for (const id of ids) if (map.getLayer(id)) porCapa.set(id, logico);
+    }
+    if (porCapa.size === 0) return null;
+
+    const box = [
+      [screen[0] - tolerance, screen[1] - tolerance],
+      [screen[0] + tolerance, screen[1] + tolerance],
+    ];
+    const hits = map.queryRenderedFeatures(box, { layers: [...porCapa.keys()] });
+    if (!hits.length) return null;
+
+    // El primero es el de la capa dibujada más arriba, que es el que se ve.
+    const hit = hits[0];
+    const logico = porCapa.get(hit.layer.id);
+    const capa = store.getState().imported.find((l) => l.id === logico);
+    if (!capa) return null;
+
+    const original =
+      typeof hit.id === 'number' ? capa.geojson.features[hit.id] : null;
+    return {
+      layer: capa,
+      feature: original || { type: 'Feature', properties: hit.properties, geometry: hit.geometry },
+      // Sin `generateId` no habría forma de volver al original; se dice, para
+      // que quien resalte sepa que la geometría puede venir recortada.
+      exact: !!original,
+    };
+  }
+
+  /** Marca en el mapa el elemento ajeno del que se están leyendo atributos. */
+  function highlightForeign(geometry) {
+    if (!ready) return;
+    const src = map.getSource(PICK_SOURCE);
+    if (!src) return;
+    src.setData(
+      geometry
+        ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry }] }
+        : EMPTY_FC,
+    );
+  }
+
   function endLasso(screen, info) {
     lassoEl.hidden = true;
     const l = lasso;
@@ -1362,13 +1486,47 @@ export function createMapView({
     store.setSelection(featuresInBox(box));
   }
 
-  /** Abre el menú de propiedades; si no hay selección, selecciona lo tocado. */
+  /**
+   * Pulsación sostenida: enseña lo que hay debajo del dedo.
+   *
+   * El orden importa y va de lo más específico a lo más general:
+   *
+   * 1. **Lo propio**, seleccionado o bajo el dedo: abre el menú de propiedades,
+   *    que además EDITA. Si hay dibujo encima de una capa importada, gana el
+   *    dibujo: es lo único sobre lo que se puede actuar.
+   * 2. **Un spot de StraboSpot**: son símbolos pequeños, así que si uno cae
+   *    sobre un polígono importado el pequeño es el que se estaba apuntando.
+   * 3. **Una capa importada**: sus atributos, en solo lectura.
+   *
+   * Los dos últimos no entran en `store.selection`: esa lista alimenta borrar,
+   * cortar, unir y mover vértices, y meter ahí algo que no está en `features`
+   * dejaría esas herramientas apuntando a nada. Lo que se hace en su lugar es
+   * resaltarlo en el mapa, que es lo que la selección aportaba aquí: saber de
+   * cuál de los tres polígonos contiguos habla el recuadro.
+   */
   function openPropsFor(screen) {
     if (store.getState().selection.length === 0) {
       const hit = pickAt(screen);
       if (hit) store.toggleSelection(hit.properties.id);
     }
-    if (store.getState().selection.length > 0) onOpenProps(screen);
+    if (store.getState().selection.length > 0) {
+      highlightForeign(null);
+      onOpenProps(screen);
+      return;
+    }
+
+    const spot = onStraboFeatureTap && straboHitAt(screen);
+    if (spot) {
+      highlightForeign(null);
+      onStraboFeatureTap(spot, screen);
+      return;
+    }
+
+    const imported = onImportedFeatureTap && importedHitAt(screen);
+    if (imported) {
+      highlightForeign(imported.exact ? imported.feature.geometry : null);
+      onImportedFeatureTap(imported, screen);
+    }
   }
 
   /** Borra la manija bajo el punto, con sus coincidentes si hay topología. */
@@ -1742,6 +1900,8 @@ export function createMapView({
     locateMe,
     /** Lleva el mapa a una escala concreta, sin fijarla. */
     goToScale,
+    /** Quita el resalte del elemento ajeno; lo llama la interfaz al cerrar. */
+    clearForeignHighlight: () => highlightForeign(null),
     /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */
     fitToCoords(coords) {
       if (!Array.isArray(coords) || coords.length === 0) return;

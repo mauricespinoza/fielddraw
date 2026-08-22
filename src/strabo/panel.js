@@ -1,4 +1,5 @@
 import * as store from '../store.js';
+import { openAttrs } from '../attrs.js';
 import * as api from './api.js';
 import { distinctValues, STRABO_FILTER_FIELD } from './layers.js';
 import {
@@ -54,7 +55,6 @@ export function initStraboPanel({ message, busy }) {
   wireSizeSlider('strabo-size-observations', 'observationSize');
   $('strabo-size-reset').addEventListener('click', () => store.resetStraboStyle());
 
-  $('btn-close-strabo-attrs').addEventListener('click', closeStraboAttrs);
 
   store.subscribe(() => {
     if (store.changed('features') || store.changed('strabo')) render();
@@ -231,9 +231,6 @@ const LONG_ATTR_KEYS = new Set([
   'Purpose',
 ]);
 
-/** Un valor corto puede quedarse en su fila; uno largo no cabe en el 56%. */
-const isLongAttr = (key, text) => LONG_ATTR_KEYS.has(key) || text.length > 28;
-
 function attrTitle(hit) {
   const p = hit.properties;
   // El nombre del spot es como el geólogo lo tiene anotado en la libreta, así
@@ -246,55 +243,16 @@ function attrTitle(hit) {
   return p.Name || (hit.geometry.type === 'Polygon' ? 'Polygon' : 'Line');
 }
 
-const EMPTY_ATTR = '—';
-
-function fmtAttrValue(v) {
-  if (v === null || v === undefined || v === '') return EMPTY_ATTR;
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2);
-  return String(v);
-}
-
 export function openStraboAttrs(hit, screen) {
-  const menu = $('strabo-attrs');
-  const body = $('strabo-attrs-body');
-  body.replaceChildren();
-
-  $('strabo-attrs-title').textContent = attrTitle(hit);
-
-  const entries = Object.entries(hit.properties || {}).filter(([k]) => !HIDDEN_ATTR_KEYS.has(k));
-  if (entries.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'hint';
-    p.textContent = 'This spot has no attributes.';
-    body.appendChild(p);
-  }
-  for (const [k, v] of entries) {
-    const text = fmtAttrValue(v);
-    const row = document.createElement('div');
-    row.className = 'strabo-attrs-row';
-    const kEl = document.createElement('span');
-    kEl.className = 'k';
-    kEl.textContent = k;
-    const vEl = document.createElement('span');
-    vEl.className = 'v';
-    vEl.textContent = text;
-    if (text !== EMPTY_ATTR && isLongAttr(k, text)) row.classList.add('long');
-    row.append(kEl, vEl);
-    body.appendChild(row);
-  }
-
-  menu.classList.remove('hidden');
-  // Mismo encaje en pantalla que el menú de propiedades: cerca del toque, sin
-  // salirse del viewport.
-  const rect = menu.getBoundingClientRect();
-  const x = Math.min(Math.max(12, screen[0] - rect.width / 2), window.innerWidth - rect.width - 12);
-  const y = Math.min(screen[1] + 18, window.innerHeight - rect.height - 12);
-  menu.style.left = `${x}px`;
-  menu.style.top = `${Math.max(12, y)}px`;
-}
-
-export function closeStraboAttrs() {
-  $('strabo-attrs').classList.add('hidden');
+  // Lo específico de un spot es el título y qué campos sobran; pintar el
+  // recuadro y encajarlo en pantalla es igual para cualquier fuente.
+  openAttrs({
+    title: attrTitle(hit),
+    entries: Object.entries(hit.properties || {}).filter(([k]) => !HIDDEN_ATTR_KEYS.has(k)),
+    screen,
+    isLong: (k) => LONG_ATTR_KEYS.has(k),
+    empty: 'This spot has no attributes.',
+  });
 }
 
 async function doSignIn() {

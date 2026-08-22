@@ -1,5 +1,6 @@
 import * as store from './store.js';
 import { STANDARD_PIXEL_MM, formatScale, niceScale, parseScale } from './scale.js';
+import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
@@ -893,7 +894,7 @@ export function closePropsMenu() {
 /** Cajones laterales: solo uno abierto a la vez. */
 const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'scale-menu', 'strabo-attrs', 'shortcuts'];
+const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'scale-menu', 'attrs', 'shortcuts'];
 
 /**
  * Elementos que NO cuentan como "fuera" al cerrar por clic.
@@ -986,6 +987,9 @@ export function closeOverlays() {
   for (const id of DRAWERS) $(id).classList.remove('open');
   for (const id of POPOVERS) $(id).classList.add('hidden');
   closePropsMenu();
+  // El resalte solo tiene sentido mientras su recuadro está abierto; dejarlo
+  // encendido marcaría un elemento del que ya no se está leyendo nada.
+  if (mapBridge) mapBridge.clearForeignHighlight();
 }
 
 function mapRings(geometry, fn) {
@@ -1025,6 +1029,21 @@ function simplifyGeometry(g) {
     const tol = Math.hypot(maxX - minX, maxY - minY) * 0.0005;
     const out = simplifyDP(coords, tol);
     return out.length >= 3 ? out : coords;
+  });
+}
+
+/* ---------- atributos de una capa importada ---------- */
+
+/** Pulsación sostenida sobre una capa importada: sus campos, en solo lectura. */
+export function openImportedAttrs(hit, screen) {
+  const { layer: capa, feature, exact } = hit;
+  openAttrs({
+    title: importedTitle(capa.label, feature),
+    entries: importedEntries(feature),
+    screen,
+    empty: 'This feature carries no attributes in the GeoPackage.',
+    // Se dice cuando el resalte no es fiable, en vez de dejar creer que lo es.
+    note: exact ? null : 'Imported layer · the highlight may be clipped',
   });
 }
 
@@ -1946,7 +1965,7 @@ const round1 = (v) => (Number.isFinite(v) ? Math.round(v * 10) / 10 : null);
 /** Una fila «clave: valor» del bloque de calidad de una medida. */
 function measureRow(parent, k, v, title) {
   const row = document.createElement('div');
-  row.className = 'strabo-attrs-row';
+  row.className = 'attrs-row';
   const ke = document.createElement('span');
   ke.className = 'k';
   ke.textContent = k;
@@ -2572,6 +2591,10 @@ export function initUI() {
   // Anotar ANTES de que renderToolbar cachee las ayudas originales, para que
   // el bloqueo por relieve 3D restaure la versión con el atajo incluido.
   annotateToolbarShortcuts();
+  $('btn-close-attrs').addEventListener('click', () => {
+    closeAttrs();
+    if (mapBridge) mapBridge.clearForeignHighlight();
+  });
   wireScale();
   wireShortcuts();
   wireClickOutside();

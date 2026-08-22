@@ -379,12 +379,15 @@
       </div>
 
       <!-- Atributos de un spot de StraboSpot: solo lectura, es dato ajeno. -->
-      <div class="props-menu hidden" id="strabo-attrs">
+      <!-- Visor de atributos, compartido por los spots de StraboSpot y por las
+           capas importadas de un GeoPackage: es la misma pregunta hecha sobre
+           dos fuentes distintas. Ver src/attrs.js. -->
+      <div class="props-menu hidden" id="attrs">
         <header>
-          <h2 id="strabo-attrs-title">Attributes</h2>
-          <button class="icon-btn" id="btn-close-strabo-attrs" aria-label="Close">✕</button>
+          <h2 id="attrs-title">Attributes</h2>
+          <button class="icon-btn" id="btn-close-attrs" aria-label="Close">✕</button>
         </header>
-        <div id="strabo-attrs-body"></div>
+        <div id="attrs-body"></div>
       </div>
 
       <aside class="layer-panel" id="units-panel">

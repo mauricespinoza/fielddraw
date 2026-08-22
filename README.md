@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs; do node test/$f.test.mjs; done
 ```
 
-882 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+911 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -46,7 +46,9 @@ la tabla de atajos de teclado y el hover del ratón, conversión escala↔zoom e
 ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
 —incluido el hueco que se convierte en anillo interior— y las regresiones de
 los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
-`pointerup` se pierde y la tesela del DEM que no contesta nunca.
+`pointerup` se pierde y la tesela del DEM que no contesta nunca; y el visor de
+atributos: qué campos se enseñan de una capa importada y de dónde sale su
+título.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -135,6 +137,7 @@ carga.
 | Seleccionar | un toque con el dedo, **en cualquier herramienta** |
 | Seleccionar varios | **Elegir** + arrastrar: lazo rectangular, entra lo que quede encerrado |
 | Propiedades | mantener pulsado ~1 s, en cualquier herramienta |
+| Atributos de una capa importada | mantener pulsado ~1 s donde no haya dibujo propio |
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
 | Deshacer | doble toque con **dos dedos** |
 | Rehacer | doble toque con **tres dedos** |
@@ -806,6 +809,47 @@ Mantener pulsado ~1 s sobre la selección abre un menú flotante con:
 > primera acción. Si prefieres que la pulsación larga salte directo a los nodos,
 > es un cambio de una línea.
 
+### Atributos de lo que no es tuyo
+
+La misma pulsación sostenida, cuando debajo no hay dibujo propio, abre el
+**visor de atributos** de lo que sí haya: un spot de StraboSpot o un elemento de
+una capa importada de un GeoPackage. Se enseñan todos los campos de la tabla
+—incluido `fid`, que es lo que permite volver a encontrar esa fila en QGIS— y el
+elemento queda **resaltado en cian** en el mapa, el mismo color con el que se
+marca la selección propia. Sin ese resalte, un GeoPackage con varios polígonos
+contiguos no dice de cuál habla el recuadro.
+
+El orden va de lo más específico a lo más general, y es deliberado:
+
+1. **Lo propio**, seleccionado o bajo el dedo: abre el menú de propiedades, que
+   además edita. Si hay dibujo encima de una capa importada, gana el dibujo: es
+   lo único sobre lo que se puede actuar.
+2. **Un spot de StraboSpot**: son símbolos pequeños, así que si uno cae sobre un
+   polígono importado, el pequeño es al que se estaba apuntando.
+3. **Un elemento de una capa importada**, en solo lectura.
+
+Los dos últimos **no entran en la selección**. Esa lista alimenta borrar, cortar,
+unir y mover vértices, y meter en ella algo que no está en el dibujo dejaría esas
+herramientas apuntando a nada. Lo que aportaba la selección aquí —saber de cuál
+de los tres polígonos contiguos se está leyendo— lo da el resalte.
+
+El título busca un campo que NOMBRE al elemento antes de caer en el nombre de la
+tabla: en una carta lo que identifica al polígono es su unidad, no que pertenezca
+a `unidades_geologicas`. Se prueban `name`, `nombre`, `unidad`, `unit`, `label`,
+`tipo`, `código`… sin distinguir mayúsculas ni acentos, porque una capa del
+Sernageomin y otra de un paper no coinciden en nada de eso. El nombre de la capa
+acompaña siempre: con dos GeoPackage abiertos hay que saber de cuál se lee.
+
+El elemento se busca preguntando a lo **renderizado** (`queryRenderedFeatures`) y
+no recorriendo la geometría a mano. Un GeoPackage de una carta trae decenas de
+miles de elementos, y proyectar cada vértice de cada uno en cada pulsación
+congelaría la app: el coste dependería del tamaño del archivo y no de lo que hay
+en pantalla. De regalo, respeta lo que de verdad se ve — una capa apagada no
+contesta. Como MapLibre devuelve la geometría recortada por tesela, la fuente
+lleva `generateId` y con ese índice se recupera el elemento original completo,
+que es el que se resalta; un GeoPackage no garantiza traer `fid`, así que no se
+puede depender de sus atributos para esto.
+
 ## Ornamentos de falla y de pliegue
 
 Las fallas llevan su símbolo estructural: **dientes** en las inversas, **tics
@@ -1240,6 +1284,8 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.
+- ✅ Atributos de las capas importadas de un GeoPackage con la pulsación
+  sostenida, con el elemento resaltado en el mapa.
 - ✅ Escala de trabajo: lectura 1:N, salto a una escala de mapeo y candado que la
   mantiene al desplazarse, con lista editable y píxel de pantalla configurable.
 - ✅ Quitar un área interior de un polígono, dejando un anillo interior real que

@@ -42,6 +42,7 @@ const SHELL = [
   './icons/icon-512.png',
 
   './src/app.js',
+  './src/attrs.js',
   './src/basemaps.js',
   './src/dem.js',
   './src/drawController.js',
