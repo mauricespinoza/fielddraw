@@ -11,3 +11,8 @@ node_modules/
 *.mbtiles
 *.pmtiles
 *.fdproj.json
+
+# Caché de Python y el ZIP que arma `qgis-plugin/tools/package.py`.
+__pycache__/
+*.py[co]
+qgis-plugin/dist/

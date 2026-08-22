@@ -56,6 +56,19 @@ operaciones de corte y unión, y la validación de todas las capas generadas
 contra el style-spec de MapLibre —incluidos los símbolos de rumbo y manteo y
 sus dieciséis imágenes.
 
+El complemento de QGIS lleva su propia batería, en Python:
+
+```bash
+python3 qgis-plugin/tests/run.py
+node qgis-plugin/tests/test_pmtiles_js.mjs
+```
+
+Más de 4.500 comprobaciones sobre la grilla Web Mercator, el volteo TMS, el
+formato binario de PMTiles y el esquema del MBTiles —consultado con el mismo
+SQL que usa `src/tiles.js`—. La de Node abre un PMTiles recién escrito con
+**`vendor/pmtiles.js`, la misma librería que carga la app**, que es la única
+forma de saber que el archivo se abrirá en terreno.
+
 ## Publicar y usar sin señal
 
 La app es estática: son archivos, sin backend ni build. Se puede servir desde
@@ -658,6 +671,23 @@ Un `.mbtiles` vectorial no trae con qué simbolizarse, así que se pinta con un
 estilo genérico tipo inspector: una capa por geometría y color estable derivado
 del nombre de cada capa fuente.
 
+### Fabricar los mapas: complemento de QGIS
+
+En `qgis-plugin/` vive **FieldDraw Tiles**, un complemento que convierte
+cualquier capa ráster de QGIS —una ortofoto, una carta escaneada, un DEM
+simbolizado— en los dos formatos que entran por **Importar**. Sale como
+algoritmo de Processing, así que también corre en lote y dentro de un modelo.
+
+No necesita `gdal2tiles`, ni `tippecanoe`, ni la utilidad `pmtiles`: escribe
+los dos contenedores con las librerías que QGIS ya trae. Corta teselas de
+**256 px en EPSG:3857** —que es lo que la app pide— y elige el formato de
+imagen tesela a tesela para que el archivo que se lleva a terreno pese lo
+menos posible: JPEG en el interior opaco, WebP en los bordes con
+transparencia, y las teselas totalmente vacías ni se guardan. Sobre una
+ortofoto de prueba eso son 0,63 MB donde todo en PNG serían 9,5.
+
+Instrucciones, opciones y medidas en [`qgis-plugin/README.md`](qgis-plugin/README.md).
+
 ## Edición de vértices y edición topológica
 
 La herramienta **Nodos** muestra una manija por vértice y una más pequeña en
@@ -1205,6 +1235,8 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Importación de GeoPackage respetando la simbología QGIS.
 - ✅ Snapping a vértice y segmento, y herramienta Trace.
 - ✅ MBTiles y PMTiles, raster y vectorial.
+- ✅ Complemento de QGIS que convierte rásteres en los MBTiles y PMTiles que
+  la app importa, eligiendo el formato de cada tesela para que pesen poco.
 - ✅ Selección por toque y por lazo rectangular; corte y unión con JSTS.
 - ✅ Edición de vértices con edición topológica.
 - ✅ Corte con una línea dibujada o con un elemento existente, sobre la selección.
