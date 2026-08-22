@@ -681,6 +681,11 @@
         <header>
           <h2>Topographic profile</h2>
           <span class="pf-source" id="profile-source-label"></span>
+          <button
+            class="pill"
+            id="btn-section"
+            title="Project the structural data onto this profile with apparent dip"
+          >Structural section</button>
           <button class="pill" id="btn-profile-csv">CSV</button>
           <button class="icon-btn" id="btn-close-profile" aria-label="Close profile">✕</button>
         </header>
@@ -689,6 +694,50 @@
         </div>
         <div class="pf-stats" id="profile-stats"></div>
         <p class="hint footnote" id="profile-note"></p>
+      </div>
+
+      <!-- Perfil estructural. Ocupa la pantalla entera y no una hoja al pie
+           como el topográfico: aquí se interpreta, y para eso hace falta ver el
+           corte completo y no una franja. Se cierra con su botón o con Esc. -->
+      <div class="section-view hidden" id="section-view">
+        <header class="sv-head">
+          <h2>Structural section</h2>
+          <span class="sv-meta" id="section-meta"></span>
+          <span class="sv-spacer"></span>
+          <label class="sv-field">
+            <span>V.E.</span>
+            <input type="number" id="section-exag" min="0.2" max="20" step="0.1" value="1" />
+          </label>
+          <label class="sv-check">
+            <input type="checkbox" id="section-show-intersections" checked />
+            Intersections
+          </label>
+          <label class="sv-check">
+            <input type="checkbox" id="section-show-labels" checked />
+            Labels
+          </label>
+          <button class="pill" id="btn-section-png">PNG</button>
+          <button class="pill" id="btn-section-svg">SVG</button>
+          <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
+          <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
+          <button class="icon-btn" id="btn-close-section" aria-label="Close section">✕</button>
+        </header>
+        <div class="sv-body">
+          <div class="sv-chart-wrap">
+            <svg id="section-chart" class="sv-chart" aria-label="Structural cross-section"></svg>
+          </div>
+          <aside class="sv-side">
+            <h3>Projected dips <span class="sv-count" id="section-dip-count"></span></h3>
+            <div class="sv-list" id="section-dip-list"></div>
+            <h3>
+              Crossings <span class="sv-count" id="section-x-count"></span>
+              <button class="sv-mini" id="section-x-all">all</button>
+              <button class="sv-mini" id="section-x-none">none</button>
+            </h3>
+            <div class="sv-list" id="section-x-list"></div>
+          </aside>
+        </div>
+        <p class="hint footnote" id="section-note"></p>
       </div>
 
       <!-- La escala numérica va pegada a la izquierda, justo debajo de la barra

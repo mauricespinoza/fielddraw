@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness; do node test/$f.test.mjs; done
+for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
 ```
 
-1010 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1088 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -50,7 +50,9 @@ los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
 atributos: qué campos se enseñan de una capa importada y de dónde sale su
 título; el corte de líneas, incluido el cruce oblicuo que estaba roto; la
 traducción de una carta ajena a elementos del dibujo; y el espesor
-estratigráfico con su incertidumbre.
+estratigráfico con su incertidumbre; el manteo aparente contra los casos donde
+la respuesta se sabe de antemano, las intersecciones del corte, y las cabeceras
+del shapefile releídas byte a byte.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -154,6 +156,7 @@ carga.
 | Quitar un área interior | **Hole**: dibujar el contorno de lo que sobra dentro del polígono |
 | Editar una capa importada | botón **✎** de esa capa, en el panel de Capas |
 | Espesor estratigráfico | seleccionar un dip, **Measure thickness from here**, y tocar la otra superficie |
+| Perfil estructural | trazar un perfil y pulsar **Structural section** (con dips elegidos con el lazo, si se quieren solo esos) |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
 | Relieve 3D | botón **3D**; con él puesto no se digitaliza |
@@ -447,6 +450,93 @@ haría parecer relieve.
 
 Un tramo sin dato **corta** la curva en vez de saltarlo con una recta: unir los
 dos extremos de un hueco dibujaría una ladera que nadie midió.
+
+## Perfil estructural
+
+El perfil topográfico dice por dónde va el terreno. El **estructural** añade lo
+único que permite interpretarlo: con qué inclinación entra cada capa en el plano
+del corte y dónde lo cruza cada contacto o falla. Se abre desde la hoja del
+perfil, con el botón **Structural section**, y usa **esa misma traza**: la
+topografía del corte y la del perfil tienen que ser la misma línea, y volver a
+muestrear el DEM sería pedirle a la red lo que ya se tiene.
+
+### Manteo aparente, que es de lo que va todo
+
+Sobre un corte oblicuo, la inclinación que se ve **no** es el manteo medido:
+
+    tan(δ_ap) = tan(δ) · cos(az_sección − dirección_de_manteo)
+
+Es siempre menor que el real y se hace **cero** cuando el corte va a lo largo del
+rumbo. Dibujar el manteo real sobre un corte oblicuo es el error clásico y
+produce secciones que no cierran. Se usa el coseno **con signo** metido directo
+en `atan`, de modo que salen a la vez la magnitud y hacia qué lado cae la capa;
+es la misma fórmula, convención y signo que `core/apparent_dip.py` del plugin
+**Structural Modeller**, para que una sección hecha aquí y otra hecha allá sobre
+los mismos datos den lo mismo.
+
+Una traza quebrada tiene **un azimut por tramo**, y el aparente de cada medida se
+calcula con el del tramo donde cae. Usar el azimut medio daría un aparente
+equivocado justo en las esquinas, que es donde el corte se quiebra porque cambia
+la estructura.
+
+### Qué se proyecta
+
+- **Con selección** (el lazo de **Elegir**), las medidas seleccionadas y sin
+  límite de distancia: quien eligió ya decidió qué le interesa.
+- **Sin selección**, todas las que caigan a menos de 2 km del corte. Proyectar un
+  manteo tomado a veinte kilómetros no es un dato, es un adorno que además
+  desplaza la interpretación.
+
+Cada medida lleva al lado **cuánto se estiró** su proyección, que es el dato
+honesto: una medida a dos kilómetros del corte, dibujada sobre él, es una
+extrapolación y quien mire la figura tiene derecho a saberlo. Las que quedan muy
+achatadas —el corte casi paralelo a su rumbo— se dibujan **pálidas**: su aparente
+ya no dice nada de la estructura, y verlo apagado evita interpretar una capa
+horizontal donde lo que hay es una capa vista de canto.
+
+Los ticks se dibujan con el ángulo que se **ve**, no con el aparente puro: la
+exageración vertical deforma la geometría del corte y un tick al ángulo verdadero
+quedaría descolgado de las capas dibujadas a su lado. El rótulo sí lleva el
+aparente real.
+
+### Intersecciones
+
+Dónde corta el perfil a cada línea del dibujo, marcadas por omisión y
+apagables una a una o en bloque. Un contacto plegado cruza el perfil en cada
+charnela, y esas repeticiones son el dato, no un problema. El borde de un
+polígono también cuenta: es donde está el contacto.
+
+### Salidas
+
+| Formato | Para qué |
+|---|---|
+| **SVG** | la figura, editable en Illustrator o Inkscape |
+| **PNG** | rasterizado del mismo SVG al doble del tamaño en pantalla |
+| **SHP 3D** | un ZIP con dos shapefiles para **Structural Modeller** |
+| **Sketcher** | proyecto `.sketcher.json` para **StructuralSketcher** |
+
+El **shapefile 3D** son dos capas dentro del mismo ZIP, porque el importador de
+secciones del plugin solo lee líneas y los manteos son puntos:
+
+- `…_lines`: `PolylineZ` con la topografía y una **semilla vertical** de 250 m
+  por cada intersección marcada. Una semilla dice dónde corta la falla, no cómo
+  sigue en profundidad; un tramo largo estaría afirmando una geometría que nadie
+  midió. El campo `Type` lleva el tipo de FieldDraw tal cual —`thrust-fault` ya
+  contiene `fault`— que es justo de lo que el plugin deduce la clase.
+- `…_dips`: `PointZ` con `Strike`, `Dip`, `AppDip`, el azimut de la sección y el
+  `Offset` de la proyección.
+
+El **proyecto del Sketcher** es su documento `{app, version, section}` con las
+líneas ya en coordenadas de sección `[s, z]` y los manteos como `{s, z, dip}`,
+donde `dip` es el aparente convertido a su convención de edición: magnitud de 0 a
+180 en sentido horario desde la horizontal, con el signo negativo marcando capa
+invertida. Sin esa conversión, una capa que mantea al oeste llegaría dibujada al
+este. La etiqueta de cada manteo conserva el rumbo y manteo **reales**.
+
+Los dos formatos se comprobaron contra las herramientas de verdad y no contra la
+especificación: los shapefiles los lee GDAL como `3D Line String` y `3D Point`
+con sus Z y sus atributos, y el documento del Sketcher lo acepta su propio
+`setDocument()` y lo dibuja.
 
 ## Vista 3D
 
@@ -1393,6 +1483,9 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.
+- ✅ Perfil estructural: manteos proyectados con manteo aparente, intersecciones
+  con el dibujo, y salida a SVG, PNG, shapefile 3D para Structural Modeller y
+  proyecto para StructuralSketcher.
 - ✅ Adoptar una capa importada al dibujo, con las unidades creadas desde sus
   formaciones y todas las herramientas de edición disponibles sobre ella.
 - ✅ Espesor estratigráfico verdadero entre una medida y un punto del mapa, con

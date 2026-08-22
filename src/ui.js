@@ -3,6 +3,12 @@ import { STANDARD_PIXEL_MM, formatScale, niceScale, parseScale } from './scale.j
 import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
 import { COMPASS_DIP_SIGMA_DEG, COMPASS_STRIKE_SIGMA_DEG, measureThickness } from './thickness.js';
 import {
+  DEFAULT_MAX_OFFSET_M,
+  initSectionPanel,
+  renderSectionPanel,
+  runSection,
+} from './sectionPanel.js';
+import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
   FLIPPABLE_ORNAMENT_TYPES,
@@ -1100,6 +1106,39 @@ export function openImportedAttrs(hit, screen) {
   });
 }
 
+/**
+ * Abre el perfil estructural desde el topográfico que ya está calculado.
+ *
+ * La traza es la MISMA línea, no una nueva: la topografía del corte y la del
+ * perfil tienen que ser la misma, y volver a muestrear el DEM para la misma
+ * sección sería pedirle a la red lo que ya se tiene.
+ */
+function openSectionFromProfile() {
+  const st = store.getState();
+  const perfil = st.profile;
+  if (!perfil || !perfil.coords || perfil.coords.length < 2) {
+    showBanner('Draw a profile line first: the section is built on it.');
+    return;
+  }
+
+  /*
+   * Con selección se proyecta lo seleccionado y sin límite de distancia: quien
+   * eligió con el lazo ya decidió qué le interesa. Sin selección se toman todas
+   * las medidas dentro de dos kilómetros del corte, porque proyectar un manteo
+   * tomado a veinte no es un dato.
+   */
+  const seleccionadas = store
+    .selectedFeatures()
+    .filter((f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement')
+    .map((f) => f.properties.id);
+
+  store.requestSection({
+    coords: perfil.coords,
+    measurementIds: seleccionadas.length ? seleccionadas : null,
+    maxOffset: seleccionadas.length ? null : DEFAULT_MAX_OFFSET_M,
+  });
+}
+
 /* ---------- escala de trabajo ---------- */
 
 /**
@@ -1510,6 +1549,12 @@ function cycleCertainty() {
  * había un panel abierto.
  */
 function handleEscape() {
+  // El perfil estructural tapa la pantalla entera: es lo primero que hay que
+  // poder cerrar, antes que cualquier panel que quedara debajo.
+  if (store.getState().section) {
+    store.clearSection();
+    return;
+  }
   if (anyOverlayOpen()) {
     closeOverlays();
     return;
@@ -2750,6 +2795,7 @@ export function initUI() {
   });
 
   $('btn-close-profile').addEventListener('click', () => store.clearProfile());
+  $('btn-section').addEventListener('click', openSectionFromProfile);
   $('btn-profile-csv').addEventListener('click', downloadProfileCSV);
   wireProfilePointer();
   wireStructureControls();
@@ -2765,6 +2811,9 @@ export function initUI() {
     closeAttrs();
     if (mapBridge) mapBridge.clearForeignHighlight();
   });
+  // El perfil estructural comparte el muestreador del DEM con el topográfico:
+  // dos muestreadores distintos pedirían dos veces las mismas teselas.
+  initSectionPanel({ message: showBanner, busy: setBusy, sampler: samplerFor });
   wireScale();
   wireShortcuts();
   wireClickOutside();
@@ -2852,6 +2901,11 @@ export function initUI() {
       const puntos = store.getState().pendingPlane;
       if (puntos) runPlane(puntos);
     }
+    if (store.changed('pendingSection')) {
+      const pedido = store.getState().pendingSection;
+      if (pedido) runSection(pedido);
+    }
+    if (store.changed('section') || store.changed('sectionOpts')) renderSectionPanel();
     if (store.changed('pendingThickness')) {
       const par = store.getState().pendingThickness;
       if (par) runThickness(par);

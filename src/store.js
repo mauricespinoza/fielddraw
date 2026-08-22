@@ -132,6 +132,16 @@ let state = {
   pendingThickness: null,
   /** Último espesor calculado, para poder mostrarlo y dibujarlo. */
   thickness: null,
+
+  /**
+   * Perfil estructural: la traza pedida, el corte ya construido y sus opciones
+   * de dibujo. Vive en el store y no en la vista porque las intersecciones se
+   * encienden y se apagan una a una, y eso es estado que hay que poder
+   * consultar desde la exportación.
+   */
+  pendingSection: null,
+  section: null,
+  sectionOpts: { exaggeration: 1, showIntersections: true, showLabels: true },
   /** Traza recién terminada de la que hay que calcular el perfil. */
   pendingProfile: null,
   /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
@@ -778,6 +788,56 @@ export function startThickness(id) {
     },
   });
   return true;
+}
+
+/* ---------- perfil estructural ---------- */
+
+/**
+ * Pide construir el corte a partir de una traza.
+ *
+ * `measurementIds` acota qué medidas se proyectan. Con selección se respeta tal
+ * cual —el usuario ya decidió cuáles le interesan y hasta dónde estirar la
+ * proyección—; sin selección se toman todas las que caigan dentro de
+ * `maxOffset`, porque proyectar sobre el corte un manteo medido a veinte
+ * kilómetros no es un dato, es un adorno.
+ */
+export function requestSection({ coords, measurementIds = null, maxOffset = null }) {
+  if (!Array.isArray(coords) || coords.length < 2) return false;
+  set({ pendingSection: { coords, measurementIds, maxOffset } });
+  return true;
+}
+
+export function clearPendingSection() {
+  set({ pendingSection: null });
+}
+
+export function setSection(section) {
+  set({ section, pendingSection: null });
+}
+
+export function clearSection() {
+  set({ section: null, pendingSection: null });
+}
+
+/** Enciende o apaga una intersección del corte. */
+export function toggleIntersection(index) {
+  const sec = state.section;
+  if (!sec || !sec.intersections[index]) return;
+  const intersections = sec.intersections.map((x, i) =>
+    i === index ? { ...x, enabled: !x.enabled } : x,
+  );
+  set({ section: { ...sec, intersections } });
+}
+
+/** Enciende o apaga todas de una vez; con veinte, ir una a una es inviable. */
+export function setAllIntersections(enabled) {
+  const sec = state.section;
+  if (!sec) return;
+  set({ section: { ...sec, intersections: sec.intersections.map((x) => ({ ...x, enabled })) } });
+}
+
+export function setSectionOpts(patch) {
+  set({ sectionOpts: { ...state.sectionOpts, ...patch } });
 }
 
 export function clearPendingThickness() {

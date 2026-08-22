@@ -1567,3 +1567,187 @@ input[type='radio'] {
     background: rgba(255, 255, 255, 0.08);
   }
 }
+
+/* ---------------------------------------------- perfil estructural ----- */
+
+/*
+ * Ocupa la pantalla entera y no una hoja al pie como el perfil topográfico.
+ * Son dos cosas distintas: el topográfico se consulta mientras se navega el
+ * mapa —de ahí la hoja, que deja el mapa a la vista—, mientras que el
+ * estructural se INTERPRETA, y para eso hace falta el corte completo y una
+ * lista al lado con lo que se ha proyectado.
+ */
+.section-view {
+  position: absolute;
+  inset: 0;
+  z-index: 34;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-solid);
+  padding: calc(var(--safe-t) + 10px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 10px)
+    calc(var(--safe-l) + 12px);
+  gap: 8px;
+}
+
+.sv-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sv-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.sv-meta {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sv-spacer {
+  flex: 1;
+}
+
+.sv-field,
+.sv-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sv-field input {
+  width: 62px;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.sv-head .pill {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.sv-body {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  min-height: 0;
+}
+
+.sv-chart-wrap {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0d1117;
+}
+
+.sv-chart {
+  display: block;
+}
+
+.sv-side {
+  width: 268px;
+  flex: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sv-side h3 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sv-count {
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sv-mini {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sv-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sv-row .sv-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.sv-row .sv-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-row .sv-num {
+  color: var(--muted);
+  flex: none;
+}
+
+/* Un manteo muy achatado por la proyección no dice nada de la estructura, y
+   la fila lo enseña igual que el tick del dibujo: apagándose. */
+.sv-row.faint {
+  opacity: 0.55;
+}
+
+.sv-row.off {
+  opacity: 0.4;
+}
+
+@media (max-width: 860px) {
+  .sv-body {
+    flex-direction: column;
+  }
+  .sv-side {
+    width: auto;
+    max-height: 34%;
+  }
+}
