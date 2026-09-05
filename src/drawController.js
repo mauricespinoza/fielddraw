@@ -227,10 +227,19 @@ export class DrawController {
   }
 
   onContextMenu(e) {
-    if (!this.cb.isDrawing()) return;
-    e.preventDefault();
-    // Clic derecho cierra el elemento, igual que en QGIS.
-    this.cb.onFinish();
+    if (this.cb.isDrawing()) {
+      e.preventDefault();
+      // Clic derecho cierra el elemento, igual que en QGIS.
+      this.cb.onFinish();
+      return;
+    }
+    // Navegando, el clic derecho es el equivalente en PC de la pulsación
+    // sostenida: abre el menú de propiedades de lo que haya debajo.
+    if (this.cb.onLongPress) {
+      e.preventDefault();
+      this.rect = this.mapContainer.getBoundingClientRect();
+      this.cb.onLongPress(this.toLocal(e));
+    }
   }
 
   swallow(e) {

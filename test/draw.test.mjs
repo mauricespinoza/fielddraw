@@ -380,6 +380,16 @@ console.log('== clic derecho => cierra ==');
   ok('cierra el elemento', h.kinds().includes('finish'));
 }
 
+console.log('== clic derecho navegando (PC) => abre el menú de propiedades ==');
+{
+  const h = harness({ drawing: false });
+  h.ev('contextmenu', { clientX: 40, clientY: 55 });
+  ok('no cierra nada, no había nada dibujándose', !h.kinds().includes('finish'));
+  ok('abre el menú de propiedades', h.kinds().includes('longPress'));
+  const call = h.log.find((l) => l[0] === 'longPress');
+  ok('con las coordenadas locales del clic', call[1][0] === 40 && call[1][1] === 55);
+}
+
 console.log('== hover: previsualización con lápiz y con ratón ==');
 {
   // El Pencil flota sobre la pantalla: `buttons: 0` es el lápiz sin apoyar.

@@ -40,7 +40,7 @@ export const SHORTCUTS = [
   /* ---------------- modificadores ---------------- */
   { id: 'toggle-snap', keys: ['s'], label: 'Snapping on/off', group: 'Drawing aids' },
   { id: 'toggle-trace', keys: ['t'], label: 'Trace on/off', group: 'Drawing aids' },
-  { id: 'toggle-terrain', keys: ['3'], label: '3D terrain (disables drawing)', group: 'Drawing aids' },
+  { id: 'toggle-terrain', keys: ['3'], label: '3D terrain (only Line/Polygon can draw, at lower quality)', group: 'Drawing aids' },
   { id: 'cycle-certainty', keys: ['c'], label: 'Cycle certainty: observed → inferred → concealed', group: 'Drawing aids' },
   { id: 'locate', keys: ['g'], label: 'Centre on my GPS position', group: 'Drawing aids' },
 

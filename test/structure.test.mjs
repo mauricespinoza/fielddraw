@@ -315,15 +315,25 @@ ok('cerrar publica la traza', store.getState().pendingProfile.coords.length === 
 ok('la traza NO se guarda como elemento del mapa', store.getState().features.length === 0);
 store.clearProfile();
 
-// El relieve 3D es modo de visualización: con él puesto no se digitaliza.
+// El relieve 3D es modo de visualización: con él puesto solo se sigue
+// digitalizando Línea y Polígono (con menos precisión); el resto sale a
+// Navegar y no se puede volver a elegir mientras el relieve siga puesto.
 store.setTool('line');
 store.setTerrain3d(true);
-ok('activar el relieve saca de la herramienta de dibujo', store.getState().tool === 'navigate');
-ok('y con él puesto no se puede volver a dibujar', store.setTool('line') === false);
-ok('la herramienta no cambió', store.getState().tool === 'navigate');
+ok('línea sigue activa con el relieve puesto', store.getState().tool === 'line');
+ok('se puede seguir eligiendo línea', store.setTool('line') !== false);
+ok('y también polígono', store.setTool('polygon') !== false);
+ok('la herramienta pasó a polígono', store.getState().tool === 'polygon');
+ok('un hueco no se puede activar con el relieve puesto', store.setTool('hole') === false);
+ok('la herramienta no cambió', store.getState().tool === 'polygon');
+store.setTerrain3d(false);
+
+store.setTool('hole');
+store.setTerrain3d(true);
+ok('activar el relieve con un hueco activo sí saca a navegar', store.getState().tool === 'navigate');
 ok('navegar sí se permite', store.setTool('navigate') !== false);
 store.setTerrain3d(false);
-ok('al apagarlo se vuelve a poder dibujar', store.setTool('line') === true);
+ok('al apagarlo se vuelve a poder dibujar', store.setTool('hole') === true);
 
 store.setTerrainExaggeration(99);
 ok('la exageración se acota', store.getState().terrainExaggeration === 3);

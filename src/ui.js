@@ -357,6 +357,22 @@ function buildPalette() {
     edit.title = 'Open the units module';
     edit.addEventListener('click', () => $('units-panel').classList.add('open'));
     group.appendChild(edit);
+
+    const crear = document.createElement('button');
+    crear.className = 'chip ghost';
+    crear.textContent = '+ Create unit';
+    crear.title = 'Add a new geological unit';
+    crear.addEventListener('click', () => {
+      $('units-panel').classList.add('open');
+      // El campo de nombre puede quedar tapado si ya hay muchas unidades en
+      // la lista: se enfoca y se lleva a la vista para poder escribir de una.
+      requestAnimationFrame(() => {
+        const input = $('new-unit-name');
+        input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        input.focus();
+      });
+    });
+    group.appendChild(crear);
     scroll.appendChild(group);
   }
   el.appendChild(scroll);
@@ -1524,7 +1540,7 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(naviga
 function pickTool(tool) {
   if (store.setTool(tool) === false) {
     showBanner(
-      'Drawing is disabled while 3D terrain is on: on tilted ground the point you click is not the point on the map. Press 3 to go back to plan view.',
+      'Not available while 3D terrain is on: on tilted ground the point you click is not the point on the map. Line and Polygon still work here. Press 3 to go back to plan view.',
     );
   }
 }
@@ -2368,10 +2384,12 @@ async function doImportGeoPackage(file) {
 
 /* ---------- barra de herramientas y estado ---------- */
 
-/** Botones que crean o mueven geometría, y que el relieve 3D deshabilita. */
+/**
+ * Botones que crean o mueven geometría, y que el relieve 3D deshabilita.
+ * Línea y Polígono quedan fuera: esos dos sí se ofrecen con el relieve
+ * puesto, avisando de la pérdida de precisión en vez de bloquearlos.
+ */
 const GEOMETRY_TOOL_BUTTONS = [
-  't-line',
-  't-poly',
   't-hole',
   't-measure',
   't-vertices',
@@ -2382,6 +2400,9 @@ const GEOMETRY_TOOL_BUTTONS = [
 
 const TERRAIN_BLOCKED_TITLE =
   'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
+
+const TERRAIN_LOW_PRECISION_WARNING =
+  '3D terrain is on: the point you tap may not match the actual point on the ground, so quality here is not the best.';
 
 /**
  * Ayuda original de cada botón, capturada del HTML la primera vez. Hace falta
@@ -2456,9 +2477,9 @@ function renderStatus() {
   const s = store.getState();
   const n = s.draft ? s.draft.coords.length : 0;
   $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
-  if (s.terrain3d) {
+  if (s.terrain3d && s.tool === 'navigate') {
     $('status-text').textContent =
-      '3D terrain on — viewing only: drag with two fingers to tilt, tap 3D again to draw';
+      '3D terrain on — drag with two fingers to tilt, or pick Line/Polygon to draw here too (lower quality)';
   } else if (s.tool === 'navigate') {
     $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
   } else if (s.tool === 'profile') {
@@ -2542,10 +2563,13 @@ function renderStatus() {
         ? `${n} vertices · Trace on: tap another feature and the stroke will follow its edge`
         : 'Trace on · tap an existing feature to start following its edge';
   } else if (n > 0) {
-    $('status-text').textContent = `${n} vertex${n === 1 ? '' : 'es'} · tap to add, press and hold for freehand, double tap to close`;
+    $('status-text').textContent = s.terrain3d
+      ? `${n} vertex${n === 1 ? '' : 'es'} · 3D terrain on, quality here is not the best · tap to add, press and hold for freehand, double tap to close`
+      : `${n} vertex${n === 1 ? '' : 'es'} · tap to add, press and hold for freehand, double tap to close`;
   } else {
-    $('status-text').textContent =
-      'Tap for the first vertex · press and hold for freehand';
+    $('status-text').textContent = s.terrain3d
+      ? 'Tap for the first vertex · 3D terrain on, quality here is not the best · press and hold for freehand'
+      : 'Tap for the first vertex · press and hold for freehand';
   }
 }
 
@@ -2927,6 +2951,16 @@ export function initUI() {
       renderToolbar();
       renderStatus();
       buildPalette();
+    }
+    // Línea y Polígono siguen disponibles con el relieve puesto, pero con
+    // menos precisión: se avisa cada vez que se entra a dibujar así, sea por
+    // la barra, el teclado o al encender el 3D estando ya en una de las dos.
+    if (
+      (store.changed('tool') || store.changed('terrain3d')) &&
+      store.getState().terrain3d &&
+      store.DRAWING_TOOLS_3D_OK.includes(store.getState().tool)
+    ) {
+      showBanner(TERRAIN_LOW_PRECISION_WARNING, 'warn');
     }
   });
 }

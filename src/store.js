@@ -336,6 +336,16 @@ export const DRAWING_TOOLS = [
   'measure',
 ];
 
+/**
+ * De las anteriores, las dos únicas que sí se ofrecen con el relieve puesto:
+ * trazar un contacto o levantar un polígono mirando el terreno inclinado
+ * sirve para ubicarse, aunque el vértice caiga corrido. Las demás dependen de
+ * tocar con exactitud una geometría o un punto ya existente —nodos, cortar,
+ * topología, perfil, rumbo/manteo— y ahí ese margen de error sí arruina el
+ * resultado. La interfaz avisa de la pérdida de precisión al activarlas.
+ */
+export const DRAWING_TOOLS_3D_OK = ['line', 'polygon'];
+
 export function getState() {
   return state;
 }
@@ -415,9 +425,12 @@ export function setTool(tool) {
   // espesor desde una medida que ya nadie tenía en mente.
   if (tool !== 'thickness' && state.thicknessFrom) set({ thicknessFrom: null });
 
-  // Con el relieve puesto no se digitaliza: se avisa y no se cambia nada. El
-  // aviso lo da la interfaz, que es quien puede explicarlo.
-  if (state.terrain3d && DRAWING_TOOLS.includes(tool)) return false;
+  // Con el relieve puesto solo se digitaliza Línea y Polígono, y con menos
+  // precisión: se avisa y no se cambia nada para el resto. El aviso lo da la
+  // interfaz, que es quien puede explicarlo.
+  if (state.terrain3d && DRAWING_TOOLS.includes(tool) && !DRAWING_TOOLS_3D_OK.includes(tool)) {
+    return false;
+  }
 
   // Con una sola línea seleccionada, pasar a Línea la continúa en vez de
   // empezar una nueva. Se resuelve al poner el primer vértice, que es cuando
@@ -1058,7 +1071,7 @@ export function setScalePixelMm(mm) {
 }
 
 export function setTerrain3d(terrain3d) {
-  if (terrain3d && DRAWING_TOOLS.includes(state.tool)) {
+  if (terrain3d && DRAWING_TOOLS.includes(state.tool) && !DRAWING_TOOLS_3D_OK.includes(state.tool)) {
     if (state.draft) cancelDraft();
     set({ tool: 'navigate', terrain3d, selection: [] });
     return;
