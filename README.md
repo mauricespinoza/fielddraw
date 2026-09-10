@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
 ```
 
-1088 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1144 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -42,8 +42,9 @@ aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot,
 decodificación de teselas terrarium, muestreo y estadística de perfiles,
 parseo de ASCII grid e interpolación bilineal, ajuste de plano por mínimos
 cuadrados, propagación de la incertidumbre del manteo, los avisos de calidad,
-la tabla de atajos de teclado y el hover del ratón, conversión escala↔zoom en
-ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
+la tabla de atajos de teclado y el hover del ratón, los gestos de cámara del
+ratón y la caché del trazo libre —que es lo que evita convertir el mismo punto
+una vez por frame—, conversión escala↔zoom en ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
 —incluido el hueco que se convierte en anillo interior— y las regresiones de
 los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
 `pointerup` se pierde y la tesela del DEM que no contesta nunca; y el visor de
@@ -306,6 +307,9 @@ grosería.
 | `3` | Relieve 3D |
 | `G` | Centrar en mi posición |
 | `M` · `Y` | Unir · Topología |
+| `↑ ↓ ← →` | Mover la vista, sin soltar la herramienta |
+| `Shift` + `↑ ↓ ← →` | Girar y bascular (también `Shift` + arrastrar con el ratón) |
+| `+` · `−` · `0` | Acercar · alejar · volver al norte y a la planta |
 | `↵` · `⌫` | Cerrar el elemento · deshacer el último vértice |
 | `Esc` | En cascada: cierra panel → descarta el elemento → vacía la selección → vuelve a Navegar |
 | `Del` | Borrar lo seleccionado |
@@ -545,12 +549,63 @@ dibujo se drapea solo sobre el relieve. La exageración vertical se ajusta en el
 panel de Capas, donde también está el **sombreado** (hillshade), apagado por
 omisión.
 
-Es un modo de **visualización**, y por eso con él puesto las herramientas de
-dibujo quedan deshabilitadas. No es una limitación técnica: sobre terreno
-inclinado, el punto que se toca y el punto del terreno dejan de coincidir como
-en planta, así que digitalizar en 3D produce geometría desplazada sin que se
-note al momento. Activarlo devuelve a **Navegar** y descarta lo que hubiera a
-medias; apagarlo devuelve el dibujo.
+### Digitalizar sobre el relieve
+
+Con el relieve puesto se puede trazar **Línea** y **Polígono**, avisando de que
+la calidad no es la misma. El resto de herramientas —Nodos, Cortar, Reshape,
+Hole, perfil, rumbo y manteo— sigue deshabilitado, y no por prudencia genérica:
+todas ellas dependen de tocar con exactitud un punto o una geometría que ya
+existe, y sobre terreno inclinado el punto que se toca y el punto del terreno no
+coinciden como en planta. Un contacto trazado a ojo sobre la ladera tolera ese
+error —y se corrige después en planta con Nodos—; un vértice que tiene que caer
+sobre otro, no. Encender el 3D con una de las bloqueadas activa devuelve a
+**Navegar** y descarta lo que hubiera a medias.
+
+Dibujar en 3D **cuesta**, y el motivo es concreto. `map.unproject` en planta es
+aritmética; con terreno, MapLibre averigua qué punto del relieve hay bajo el
+píxel leyendo el framebuffer de coordenadas con `gl.readPixels`, que obliga a la
+GPU a terminar todo lo pendiente y devolver el resultado antes de seguir: cada
+punto cuesta milisegundos. El trazo libre convertía el trazo ENTERO en cada
+frame —N lecturas por frame, con N creciendo con el propio trazo—, así que a
+doscientos puntos pedía más de diez mil lecturas por segundo y el navegador daba
+la página por colgada. No era el relieve: era el bucle.
+
+Ahora cada punto se convierte una sola vez (`src/stroke.js`), con el relieve
+puesto se descartan los que no separan ni cuatro píxeles —el trazo se simplifica
+igual al cerrarlo— y el suavizado se aplica en lng/lat en vez de generar cuatro
+veces más puntos en pantalla y tener que convertirlos todos. El coste pasa de
+crecer con el cuadrado del trazo a ser constante por punto.
+
+### Mover la vista sin soltar la herramienta
+
+En tablet esto ya estaba resuelto por el reparto de siempre: el Pencil dibuja y
+los dedos desplazan, acercan y bascular. En un PC hay un solo puntero —el
+arrastre ES el trazo, y el mapa ni siquiera ve el evento porque lo tragamos para
+que no haga pan a la vez—, así que con el relieve puesto la vista se quedaba
+congelada justo donde más falta hace girar para ver la ladera de frente. Con una
+herramienta activa:
+
+| Gesto | Acción |
+|---|---|
+| `Shift` + arrastrar | Girar y bascular (los mismos grados por píxel que usa MapLibre) |
+| Botón central + arrastrar | Desplazar, como en QGIS |
+| Rueda | Acercar y alejar |
+| `↑ ↓ ← →` | Desplazar |
+| `Shift` + `↑ ↓ ← →` | Girar y bascular |
+| `+` `−` | Acercar y alejar |
+| `0` | Volver al norte y a la planta |
+
+En **Navegar** no cambia nada: ahí el ratón ya manda sobre el mapa entero
+—arrastrar desplaza, el botón derecho gira y bascula— y `Shift`+clic sigue
+añadiendo a la selección, que es justo lo que se habría roto si el controlador
+se quedara el evento también ahí. Lo que sí se corrigió es que un giro con el
+botón derecho terminaba abriendo el menú de propiedades: al soltar llega un
+`contextmenu` igual, y ahora se distingue el arrastre del clic.
+
+El teclado de MapLibre se apaga (`map.keyboard.disable()`): sus teclas son casi
+las mismas, así que cada flecha desplazaba DOS veces en cuanto el foco estaba en
+el lienzo — y solo entonces. La tabla de `src/shortcuts.js` vuelve a ser la
+única fuente de verdad.
 
 Al encenderlo se **comprueba que quedó puesto**. `setTerrain` no siempre lanza
 cuando no puede: en un contexto WebGL sin las extensiones que necesita vuelve sin

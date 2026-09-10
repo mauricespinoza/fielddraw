@@ -55,6 +55,20 @@ export const SHORTCUTS = [
   { id: 'merge', keys: ['m'], label: 'Merge the selection', group: 'Editing' },
   { id: 'topology', keys: ['y'], label: 'Topology check', group: 'Editing' },
 
+  /* ---------------- vista ---------------- */
+  /*
+   * Mover la vista SIN soltar la herramienta. En tablet esto no hace falta —el
+   * Pencil dibuja y los dedos navegan a la vez—, pero en un PC el arrastre es
+   * el trazo y la vista se queda quieta; con el relieve 3D puesto, además, hay
+   * que poder girar y bascular para ver la ladera desde otro ángulo mientras
+   * se digitaliza sobre ella.
+   */
+  { id: 'camera-pan', keys: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], label: 'Pan the view (middle-button drag does the same)', group: 'View' },
+  { id: 'camera-orbit', keys: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], label: 'Rotate and tilt — also Shift + drag with the mouse', group: 'View' },
+  { id: 'camera-zoom-in', keys: ['+', '='], label: 'Zoom in', group: 'View' },
+  { id: 'camera-zoom-out', keys: ['-'], label: 'Zoom out', group: 'View' },
+  { id: 'camera-reset', keys: ['0'], label: 'Back to north and plan view', group: 'View' },
+
   /* ---------------- paneles y archivos ---------------- */
   { id: 'panel-layers', keys: ['shift+l'], label: 'Layers', group: 'Panels and files' },
   { id: 'panel-units', keys: ['shift+u'], label: 'Geological units', group: 'Panels and files' },
@@ -69,7 +83,7 @@ export const SHORTCUTS = [
 ];
 
 /** Orden en que se agrupan en la ayuda. */
-export const SHORTCUT_GROUPS = ['Tools', 'Drawing aids', 'Editing', 'Panels and files'];
+export const SHORTCUT_GROUPS = ['Tools', 'Drawing aids', 'Editing', 'View', 'Panels and files'];
 
 /**
  * Combo canónico de un evento de teclado.
@@ -127,14 +141,33 @@ export function isTyping(el) {
 const CONSUMEN = new Set([
   'undo', 'redo', 'select-all', 'project-save', 'project-open',
   'export-gpkg', 'panel-settings', 'help', 'delete-selection',
+  // Las flechas harían scroll de la página por debajo del mapa.
+  'camera-pan', 'camera-orbit',
 ]);
 
 export const consumesDefault = (id) => CONSUMEN.has(id);
 
+/**
+ * Atajos que sí valen mantenidos.
+ *
+ * El despachador descarta las repeticiones del teclado —si no, dejar la `l`
+ * apoyada cambiaría de herramienta treinta veces—, pero mover la vista es
+ * justo lo contrario: se mantiene la flecha hasta llegar a donde se quiere
+ * mirar, como en cualquier visor.
+ */
+const REPETIBLES = new Set(['camera-pan', 'camera-orbit', 'camera-zoom-in', 'camera-zoom-out']);
+
+export const repeatsAllowed = (id) => REPETIBLES.has(id);
+
 /** Etiqueta legible de un combo, con los símbolos de la plataforma. */
 export function comboLabel(combo, mac = false) {
-  return combo
-    .split('+')
+  /*
+   * `+` es a la vez separador y tecla: partir "+" a secas deja dos trozos
+   * vacíos, y sin esto la tecla de acercar salía sin etiqueta.
+   */
+  const partes = combo.split('+');
+  const key = partes.pop() || '+';
+  return [...partes.filter(Boolean), key]
     .map((p) => {
       if (p === 'mod') return mac ? '⌘' : 'Ctrl';
       if (p === 'shift') return mac ? '⇧' : 'Shift';
@@ -144,6 +177,10 @@ export function comboLabel(combo, mac = false) {
       if (p === 'backspace') return '⌫';
       if (p === 'delete') return 'Del';
       if (p === 'space') return 'Space';
+      if (p === 'arrowup') return '↑';
+      if (p === 'arrowdown') return '↓';
+      if (p === 'arrowleft') return '←';
+      if (p === 'arrowright') return '→';
       if (p === 'f1') return 'F1';
       return p.length === 1 ? p.toUpperCase() : p;
     })

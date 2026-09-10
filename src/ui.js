@@ -71,6 +71,7 @@ import {
   consumesDefault,
   isTyping,
   labelsFor,
+  repeatsAllowed,
   shortcutFor,
 } from './shortcuts.js';
 
@@ -1653,8 +1654,39 @@ function shortcutActions() {
       if (!$('btn-export').disabled) doExportGeoPackage();
     },
     help: () => togglePanel('shortcuts'),
+
+    'camera-pan': (e) => {
+      const dir = ARROW_DIR[String(e.key || '').toLowerCase()];
+      if (dir && mapBridge) mapBridge.camera.panBy(dir[0] * PAN_STEP_PX, dir[1] * PAN_STEP_PX);
+    },
+    'camera-orbit': (e) => {
+      const dir = ARROW_DIR[String(e.key || '').toLowerCase()];
+      if (dir && mapBridge) mapBridge.camera.orbit(dir[0] * BEARING_STEP, -dir[1] * PITCH_STEP);
+    },
+    'camera-zoom-in': () => mapBridge && mapBridge.camera.zoom(1),
+    'camera-zoom-out': () => mapBridge && mapBridge.camera.zoom(-1),
+    'camera-reset': () => mapBridge && mapBridge.camera.reset(),
   };
 }
+
+/* ---------- cámara desde el teclado ---------- */
+
+/*
+ * Los mismos pasos que usa MapLibre con su propio teclado, para que quien ya
+ * conozca un visor no tenga que aprender otros. La flecha mueve la cámara, no
+ * el mapa: pulsar → enseña lo que hay a la derecha.
+ */
+const PAN_STEP_PX = 100;
+const BEARING_STEP = 15; // grados
+const PITCH_STEP = 10; // grados
+
+/** Flecha → vector de pantalla. Arriba es -Y, como en el DOM. */
+const ARROW_DIR = {
+  arrowup: [0, -1],
+  arrowdown: [0, 1],
+  arrowleft: [-1, 0],
+  arrowright: [1, 0],
+};
 
 /** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */
 function renderShortcutsHelp() {
@@ -1732,9 +1764,10 @@ function annotateToolbarShortcuts() {
 function wireShortcuts() {
   const acciones = shortcutActions();
   window.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
     const id = shortcutFor(e);
     if (!id) return;
+    // Mover la vista vale mantenido; cambiar de herramienta, no.
+    if (e.repeat && !repeatsAllowed(id)) return;
 
     /*
      * Escribiendo, el teclado es del campo — con una excepción: Escape.
@@ -1753,7 +1786,7 @@ function wireShortcuts() {
     const fn = acciones[id];
     if (!fn) return;
     if (consumesDefault(id)) e.preventDefault();
-    fn();
+    fn(e);
   });
 }
 
@@ -2402,7 +2435,7 @@ const TERRAIN_BLOCKED_TITLE =
   'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
 
 const TERRAIN_LOW_PRECISION_WARNING =
-  '3D terrain is on: the point you tap may not match the actual point on the ground, so quality here is not the best.';
+  '3D terrain is on: the point you tap may not match the actual point on the ground, so quality here is not the best. Shift + drag tilts and rotates the view, the arrow keys pan it, and the wheel zooms — all without leaving the tool.';
 
 /**
  * Ayuda original de cada botón, capturada del HTML la primera vez. Hace falta
@@ -2479,7 +2512,7 @@ function renderStatus() {
   $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
   if (s.terrain3d && s.tool === 'navigate') {
     $('status-text').textContent =
-      '3D terrain on — drag with two fingers to tilt, or pick Line/Polygon to draw here too (lower quality)';
+      '3D terrain on — two fingers or the right button tilt the view; Line and Polygon can draw here too (lower quality)';
   } else if (s.tool === 'navigate') {
     $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
   } else if (s.tool === 'profile') {
