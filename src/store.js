@@ -320,12 +320,10 @@ const geomKindForTool = (tool) => GEOM_KIND_FOR_TOOL[tool] || 'line';
 const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane', 'hole', 'thickness']);
 
 /**
- * Herramientas que crean o mueven geometría.
- *
- * Ya no sirven para bloquear nada —con el relieve 3D puesto se digitaliza
- * igual, ver `setTerrain3d`— pero la lista se queda porque nombra un grupo
- * real: son las que tienen borrador y las que la interfaz trata como "estar
- * dibujando", frente a navegar, elegir o consultar.
+ * Herramientas que crean o mueven geometría, y que por eso no se ofrecen con
+ * el relieve 3D puesto —salvo las dos de `DRAWING_TOOLS_3D_OK`—: sobre terreno
+ * inclinado el punto tocado y el punto del terreno no coinciden como en
+ * planta, así que lo dibujado saldría corrido.
  */
 export const DRAWING_TOOLS = [
   'line',
@@ -338,6 +336,16 @@ export const DRAWING_TOOLS = [
   'profile',
   'measure',
 ];
+
+/**
+ * De las anteriores, las dos únicas que sí se ofrecen con el relieve puesto:
+ * trazar un contacto o levantar un polígono mirando el terreno inclinado
+ * sirve para ubicarse, aunque el vértice caiga corrido. Las demás dependen de
+ * tocar con exactitud una geometría o un punto ya existente —nodos, cortar,
+ * topología, perfil, rumbo/manteo— y ahí ese margen de error sí arruina el
+ * resultado. La interfaz avisa de la pérdida de precisión al activarlas.
+ */
+export const DRAWING_TOOLS_3D_OK = ['line', 'polygon'];
 
 export function getState() {
   return state;
@@ -417,6 +425,13 @@ export function setTool(tool) {
   // ancla puesta haría que un toque cualquiera, mucho después, calculara un
   // espesor desde una medida que ya nadie tenía en mente.
   if (tool !== 'thickness' && state.thicknessFrom) set({ thicknessFrom: null });
+
+  // Con el relieve puesto solo se digitaliza Línea y Polígono, y con menos
+  // precisión: se avisa y no se cambia nada para el resto. El aviso lo da la
+  // interfaz, que es quien puede explicarlo.
+  if (state.terrain3d && DRAWING_TOOLS.includes(tool) && !DRAWING_TOOLS_3D_OK.includes(tool)) {
+    return false;
+  }
 
   // Con una sola línea seleccionada, pasar a Línea la continúa en vez de
   // empezar una nueva. Se resuelve al poner el primer vértice, que es cuando
@@ -1059,13 +1074,17 @@ export function setScalePixelMm(mm) {
 /**
  * Enciende o apaga el relieve 3D.
  *
- * Antes esto expulsaba a Navegar y descartaba el borrador, porque con el
- * relieve puesto no se dejaba dibujar. Ya no: MapLibre desproyecta contra la
- * malla del terreno cuando `setTerrain` está activo, así que el punto tocado
- * ES el punto del suelo y la herramienta en curso sigue valiendo. Cambiar de
- * vista no debe tirar un contacto a medio trazar.
+ * Con Línea o Polígono en la mano no se toca nada: esas dos sí dibujan sobre
+ * el relieve, y encender la vista no debe tirar un contacto a medio trazar.
+ * Con cualquier otra herramienta de geometría sí se sale a Navegar, porque ahí
+ * el borrador dependía de tocar con exactitud algo que ya existe.
  */
 export function setTerrain3d(terrain3d) {
+  if (terrain3d && DRAWING_TOOLS.includes(state.tool) && !DRAWING_TOOLS_3D_OK.includes(state.tool)) {
+    if (state.draft) cancelDraft();
+    set({ tool: 'navigate', terrain3d, selection: [] });
+    return;
+  }
   set({ terrain3d });
 }
 

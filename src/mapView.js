@@ -7,7 +7,8 @@ import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
 import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './scale.js';
 import { DrawController } from './drawController.js';
-import { processStroke } from './simplify.js';
+import { chaikin, processStroke } from './simplify.js';
+import { createStrokeBuffer } from './stroke.js';
 import { bboxIntersects, bboxOf, nearestOnPolyline, pickFeature, ringsOf } from './geom.js';
 import { baseOpacityOf, buildImportedLayers } from './importedStyle.js';
 import { SnapIndex, buildGraph, tracePath } from './snapping.js';
@@ -250,6 +251,17 @@ export function createMapView({
   // El doble toque de MapLibre choca con los gestos de la app: con un dedo
   // cierra el elemento y con dos deshace, así que su zoom estorba.
   map.doubleClickZoom.disable();
+
+  /*
+   * El teclado lo lleva la app entera, no MapLibre.
+   *
+   * Sus teclas son casi las mismas (flechas, +, −), así que con las dos manos
+   * puestas cada flecha desplazaba DOS veces en cuanto el foco estaba en el
+   * lienzo, y solo entonces: el mismo atajo movía distinto según dónde se
+   * hubiera hecho clic por última vez. La tabla de `shortcuts.js` es la única
+   * fuente de verdad, y esto la deja serlo también aquí.
+   */
+  map.keyboard.disable();
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
@@ -1040,7 +1052,18 @@ export function createMapView({
    */
 
   /** A cuántos píxeles del toque se da por bueno el vértice. */
-  const PICK_TOL_PX = 3;
+  const PICK_TOL_PX = 2;
+  /**
+   * Y a partir de cuántos ya no es imprecisión sino otro sitio.
+   *
+   * Los dos números son muy distintos a propósito. Dos píxeles es la puntería
+   * que se BUSCA; doce es donde se deja de confiar. En medio hay desacuerdos
+   * legítimos: `unproject` lee la malla teselada del terreno y `project`
+   * consulta el DEM, y con exageración vertical las dos no tienen por qué
+   * coincidir al píxel. Avisar de eso sería avisar de nada. El fallo que sí
+   * importa se medía en cientos de píxeles.
+   */
+  const PICK_WARN_PX = 12;
   /** Pasos de Newton, y paso en grados para la jacobiana (~1 m). */
   const PICK_STEPS = 24;
   const PICK_EPS = 1e-5;
@@ -1114,17 +1137,34 @@ export function createMapView({
       if (lat > 89.9 || lat < -89.9 || lng > 360 || lng < -360) break;
     }
 
-    if (pickError([lng, lat], px, py) <= PICK_TOL_PX) return [lng, lat];
+    /*
+     * No se alcanzó la puntería, pero el refinado puede seguir siendo mejor
+     * que la semilla: se queda el que menos se desvía, y solo se avisa si ni
+     * siquiera ese está cerca.
+     */
+    const errRefinado = pickError([lng, lat], px, py);
+    if (errRefinado <= PICK_TOL_PX) return [lng, lat];
 
-    if (!avisadoRelieve) {
+    const errBase = pickError(base, px, py);
+    const mejor = errRefinado < errBase ? [lng, lat] : base;
+
+    if (Math.min(errRefinado, errBase) > PICK_WARN_PX && !avisadoRelieve) {
       avisadoRelieve = true;
       onEditMessage(
-        'This device cannot say which point of the relief you are pointing at, so vertices placed in 3D may land off the spot you touched. Turn 3D off to digitise; the drawing you already have is unaffected.',
+        'This device cannot work out which point of the relief you are pointing at, so vertices placed in 3D may land well off the spot you touched. Turn 3D off to digitise; what you have already drawn is unaffected.',
         'warn',
       );
     }
-    return base;
+    return mejor;
   };
+
+  /*
+   * Trazo libre. La caché vive en `stroke.js` con su porqué: convertir el
+   * trazo entero en cada frame colgaba la página con el relieve 3D puesto,
+   * porque ahí cada conversión es una lectura sincrónica de la GPU.
+   */
+  const STROKE_STEP_3D = 4; // px mínimos entre puntos convertidos, en 3D
+  const stroke = createStrokeBuffer(toLngLat);
 
   /* ---------- snapping y trazado ---------- */
 
@@ -1830,6 +1870,38 @@ export function createMapView({
     rebuildHandles();
   }
 
+  /* ---------- cámara: mover la vista sin soltar la herramienta ---------- */
+
+  /*
+   * Los mismos grados por píxel que usa MapLibre al girar con el botón
+   * derecho, para que arrastrar con Shift aquí y arrastrar en Navegar se
+   * sientan igual. Bascular hacia arriba levanta la vista hacia el horizonte,
+   * que es el sentido que tiene mirar un relieve.
+   */
+  const BEARING_PER_PX = 0.8;
+  const PITCH_PER_PX = 0.5;
+  const clampPitch = (v) => Math.max(map.getMinPitch(), Math.min(map.getMaxPitch(), v));
+
+  const camera = {
+    /** Mueve la cámara tantos píxeles de pantalla. */
+    panBy(dx, dy) {
+      map.panBy([dx, dy], { duration: 0 });
+    },
+    orbit(dBearing, dPitch) {
+      map.jumpTo({
+        bearing: map.getBearing() + dBearing,
+        pitch: clampPitch(map.getPitch() + dPitch),
+      });
+    },
+    zoom(delta) {
+      map.easeTo({ zoom: map.getZoom() + delta, duration: 180 });
+    },
+    /** Vuelve al norte y a la planta, que es de donde se mide y se dibuja. */
+    reset() {
+      map.easeTo({ bearing: 0, pitch: 0, duration: 300 });
+    },
+  };
+
   const controller = new DrawController(host, container, {
     isDrawing: () => store.getState().tool !== 'navigate',
     fingerDrawEnabled: () => store.getState().fingerDraw,
@@ -1859,6 +1931,19 @@ export function createMapView({
     onLongPress: (p) => {
       if (onMapTap) onMapTap();
       openPropsFor(p);
+    },
+
+    // Shift+arrastrar gira y bascula; el botón central desplaza.
+    onCameraDrag: (mode, dx, dy) => {
+      /*
+       * Mover la vista NO cierra los paneles, al revés que tocar el mapa: se
+       * bascula el relieve justo mientras se ajusta su exageración en Capas, y
+       * cerrar el panel en el primer píxel de arrastre haría ese ajuste
+       * imposible. Además esto corre en cada frame del gesto.
+       */
+      // Arrastrar mueve la cámara al revés que el puntero: el mapa sigue al dedo.
+      if (mode === 'pan') camera.panBy(-dx, -dy);
+      else camera.orbit(dx * BEARING_PER_PX, -dy * PITCH_PER_PX);
     },
 
     onMultiTap: (n) => {
@@ -1924,18 +2009,32 @@ export function createMapView({
       if (onMapTap) onMapTap();
       preview = [];
       previewKind = 'freehand';
+      stroke.reset();
     },
 
     onStrokeProgress: (screen) => {
       previewKind = 'freehand';
-      preview = screen.map(toLngLat);
+      preview = stroke.push(screen, store.getState().terrain3d ? STROKE_STEP_3D : 0);
       syncDraft();
     },
 
     onStrokeEnd: (screen) => {
-      const { tolerance, smoothing } = store.getState();
+      const { tolerance, smoothing, terrain3d } = store.getState();
+      /*
+       * Con el relieve puesto se simplifica sobre los puntos que YA están
+       * convertidos, y el suavizado se aplica en lng/lat —igual que el del
+       * menú de propiedades— en vez de generar en pantalla cuatro veces más
+       * puntos y tener que convertirlos todos. Si no, levantar el lápiz
+       * disparaba de golpe las cientos de lecturas de GPU que el trazo se
+       * había ahorrado.
+       */
+      const enCache = terrain3d && stroke.screen.length >= 2;
+      const crudo = enCache ? stroke.screen : screen;
       // Se simplifica en px (invariante a la escala) y recién ahí se proyecta.
-      const processed = processStroke(screen, { tolerance, smooth: smoothing });
+      const processed = processStroke(crudo, {
+        tolerance,
+        smooth: enCache ? false : smoothing,
+      });
       // Los extremos del trazo sí se enganchan: es donde importa que el
       // contacto cierre exactamente contra la geometría vecina.
       if (processed.length >= 2) {
@@ -1945,8 +2044,11 @@ export function createMapView({
         if (last) processed[processed.length - 1] = last.point;
         traceAnchor = last ? toLngLat(last.point) : null;
       }
+      let coords = enCache ? stroke.coordsFor(processed) : processed.map(toLngLat);
+      if (enCache && smoothing && coords.length >= 3) coords = chaikin(coords, 2);
+      stroke.reset();
       clearPreview();
-      store.appendStroke(processed.map(toLngLat));
+      store.appendStroke(coords);
     },
 
     onFinish: () => store.finishDraft(),
@@ -2158,6 +2260,8 @@ export function createMapView({
     locateMe,
     /** Lleva el mapa a una escala concreta, sin fijarla. */
     goToScale,
+    /** Desplazar, girar, bascular y acercar desde el teclado. */
+    camera,
     /** Quita el resalte del elemento ajeno; lo llama la interfaz al cerrar. */
     clearForeignHighlight: () => highlightForeign(null),
     /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */

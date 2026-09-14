@@ -82,6 +82,7 @@ import {
   consumesDefault,
   isTyping,
   labelsFor,
+  repeatsAllowed,
   shortcutFor,
 } from './shortcuts.js';
 
@@ -368,6 +369,22 @@ function buildPalette() {
     edit.title = 'Open the units module';
     edit.addEventListener('click', () => $('units-panel').classList.add('open'));
     group.appendChild(edit);
+
+    const crear = document.createElement('button');
+    crear.className = 'chip ghost';
+    crear.textContent = '+ Create unit';
+    crear.title = 'Add a new geological unit';
+    crear.addEventListener('click', () => {
+      $('units-panel').classList.add('open');
+      // El campo de nombre puede quedar tapado si ya hay muchas unidades en
+      // la lista: se enfoca y se lleva a la vista para poder escribir de una.
+      requestAnimationFrame(() => {
+        const input = $('new-unit-name');
+        input.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        input.focus();
+      });
+    });
+    group.appendChild(crear);
     scroll.appendChild(group);
   }
   el.appendChild(scroll);
@@ -1682,7 +1699,11 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(naviga
  * ninguna lo hace.
  */
 function pickTool(tool) {
-  store.setTool(tool);
+  if (store.setTool(tool) === false) {
+    showBanner(
+      'Not available while 3D terrain is on: on tilted ground the point you click is not the point on the map. Line and Polygon still work here. Press 3 to go back to plan view.',
+    );
+  }
 }
 
 /** Rota la certeza activa. Los tipos acotados (pliegues) se quedan en observado. */
@@ -1793,8 +1814,39 @@ function shortcutActions() {
       if (!$('btn-export').disabled) doExportGeoPackage();
     },
     help: () => togglePanel('shortcuts'),
+
+    'camera-pan': (e) => {
+      const dir = ARROW_DIR[String(e.key || '').toLowerCase()];
+      if (dir && mapBridge) mapBridge.camera.panBy(dir[0] * PAN_STEP_PX, dir[1] * PAN_STEP_PX);
+    },
+    'camera-orbit': (e) => {
+      const dir = ARROW_DIR[String(e.key || '').toLowerCase()];
+      if (dir && mapBridge) mapBridge.camera.orbit(dir[0] * BEARING_STEP, -dir[1] * PITCH_STEP);
+    },
+    'camera-zoom-in': () => mapBridge && mapBridge.camera.zoom(1),
+    'camera-zoom-out': () => mapBridge && mapBridge.camera.zoom(-1),
+    'camera-reset': () => mapBridge && mapBridge.camera.reset(),
   };
 }
+
+/* ---------- cámara desde el teclado ---------- */
+
+/*
+ * Los mismos pasos que usa MapLibre con su propio teclado, para que quien ya
+ * conozca un visor no tenga que aprender otros. La flecha mueve la cámara, no
+ * el mapa: pulsar → enseña lo que hay a la derecha.
+ */
+const PAN_STEP_PX = 100;
+const BEARING_STEP = 15; // grados
+const PITCH_STEP = 10; // grados
+
+/** Flecha → vector de pantalla. Arriba es -Y, como en el DOM. */
+const ARROW_DIR = {
+  arrowup: [0, -1],
+  arrowdown: [0, 1],
+  arrowleft: [-1, 0],
+  arrowright: [1, 0],
+};
 
 /** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */
 function renderShortcutsHelp() {
@@ -1861,19 +1913,22 @@ function annotateToolbarShortcuts() {
     if (!el) continue;
     const teclas = labelsFor(accion, IS_MAC);
     if (!teclas.length) continue;
-    // Corre una sola vez, al arrancar, así que no hay que guardar la ayuda
-    // original en ninguna parte: lo que hay en el HTML es la base.
-    const base = el.title || el.textContent.trim();
-    el.title = `${base} (${teclas[0]})`;
+    const base = defaultTitle(id) || el.textContent.trim();
+    // Se guarda como base la ayuda YA anotada: `defaultTitle` la cachea, y el
+    // bloqueo por relieve la restaura desde ahí.
+    const anotada = `${base} (${teclas[0]})`;
+    el.title = anotada;
+    defaultTitles.set(id, anotada);
   }
 }
 
 function wireShortcuts() {
   const acciones = shortcutActions();
   window.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
     const id = shortcutFor(e);
     if (!id) return;
+    // Mover la vista vale mantenido; cambiar de herramienta, no.
+    if (e.repeat && !repeatsAllowed(id)) return;
 
     /*
      * Escribiendo, el teclado es del campo — con una excepción: Escape.
@@ -1892,7 +1947,7 @@ function wireShortcuts() {
     const fn = acciones[id];
     if (!fn) return;
     if (consumesDefault(id)) e.preventDefault();
-    fn();
+    fn(e);
   });
 }
 
@@ -2562,6 +2617,37 @@ async function doImportGeoPackage(file) {
 
 /* ---------- barra de herramientas y estado ---------- */
 
+/**
+ * Botones que crean o mueven geometría, y que el relieve 3D deshabilita.
+ * Línea y Polígono quedan fuera: esos dos sí se ofrecen con el relieve
+ * puesto, avisando de la pérdida de precisión en vez de bloquearlos.
+ */
+const GEOMETRY_TOOL_BUTTONS = [
+  't-hole',
+  't-measure',
+  't-vertices',
+  't-cut',
+  't-reshape',
+  't-profile',
+];
+
+const TERRAIN_BLOCKED_TITLE =
+  'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
+
+const TERRAIN_LOW_PRECISION_WARNING =
+  '3D terrain is on: the point you tap may not match the actual point on the ground, so quality here is not the best. Shift + drag tilts and rotates the view, the arrow keys pan it, and the wheel zooms — all without leaving the tool.';
+
+/**
+ * Ayuda original de cada botón, capturada del HTML la primera vez. Hace falta
+ * para poder devolverla al apagar el relieve, en vez de dejar el mensaje del
+ * bloqueo puesto para siempre.
+ */
+const defaultTitles = new Map();
+function defaultTitle(id) {
+  if (!defaultTitles.has(id)) defaultTitles.set(id, $(id).title);
+  return defaultTitles.get(id);
+}
+
 function renderToolbar() {
   const s = store.getState();
   const hasDraft = !!s.draft && s.draft.coords.length > 0;
@@ -2584,31 +2670,31 @@ function renderToolbar() {
   $('t-3d').classList.toggle('active', s.terrain3d);
 
   /*
-   * El relieve 3D ya NO apaga las herramientas de dibujo.
-   *
-   * Lo hacía por un motivo que era cierto y dejó de serlo: se daba por hecho
-   * que con la cámara inclinada el punto tocado y el punto del terreno no
-   * coinciden. Eso pasa si la pantalla se desproyecta contra el plano z=0,
-   * pero MapLibre, con `setTerrain` puesto, lanza el rayo contra la malla del
-   * relieve —`unproject` y `project` reciben el terreno—, así que el vértice
-   * cae sobre el suelo que se está señalando y vuelve a dibujarse ahí.
-   *
-   * Y el bloqueo costaba caro: el 3D es justo donde se entiende por dónde va
-   * un contacto, y obligaba a apagarlo, dibujar a ciegas en planta y volver a
-   * encenderlo para comprobar.
+   * Con el relieve puesto, las herramientas que dependen de tocar con
+   * exactitud algo que ya existe se apagan en vez de fallar en silencio.
+   * Línea y Polígono no están en la lista: esos dos sí se ofrecen, avisando
+   * de que la precisión baja.
    */
+  for (const id of GEOMETRY_TOOL_BUTTONS) {
+    const btn = $(id);
+    const original = defaultTitle(id); // se captura siempre, no solo al restaurar
+    btn.disabled = s.terrain3d;
+    btn.title = s.terrain3d ? TERRAIN_BLOCKED_TITLE : original;
+  }
 
   // Unir exige dos o más elementos del mismo tipo de geometría.
   const sel = store.selectedFeatures();
   const kinds = new Set(sel.map((f) => f.geometry.type));
-  $('t-merge').disabled = sel.length < 2 || kinds.size > 1;
+  $('t-merge').disabled = s.terrain3d || sel.length < 2 || kinds.size > 1;
 
   // La topología trabaja sobre la selección, o sobre todo si no hay ninguna.
   const alcance = sel.length || s.features.length;
-  $('t-topo').disabled = alcance < 2;
-  $('t-topo').title = sel.length
-    ? `Make the ${sel.length} selected features share vertices`
-    : 'Make all adjacent features share vertices';
+  $('t-topo').disabled = s.terrain3d || alcance < 2;
+  $('t-topo').title = s.terrain3d
+    ? TERRAIN_BLOCKED_TITLE
+    : sel.length
+      ? `Make the ${sel.length} selected features share vertices`
+      : 'Make all adjacent features share vertices';
 
   $('t-undo').disabled = !hasDraft;
   $('t-finish').disabled = !hasDraft;
@@ -2626,7 +2712,7 @@ function renderStatus() {
   $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
   if (s.terrain3d && s.tool === 'navigate') {
     $('status-text').textContent =
-      '3D terrain on — drag with two fingers to tilt · pick a tool and you can draw straight onto the relief';
+      '3D terrain on — two fingers or the right button tilt the view; Line and Polygon can draw here too (lower quality)';
   } else if (s.tool === 'navigate') {
     $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
   } else if (s.tool === 'profile') {
@@ -2710,10 +2796,13 @@ function renderStatus() {
         ? `${n} vertices · Trace on: tap another feature and the stroke will follow its edge`
         : 'Trace on · tap an existing feature to start following its edge';
   } else if (n > 0) {
-    $('status-text').textContent = `${n} vertex${n === 1 ? '' : 'es'} · tap to add, press and hold for freehand, double tap to close`;
+    $('status-text').textContent = s.terrain3d
+      ? `${n} vertex${n === 1 ? '' : 'es'} · 3D terrain on, quality here is not the best · tap to add, press and hold for freehand, double tap to close`
+      : `${n} vertex${n === 1 ? '' : 'es'} · tap to add, press and hold for freehand, double tap to close`;
   } else {
-    $('status-text').textContent =
-      'Tap for the first vertex · press and hold for freehand';
+    $('status-text').textContent = s.terrain3d
+      ? 'Tap for the first vertex · 3D terrain on, quality here is not the best · press and hold for freehand'
+      : 'Tap for the first vertex · press and hold for freehand';
   }
 }
 
@@ -2805,8 +2894,8 @@ export function initUI() {
     if (store.getState().terrain3d !== encender) return;
     showBanner(
       encender
-        ? 'The drawing is draped over the relief, and you can keep digitising on it: a vertex lands on the ground you point at, not on the plane underneath. Off the cached tiles the ground renders flat, and on an older tablet this costs noticeably more to render.'
-        : 'Back to plan view.',
+        ? 'The drawing is draped over the relief, and Line and Polygon still draw on it — the rest of the tools need plan view, where a tap lands exactly on what it touches. Off the cached tiles the ground renders flat, and on an older tablet this costs noticeably more to render.'
+        : 'Back to plan view: every tool is available again.',
       'info',
     );
   });
@@ -3098,6 +3187,16 @@ export function initUI() {
       renderToolbar();
       renderStatus();
       buildPalette();
+    }
+    // Línea y Polígono siguen disponibles con el relieve puesto, pero con
+    // menos precisión: se avisa cada vez que se entra a dibujar así, sea por
+    // la barra, el teclado o al encender el 3D estando ya en una de las dos.
+    if (
+      (store.changed('tool') || store.changed('terrain3d')) &&
+      store.getState().terrain3d &&
+      store.DRAWING_TOOLS_3D_OK.includes(store.getState().tool)
+    ) {
+      showBanner(TERRAIN_LOW_PRECISION_WARNING, 'warn');
     }
   });
 }

@@ -315,18 +315,30 @@ ok('cerrar publica la traza', store.getState().pendingProfile.coords.length === 
 ok('la traza NO se guarda como elemento del mapa', store.getState().features.length === 0);
 store.clearProfile();
 
-// El relieve 3D ya no bloquea el dibujo: MapLibre desproyecta contra la malla
-// del terreno, así que el vértice cae sobre el suelo señalado. Encenderlo con
-// una línea a medias tampoco puede tirarla.
+// El relieve 3D es modo de visualización: con él puesto solo se sigue
+// digitalizando Línea y Polígono (con menos precisión); el resto sale a
+// Navegar y no se puede volver a elegir mientras el relieve siga puesto.
 store.setTool('line');
 store.addVertex([-71.4, -37.2]);
 store.setTerrain3d(true);
-ok('encender el relieve no cambia de herramienta', store.getState().tool === 'line');
-ok('ni descarta el borrador en curso', store.getState().draft.coords.length === 1);
-ok('y se sigue pudiendo dibujar', store.setTool('polygon') !== false);
+ok('línea sigue activa con el relieve puesto', store.getState().tool === 'line');
+// Encender la vista no puede tirar un contacto a medio trazar: es un cambio de
+// cómo se mira, no de lo que se está dibujando.
+ok('y el borrador en curso no se descarta', store.getState().draft.coords.length === 1);
 store.cancelDraft();
+ok('se puede seguir eligiendo línea', store.setTool('line') !== false);
+ok('y también polígono', store.setTool('polygon') !== false);
+ok('la herramienta pasó a polígono', store.getState().tool === 'polygon');
+ok('un hueco no se puede activar con el relieve puesto', store.setTool('hole') === false);
+ok('la herramienta no cambió', store.getState().tool === 'polygon');
 store.setTerrain3d(false);
-ok('apagarlo tampoco cambia de herramienta', store.getState().tool === 'polygon');
+
+store.setTool('hole');
+store.setTerrain3d(true);
+ok('activar el relieve con un hueco activo sí saca a navegar', store.getState().tool === 'navigate');
+ok('navegar sí se permite', store.setTool('navigate') !== false);
+store.setTerrain3d(false);
+ok('al apagarlo se vuelve a poder dibujar', store.setTool('hole') === true);
 
 store.setTerrainExaggeration(99);
 ok('la exageración se acota', store.getState().terrainExaggeration === 3);

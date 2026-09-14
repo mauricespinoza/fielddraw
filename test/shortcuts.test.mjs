@@ -80,7 +80,8 @@ ok('cada combo de la tabla resuelve a su acción',
 /** Reconstruye un evento a partir de un combo, para el ida y vuelta. */
 function comboToEvent(combo) {
   const partes = combo.split('+');
-  const key = partes[partes.length - 1];
+  // `+` es separador y tecla a la vez: partirlo deja el último trozo vacío.
+  const key = partes.pop() || '+';
   return ev(key, {
     ctrlKey: partes.includes('mod'),
     altKey: partes.includes('alt'),
@@ -97,6 +98,23 @@ ok('Ctrl+A se intercepta', S.consumesDefault('select-all'));
 ok('cambiar de herramienta NO se intercepta', !S.consumesDefault('tool-line'));
 ok('Enter NO se intercepta', !S.consumesDefault('finish'));
 
+console.log('== mover la vista ==');
+// Con una herramienta activa el arrastre del ratón ES el trazo, así que en un
+// PC la vista solo se puede mover con el teclado (o con Shift/botón central).
+ok('las flechas desplazan', S.shortcutFor(ev('ArrowRight')) === 'camera-pan');
+ok('con Shift giran y bascular', S.shortcutFor(ev('ArrowUp', { shiftKey: true })) === 'camera-orbit');
+ok('+ acerca', S.shortcutFor(ev('+')) === 'camera-zoom-in');
+ok('= también, que está en la misma tecla', S.shortcutFor(ev('=')) === 'camera-zoom-in');
+ok('- aleja', S.shortcutFor(ev('-')) === 'camera-zoom-out');
+ok('0 vuelve a la planta', S.shortcutFor(ev('0')) === 'camera-reset');
+// Mantener la flecha tiene que seguir moviendo; mantener una letra, no.
+ok('las flechas valen mantenidas', S.repeatsAllowed('camera-pan'));
+ok('girar también', S.repeatsAllowed('camera-orbit'));
+ok('cambiar de herramienta no', !S.repeatsAllowed('tool-line'));
+// Si no, la página de debajo del mapa haría scroll con cada flecha.
+ok('las flechas se interceptan', S.consumesDefault('camera-pan'));
+ok('y las de girar también', S.consumesDefault('camera-orbit'));
+
 console.log('== campos de texto ==');
 // Sin esto, escribir "Lava" en el nombre de una unidad cambiaría a la
 // herramienta Línea a mitad de palabra.
@@ -112,6 +130,8 @@ ok('Ctrl en Windows', S.comboLabel('mod+s', false) === 'Ctrl+S');
 ok('⌘ en Mac', S.comboLabel('mod+s', true) === '⌘S');
 ok('Escape se abrevia', S.comboLabel('escape') === 'Esc');
 ok('las teclas de edición usan símbolo', S.comboLabel('backspace') === '⌫');
+ok('las flechas se dibujan como flechas', S.comboLabel('arrowleft') === '←');
+ok('con Shift delante', S.comboLabel('shift+arrowup', false) === 'Shift+↑');
 ok('la letra va en mayúscula', S.comboLabel('v') === 'V');
 ok('labelsFor devuelve todos los combos', S.labelsFor('redo').length === 2);
 ok('labelsFor de algo inexistente no revienta', S.labelsFor('no-existe').length === 0);

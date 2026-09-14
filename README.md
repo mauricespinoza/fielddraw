@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
 ```
 
-1088 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1144 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -42,8 +42,9 @@ aplanado, la simbología, los filtros y el tamaño de símbolo de StraboSpot,
 decodificación de teselas terrarium, muestreo y estadística de perfiles,
 parseo de ASCII grid e interpolación bilineal, ajuste de plano por mínimos
 cuadrados, propagación de la incertidumbre del manteo, los avisos de calidad,
-la tabla de atajos de teclado y el hover del ratón, conversión escala↔zoom en
-ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
+la tabla de atajos de teclado y el hover del ratón, los gestos de cámara del
+ratón y la caché del trazo libre —que es lo que evita convertir el mismo punto
+una vez por frame—, conversión escala↔zoom en ambos sentidos, lectura y escritura de escalas, resta de áreas con JSTS
 —incluido el hueco que se convierte en anillo interior— y las regresiones de
 los tres cuelgues: el gesto que termina fuera del mapa, el toque cuyo
 `pointerup` se pierde y la tesela del DEM que no contesta nunca; y el visor de
@@ -160,7 +161,7 @@ carga.
 | Perfil estructural | trazar un perfil y pulsar **Structural section** (con dips elegidos con el lazo, si se quieren solo esos) |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
-| Relieve 3D | botón **3D**; se sigue digitalizando sobre él |
+| Relieve 3D | botón **3D**; Línea y Polígono siguen dibujando sobre él |
 | Fijar la escala | botón **Scale** de la barra, píldora `1:…` abajo a la izquierda, o `K` |
 | Decirle cuánto mide la pantalla | en el mismo panel: **This screen** |
 | Ir a mi posición | botón **Locate** |
@@ -364,9 +365,12 @@ grosería.
 | `F` | Perfil topográfico |
 | `S` · `T` | Snap · Follow trace |
 | `C` | Rotar la certeza: observado → inferido → cubierto |
-| `3` | Relieve 3D (se puede dibujar con él puesto) |
+| `3` | Relieve 3D (Línea y Polígono siguen dibujando) |
 | `G` | Centrar en mi posición |
 | `M` · `Y` | Unir · Topología |
+| `↑ ↓ ← →` | Mover la vista, sin soltar la herramienta |
+| `Shift` + `↑ ↓ ← →` | Girar y bascular (también `Shift` + arrastrar con el ratón) |
+| `+` · `−` · `0` | Acercar · alejar · volver al norte y a la planta |
 | `↵` · `⌫` | Cerrar el elemento · deshacer el último vértice |
 | `Esc` | En cascada: cierra panel → descarta el elemento → vacía la selección → vuelve a Navegar |
 | `Del` | Borrar lo seleccionado |
@@ -638,47 +642,90 @@ omisión.
 
 ### Digitalizar sobre el relieve
 
-Durante un tiempo con el 3D puesto las herramientas de dibujo quedaban
-deshabilitadas, con el argumento de que sobre terreno inclinado el punto que se
-toca y el punto del terreno no coinciden. **Ya no**: se dibuja en 3D, que es
-justo donde se entiende por dónde va un contacto, y encender el relieve ya no
-cambia de herramienta ni descarta lo que hubiera a medias.
+Con el relieve puesto se puede trazar **Línea** y **Polígono**, avisando de que
+la calidad no es la misma. El resto de herramientas —Nodos, Cortar, Reshape,
+Hole, perfil, rumbo y manteo— sigue deshabilitado, y no por prudencia genérica:
+todas ellas dependen de tocar con exactitud un punto o una geometría que ya
+existe, y sobre terreno inclinado el punto que se toca y el punto del terreno no
+coinciden como en planta. Un contacto trazado a ojo sobre la ladera tolera ese
+error —y se corrige después en planta con Nodos—; un vértice que tiene que caer
+sobre otro, no. Encender el 3D con una de las bloqueadas activa devuelve a
+**Navegar** y descarta lo que hubiera a medias; con Línea o Polígono en la mano
+no se toca nada, porque cambiar de vista no debe tirar un contacto a medio
+trazar.
 
-Lo que hacía falta para poder hacerlo sin mentir es que el vértice caiga donde
-se tocó, y ahí conviene saber que las dos direcciones de la proyección no se
-resuelven igual:
+#### El vértice se comprueba contra donde se repinta
 
-- `project` consulta la cota en el DEM y sube el punto. Por eso lo dibujado se
-  pinta pegado a la ladera.
-- `unproject` resuelve el relieve al revés, lanzando un rayo contra la malla del
-  terreno a través de un framebuffer auxiliar. Ese camino **puede no estar**: si
-  el búfer de coordenadas no llegó a dibujarse, MapLibre vuelve en silencio al
-  plano z = 0.
+«Menos precisión» es una cosa; «el vértice a un kilómetro» es otra, y esta
+segunda podía pasar en silencio. Las dos direcciones de la proyección no se
+resuelven igual: `project` consulta la cota en el DEM y es fiable, mientras que
+`unproject` resuelve el relieve con el framebuffer de coordenadas y **ese camino
+puede no estar** — si el búfer no llegó a dibujarse, MapLibre vuelve al plano
+z = 0 sin avisar. Medido durante el desarrollo, con la cámara a 60° sobre
+terreno de 3.000 m, un clic en mitad de la pantalla guardaba un punto que se
+repintaba **700 px más arriba**, fuera de la ventana.
 
-Y cuando vuelve al plano el vértice no queda un poco corrido: queda lejísimos.
-Medido durante el desarrollo, con la cámara a 60° sobre terreno de 3.000 m, un
-clic en mitad de la pantalla guardaba un punto que se repintaba **700 px más
-arriba**, fuera de la ventana. No es imprecisión: es geometría inventada, y
-encima sin avisar.
+Ahora cada punto tocado se comprueba contra dónde se repinta, y solo se acepta
+si vuelve a caer sobre el píxel que se tocó. Si `unproject` no acierta, se busca
+el punto que sí: es una raíz de `project(x) − píxel = 0`, y Newton con la
+jacobiana calculada por diferencias la encuentra, porque la semilla ya está
+cerca y la superficie es suave. Y si ni eso cierra —el rayo dio en el cielo, o
+el relieve de ese dispositivo no está en condiciones—, se **avisa una vez** y se
+sigue con lo que haya: un aviso es recuperable, un contacto movido un kilómetro
+sin decirlo no lo es. Sobre un risco visto de canto la solución puede no ser
+única, porque el rayo corta la ladera dos veces; se devuelve la que está bajo el
+cursor, que es todo lo que resuelve cualquier app 2,5D.
 
-De ahí tres capas, en orden de preferencia, con una comprobación barata que es
-la clave de todo —solo se acepta un punto que vuelve a caer sobre el píxel que
-se tocó, lo haya calculado quien lo haya calculado—:
+De paso desaparece un cuelgue real: un paso de Newton cerca del horizonte podía
+salirse del mundo, y `map.project` no devuelve un valor raro ahí sino que
+**lanza** («Invalid LngLat latitude value»), y la excepción subía por el
+manejador de puntero y mataba el gesto entero.
 
-1. lo que diga `unproject`, que es la vía soportada;
-2. si el punto no se repinta donde se tocó, se busca el que sí: es una raíz de
-   `project(x) − píxel = 0`, y Newton con la jacobiana calculada por diferencias
-   la encuentra, porque la semilla ya está cerca y la superficie es suave;
-3. y si ni eso cierra —el rayo dio en el cielo, o el relieve de ese dispositivo
-   no está en condiciones—, se **avisa una vez** y se sigue con lo que haya. Un
-   aviso es recuperable; un contacto movido un kilómetro sin decirlo, no.
+Dibujar en 3D **cuesta**, y el motivo es concreto. `map.unproject` en planta es
+aritmética; con terreno, MapLibre averigua qué punto del relieve hay bajo el
+píxel leyendo el framebuffer de coordenadas con `gl.readPixels`, que obliga a la
+GPU a terminar todo lo pendiente y devolver el resultado antes de seguir: cada
+punto cuesta milisegundos. El trazo libre convertía el trazo ENTERO en cada
+frame —N lecturas por frame, con N creciendo con el propio trazo—, así que a
+doscientos puntos pedía más de diez mil lecturas por segundo y el navegador daba
+la página por colgada. No era el relieve: era el bucle.
 
-Sobre un risco visto de canto la solución puede no ser única, porque el rayo
-corta la ladera dos veces. Se devuelve la que está bajo el cursor; pedir más que
-eso no lo resuelve ninguna app 2,5D.
+Ahora cada punto se convierte una sola vez (`src/stroke.js`), con el relieve
+puesto se descartan los que no separan ni cuatro píxeles —el trazo se simplifica
+igual al cerrarlo— y el suavizado se aplica en lng/lat en vez de generar cuatro
+veces más puntos en pantalla y tener que convertirlos todos. El coste pasa de
+crecer con el cuadrado del trazo a ser constante por punto.
 
-La escala que sigue apareciendo al pie es la **planimétrica del centro de la
-pantalla**, que es la única que tiene una vista inclinada.
+### Mover la vista sin soltar la herramienta
+
+En tablet esto ya estaba resuelto por el reparto de siempre: el Pencil dibuja y
+los dedos desplazan, acercan y bascular. En un PC hay un solo puntero —el
+arrastre ES el trazo, y el mapa ni siquiera ve el evento porque lo tragamos para
+que no haga pan a la vez—, así que con el relieve puesto la vista se quedaba
+congelada justo donde más falta hace girar para ver la ladera de frente. Con una
+herramienta activa:
+
+| Gesto | Acción |
+|---|---|
+| `Shift` + arrastrar | Girar y bascular (los mismos grados por píxel que usa MapLibre) |
+| Botón central + arrastrar | Desplazar, como en QGIS |
+| Rueda | Acercar y alejar |
+| `↑ ↓ ← →` | Desplazar |
+| `Shift` + `↑ ↓ ← →` | Girar y bascular |
+| `+` `−` | Acercar y alejar |
+| `0` | Volver al norte y a la planta |
+
+En **Navegar** no cambia nada: ahí el ratón ya manda sobre el mapa entero
+—arrastrar desplaza, el botón derecho gira y bascula— y `Shift`+clic sigue
+añadiendo a la selección, que es justo lo que se habría roto si el controlador
+se quedara el evento también ahí. Lo que sí se corrigió es que un giro con el
+botón derecho terminaba abriendo el menú de propiedades: al soltar llega un
+`contextmenu` igual, y ahora se distingue el arrastre del clic.
+
+El teclado de MapLibre se apaga (`map.keyboard.disable()`): sus teclas son casi
+las mismas, así que cada flecha desplazaba DOS veces en cuanto el foco estaba en
+el lienzo — y solo entonces. La tabla de `src/shortcuts.js` vuelve a ser la
+única fuente de verdad.
 
 Al encenderlo se **comprueba que quedó puesto**. `setTerrain` no siempre lanza
 cuando no puede: en un contexto WebGL sin las extensiones que necesita vuelve sin
@@ -1607,8 +1654,9 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Perfiles topográficos sobre el DEM ya cacheado o sobre Copernicus vía
   OpenTopography, con gráfico interactivo ligado al mapa, exportación a CSV y la
   traza guardada como figura en PNG o SVG, con la exageración vertical rotulada.
-- ✅ Relieve 3D y sombreado desde el mismo DEM, digitalizando sobre él: el
-  vértice se comprueba contra donde se repinta, y si no cierra se avisa.
+- ✅ Relieve 3D y sombreado desde el mismo DEM, con Línea y Polígono dibujando
+  sobre él: cada vértice se comprueba contra dónde se repinta, y si no cierra
+  se avisa en vez de guardar un punto corrido en silencio.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.

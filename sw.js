@@ -68,6 +68,7 @@ const SHELL = [
   './src/simplify.js',
   './src/snapping.js',
   './src/store.js',
+  './src/stroke.js',
   './src/structure.js',
   './src/structureSymbols.js',
   './src/symbology.js',

@@ -36,6 +36,7 @@ function harness(opts = {}) {
     onFingerTap: (p) => log.push(['fingerTap', p]),
     onHover: (p, tipo) => log.push(['hover', p, tipo]),
     onLongPressArm: (p) => log.push([p ? 'arm' : 'disarm']),
+    onCameraDrag: (mode, dx, dy) => log.push(['camera', mode, dx, dy]),
     onPointerInfo: () => {},
   };
   // Herramientas de arrastre (Elegir, Nodos) y menú de propiedades: opcionales,
@@ -378,6 +379,105 @@ console.log('== clic derecho => cierra ==');
   const h = harness();
   h.ev('contextmenu', { clientX: 100, clientY: 100 });
   ok('cierra el elemento', h.kinds().includes('finish'));
+}
+
+console.log('== clic derecho navegando (PC) => abre el menú de propiedades ==');
+{
+  const h = harness({ drawing: false });
+  h.ev('contextmenu', { clientX: 40, clientY: 55 });
+  ok('no cierra nada, no había nada dibujándose', !h.kinds().includes('finish'));
+  ok('abre el menú de propiedades', h.kinds().includes('longPress'));
+  const call = h.log.find((l) => l[0] === 'longPress');
+  ok('con las coordenadas locales del clic', call[1][0] === 40 && call[1][1] === 55);
+}
+
+console.log('== girar con el botón derecho no abre el menú ==');
+{
+  /*
+   * En Navegar el arrastre con el botón derecho lo gira y lo bascula el propio
+   * MapLibre, pero al soltar llega igualmente un `contextmenu`: sin distinguir
+   * el arrastre del clic, cada giro terminaba abriendo el menú de propiedades.
+   */
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 100, clientY: 100 });
+  h.ev('pointermove', { pointerType: 'mouse', buttons: 2, clientX: 200, clientY: 140 });
+  h.ev('contextmenu', { clientX: 200, clientY: 140 });
+  ok('no abre nada tras arrastrar', !h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+  // Y el clic limpio sigue abriéndolo.
+  h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 300, clientY: 300 });
+  h.ev('contextmenu', { clientX: 300, clientY: 300 });
+  ok('un clic derecho limpio sí', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+}
+
+console.log('== en Navegar el ratón es del mapa ==');
+{
+  // Shift+clic AÑADE a la selección: si el controlador se quedara el evento,
+  // se perdería la selección múltiple desde un PC.
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 100, clientY: 100 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 160, clientY: 100 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 160, clientY: 100 });
+  ok('no secuestra Shift+arrastrar', !h.kinds().includes('camera'), JSON.stringify(h.kinds()));
+}
+
+console.log('== Shift+arrastrar mueve la cámara, no dibuja ==');
+{
+  const h = harness();
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 100, clientY: 100 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 140, clientY: 80 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 140, clientY: 80 });
+  const cam = h.log.filter((l) => l[0] === 'camera');
+  ok('emite el arrastre de cámara', cam.length === 1, JSON.stringify(h.kinds()));
+  ok('como giro y basculado', cam[0][1] === 'orbit');
+  ok('con el desplazamiento en píxeles', cam[0][2] === 40 && cam[0][3] === -20);
+  // Lo que importa: la vista se movió y el dibujo quedó intacto.
+  ok('no pone ningún vértice', !h.kinds().includes('vertex'), JSON.stringify(h.kinds()));
+  ok('ni empieza un trazo', !h.kinds().includes('strokeStart'));
+  ok('ni cierra el elemento', !h.kinds().includes('finish'));
+}
+
+console.log('== botón central: desplaza como en QGIS ==');
+{
+  const h = harness();
+  h.ev('pointerdown', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 200, clientY: 200 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 190, clientY: 230 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 190, clientY: 230 });
+  const cam = h.log.filter((l) => l[0] === 'camera');
+  ok('emite el arrastre', cam.length === 1, JSON.stringify(h.kinds()));
+  ok('como desplazamiento', cam[0][1] === 'pan');
+  ok('con su delta', cam[0][2] === -10 && cam[0][3] === 30);
+  ok('sin poner vértices', !h.kinds().includes('vertex'));
+}
+
+console.log('== sin Shift, el ratón sigue dibujando ==');
+{
+  const h = harness();
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, clientX: 100, clientY: 100 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 0, clientX: 100, clientY: 100 });
+  ok('pone el vértice de siempre', h.kinds().includes('vertex'), JSON.stringify(h.kinds()));
+  ok('y no toca la cámara', !h.kinds().includes('camera'));
+}
+
+console.log('== a mitad de un trazo, la vista no se mueve ==');
+{
+  const h = harness({ mode: 'drag' });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, clientX: 10, clientY: 10 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 0, clientX: 60, clientY: 60 });
+  ok('está trazando', h.kinds().includes('strokeStart'));
+  h.ev('pointerdown', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 60, clientY: 60 });
+  ok('el botón central no secuestra el gesto', !h.kinds().includes('camera'), JSON.stringify(h.kinds()));
+}
+
+console.log('== el dedo no entra en los gestos de cámara ==');
+{
+  // En tablet la navegación con los dedos la resuelve el propio mapa: si el
+  // controlador se los quedara, dejaría de haber paneo y zoom mientras se
+  // dibuja con el lápiz, que es justo lo que hace usable la app en terreno.
+  const h = harness();
+  h.ev('pointerdown', { pointerType: 'touch', button: 0, shiftKey: true, clientX: 100, clientY: 100 });
+  h.ev('pointermove', { pointerType: 'touch', button: 0, shiftKey: true, clientX: 150, clientY: 100 });
+  h.ev('pointerup', { pointerType: 'touch', button: 0, shiftKey: true, clientX: 150, clientY: 100 });
+  ok('no emite cámara', !h.kinds().includes('camera'), JSON.stringify(h.kinds()));
 }
 
 console.log('== hover: previsualización con lápiz y con ratón ==');

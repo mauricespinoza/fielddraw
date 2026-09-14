@@ -86,6 +86,8 @@ export class DrawController {
     this.observedTimers = new Map();
     this.rect = null;
     this.rafPending = false;
+    /** Dónde bajó el último puntero y si se movió: clic contra arrastre. */
+    this.lastDown = null;
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
@@ -226,11 +228,72 @@ export class DrawController {
     return n;
   }
 
+  /**
+   * ¿Este `pointerdown` es para la cámara y no para el dibujo?
+   *
+   * Shift+arrastrar gira y bascula —los mismos grados por píxel que usa
+   * MapLibre con el botón derecho— y el botón central desplaza, como en QGIS.
+   * El botón derecho no entra: ya cierra el elemento y abre el menú.
+   *
+   * Solo ratón y lápiz. El dedo no lo necesita: sus gestos de navegación
+   * siguen llegando al mapa intactos, que es de donde salen el paneo, el zoom
+   * y el basculado en tablet.
+   */
+  cameraModeFor(e) {
+    if (!this.cb.onCameraDrag || e.pointerType === 'touch') return null;
+    /*
+     * Solo con una herramienta activa. En Navegar el ratón ya manda sobre el
+     * mapa entero —arrastrar desplaza, el botón derecho gira y bascula— y
+     * Shift+clic AÑADE a la selección: quedarnos el evento ahí rompería eso a
+     * cambio de nada.
+     */
+    if (!this.cb.isDrawing()) return null;
+    if (e.button === 1 || e.buttons === 4) return 'pan';
+    if (e.shiftKey && e.button === 0) return 'orbit';
+    return null;
+  }
+
+  beginCamera(e, mode) {
+    this.rect = this.mapContainer.getBoundingClientRect();
+    const p = this.toLocal(e);
+    this.gesture = { pointerId: e.pointerId, camera: mode, lastX: p[0], lastY: p[1] };
+    this.consuming = true;
+    try {
+      this.host.setPointerCapture(e.pointerId);
+    } catch {
+      /* algunos navegadores rechazan la captura; el gesto igual funciona */
+    }
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+    // El anillo de hover y el marcador de enganche sobran mientras se mueve la
+    // vista: no se está apuntando a nada.
+    this.cb.onHover(null);
+  }
+
   onContextMenu(e) {
-    if (!this.cb.isDrawing()) return;
-    e.preventDefault();
-    // Clic derecho cierra el elemento, igual que en QGIS.
-    this.cb.onFinish();
+    if (this.cb.isDrawing()) {
+      e.preventDefault();
+      // Clic derecho cierra el elemento, igual que en QGIS.
+      this.cb.onFinish();
+      return;
+    }
+    /*
+     * Arrastrar con el botón derecho gira y bascula el mapa (lo hace MapLibre,
+     * que sí ve el evento en Navegar). Al soltar llega igualmente un
+     * `contextmenu`, y sin esto cada giro terminaba abriendo el menú de
+     * propiedades de lo que hubiera quedado debajo.
+     */
+    if (this.lastDown && this.lastDown.moved) {
+      e.preventDefault();
+      return;
+    }
+
+    // Navegando, el clic derecho es el equivalente en PC de la pulsación
+    // sostenida: abre el menú de propiedades de lo que haya debajo.
+    if (this.cb.onLongPress) {
+      e.preventDefault();
+      this.cb.onLongPress(this.toLocal(e));
+    }
   }
 
   swallow(e) {
@@ -250,6 +313,29 @@ export class DrawController {
 
     this.pointers.set(e.pointerId, e.pointerType);
     if (e.pointerType === 'pen') this.penSeen = true;
+    this.rect = this.mapContainer.getBoundingClientRect();
+    const abajo = this.toLocal(e);
+    this.lastDown = { x: abajo[0], y: abajo[1], moved: false };
+
+    /*
+     * Mover la VISTA sin soltar la herramienta. Va lo primero porque no
+     * depende de la herramienta activa ni de cuántos dedos haya: es la cámara,
+     * no el dibujo.
+     *
+     * En tablet esto ya estaba resuelto por el reparto de siempre —el Pencil
+     * dibuja, los dedos navegan—, pero en un PC hay un solo puntero: el
+     * arrastre ES el trazo, y el mapa ni siquiera ve el evento porque lo
+     * tragamos para que no haga pan al mismo tiempo. Con el relieve 3D puesto
+     * eso deja la vista congelada: no se puede bascular ni girar para mirar la
+     * ladera desde otro lado sin salir a Navegar y volver.
+     */
+    // Con un gesto en curso no se cambia de tercio: pulsar el botón central a
+    // mitad de un trazo lo dejaría huérfano, sin cerrarse y sin borrarse.
+    const camara = this.gesture ? null : this.cameraModeFor(e);
+    if (camara) {
+      this.beginCamera(e, camara);
+      return;
+    }
 
     const touches = this.touchCount();
 
@@ -368,6 +454,12 @@ export class DrawController {
   onPointerMove(e) {
     if (e.pointerType === 'pen') this.penSeen = true;
 
+    const d = this.lastDown;
+    if (d && !d.moved) {
+      const q = this.toLocal(e);
+      if (Math.hypot(q[0] - d.x, q[1] - d.y) > MOVE_THRESHOLD) d.moved = true;
+    }
+
     if (this.multi && !this.multi.moved && e.pointerType === 'touch') {
       const s = this.touchStarts.get(e.pointerId);
       if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > MULTI_TAP_MOVE) {
@@ -409,6 +501,15 @@ export class DrawController {
     if (e.cancelable) e.preventDefault();
 
     const p = this.toLocal(e);
+
+    if (g.camera) {
+      const dx = p[0] - g.lastX;
+      const dy = p[1] - g.lastY;
+      g.lastX = p[0];
+      g.lastY = p[1];
+      if (dx || dy) this.cb.onCameraDrag(g.camera, dx, dy);
+      return;
+    }
 
     if (g.dragging) {
       if (!g.moved) {
@@ -503,6 +604,9 @@ export class DrawController {
     setTimeout(() => {
       this.consuming = false;
     }, 0);
+
+    // Mover la vista no dibuja: ni vértice, ni doble toque, ni cierre.
+    if (g.camera) return;
 
     if (g.dragging) {
       const p = this.toLocal(e);
