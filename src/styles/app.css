@@ -2089,13 +2089,25 @@ input[type='radio'] {
   .tool {
     flex: none;
     width: auto;
-    min-width: 52px;
-    min-height: 48px;
-    padding: 5px 8px;
+    min-width: 46px;
+    min-height: 44px;
+    padding: 4px 7px;
+  }
+
+  /*
+   * El icono viene fijo en 24×24 desde el SVG del HTML, pensado para una
+   * columna ancha. En la tira, con veinte herramientas compitiendo por sitio
+   * horizontal, baja a 19×19: sigue siendo claramente el mismo dibujo, y cada
+   * botón cede unos 5 px que se notan multiplicados por veinte.
+   */
+  .tool svg {
+    width: 19px;
+    height: 19px;
   }
 
   .tool span {
     white-space: nowrap;
+    font-size: 9.5px;
   }
 
   /* En columna el separador era una línea horizontal; en fila, vertical. */
