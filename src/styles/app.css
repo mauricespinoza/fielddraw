@@ -1293,6 +1293,18 @@ input[type='radio'] {
   color: #fde68a;
   font-size: 12.5px;
   line-height: 1.4;
+  /*
+   * El desvanecimiento es opacidad, no `hidden`: `hidden` quita el aviso de
+   * golpe, y de golpe es como se pierde un aviso que se estaba leyendo a
+   * medias. La transición le da un segundo de gracia visual antes de que
+   * `showBanner` lo oculte de verdad.
+   */
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+
+.banner.fade-out {
+  opacity: 0;
 }
 
 .banner.info {

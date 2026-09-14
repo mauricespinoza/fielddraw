@@ -1469,11 +1469,28 @@ export function renderPointerInfo(info) {
   $('pen-coalesced').textContent = String(info.coalesced);
 }
 
+/** Cuánto dura un aviso en pantalla antes de desvanecerse solo, en ms. */
+const BANNER_TIMEOUT_MS = 10000;
+/** Cuánto tarda el desvanecimiento en sí, para no ocultarlo antes de que acabe. */
+const BANNER_FADE_MS = 600;
+
+let bannerFadeTimer = null;
+let bannerHideTimer = null;
+
 export function showBanner(text, variant = 'warn') {
   const el = $('banner');
   $('banner-text').textContent = text;
-  el.classList.remove('hidden');
+  el.classList.remove('hidden', 'fade-out');
   el.classList.toggle('info', variant === 'info');
+
+  // Un aviso nuevo cancela el reloj del anterior: los diez segundos son desde
+  // que ESTE se leyó, no un resto del que estaba puesto antes.
+  clearTimeout(bannerFadeTimer);
+  clearTimeout(bannerHideTimer);
+  bannerFadeTimer = setTimeout(() => {
+    el.classList.add('fade-out');
+    bannerHideTimer = setTimeout(() => el.classList.add('hidden'), BANNER_FADE_MS);
+  }, BANNER_TIMEOUT_MS);
 }
 
 function setBusy(text) {
@@ -2981,7 +2998,14 @@ export function initUI() {
     if (name.endsWith('.mbtiles') || name.endsWith('.pmtiles')) doOpenTiles(file);
     else doImportGeoPackage(file);
   });
-  $('banner-close').addEventListener('click', () => $('banner').classList.add('hidden'));
+  $('banner-close').addEventListener('click', () => {
+    // Cerrar a mano también apaga los relojes: sin esto, el desvanecimiento
+    // programado le quitaba la clase `hidden` que la persona acababa de poner.
+    clearTimeout(bannerFadeTimer);
+    clearTimeout(bannerHideTimer);
+    $('banner').classList.remove('fade-out');
+    $('banner').classList.add('hidden');
+  });
 
   $('fh-hold').addEventListener('change', () => store.setFreehandMode('hold'));
   $('fh-drag').addEventListener('change', () => store.setFreehandMode('drag'));
