@@ -285,9 +285,11 @@
       <div class="palette hidden" id="palette"></div>
 
       <!-- Marca de la app: mismo nivel que la fila de botones de arriba a la
-           derecha, para que las dos lean como una sola barra superior. Se
-           esconde en pantallas angostas (ver media query), donde ya compite
-           por sitio con la barra de herramientas y la fila de botones. -->
+           derecha, para que las dos lean como una sola barra superior. Cede el
+           sitio cuando hay algo que lo necesita (ver app.css): en pantallas
+           angostas o bajas, donde compite con la barra de herramientas y la
+           fila de botones, y con la paleta abierta, que empieza justo donde
+           ella. -->
       <!-- El icono es propio de esta franja, no el de instalación (icons/icon-*.png,
            el que ve el sistema operativo): un lápiz trazando una línea sobre
            una tablet, que es literalmente lo que hace la app y no se confunde

@@ -155,7 +155,14 @@ body,
   border-radius: var(--radius);
   /* Con todas las herramientas la barra puede no caber en un iPad apaisado. */
   max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 60px);
+  /*
+   * En un móvil `100vh` es la ventana CON la barra del navegador retraída, que
+   * no es la que se ve al abrir: el alto real es `100dvh`. La línea de `vh`
+   * queda debajo como reserva para navegadores sin `dvh`.
+   */
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 60px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: none;
 }
 
@@ -220,6 +227,7 @@ body,
   z-index: 10;
   width: 106px;
   max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 60px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 60px);
   padding: 8px;
   background: var(--panel);
   backdrop-filter: blur(12px);
@@ -289,11 +297,30 @@ body,
 /* En la paleta los chips son de ancho completo y más bajos. */
 .palette .chip {
   width: 100%;
+  min-width: 0;
   min-height: 34px;
-  padding: 4px 8px;
-  gap: 6px;
+  padding: 4px 7px;
+  gap: 5px;
   border-radius: 8px;
   font-size: 11.5px;
+}
+
+/*
+ * La muestra del trazo se encoge de sus 40 px a 24: en la columna de 106 px,
+ * entre relleno, muestra y separación quedaban 24 px para el nombre y
+ * «Normal» aparecía como «Norma» —cortado por el `overflow: hidden` de la
+ * paleta, sin puntos suspensivos ni nada que avisara de que faltaba texto.
+ */
+.palette .chip .dash-preview {
+  width: 24px;
+}
+
+/* Y lo que aun así no quepa se corta con puntos suspensivos, no a media letra.
+   El nombre es el último hijo; antes van la muestra o el glifo. */
+.palette .chip > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .palette .certainty-row .chip {
@@ -433,6 +460,20 @@ body,
   }
 }
 
+/*
+ * Y se retira también con la paleta abierta, a cualquier ancho: la columna de
+ * la paleta empieza en los mismos 92 px y a la misma altura, así que la marca
+ * le caía encima y dejaba la fila de certeza —Observado / Inferido / Cubierto—
+ * debajo del logotipo, visible a medias y sin poder pulsarse.
+ *
+ * Se esconde la marca y no la paleta porque una es un crédito y la otra decide
+ * cómo se dibuja la siguiente línea. Es el mismo criterio de la media query de
+ * aquí arriba: la marca cede el sitio cuando hay algo que lo necesita.
+ */
+.palette:not(.hidden) ~ .brand {
+  display: none;
+}
+
 /* Panel colgado de un botón de la fila superior (Proyecto). */
 .dropdown {
   position: absolute;
@@ -448,6 +489,15 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /*
+   * Sin tope, un desplegable más alto que la ventana se sale por abajo y la
+   * mitad de sus controles queda fuera de alcance. En la tablet ninguno llega
+   * a tanto; en un móvil, casi todos.
+   */
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 84px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 84px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .dropdown header {
@@ -973,7 +1023,9 @@ input[type='radio'] {
   z-index: 25;
   width: min(320px, 84vw);
   max-height: 70vh;
+  max-height: 70dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px;
   background: var(--panel-solid);
   border: 1px solid var(--border);
@@ -1028,6 +1080,15 @@ input[type='radio'] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /*
+   * Ajustes es la lista más larga de la app y no cabe entera ni en la tablet
+   * en vertical: sin esto, todo lo que va de "Origen de cotas" hacia abajo
+   * —incluido el botón de borrar el dibujo— quedaba fuera de la pantalla.
+   */
+  max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 84px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 84px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .settings fieldset {
@@ -1222,6 +1283,7 @@ input[type='radio'] {
    * justamente el tipo de fallo que no se ve probando en la tablet.
    */
   max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 100px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 100px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1652,6 +1714,7 @@ input[type='radio'] {
 .shortcuts {
   width: min(520px, 92vw);
   max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 90px);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 90px);
   overflow-y: auto;
 }
 
@@ -1907,5 +1970,465 @@ input[type='radio'] {
   .sv-side {
     width: auto;
     max-height: 34%;
+  }
+}
+
+/* ------------------------------------------------- pantallas estrechas ---- */
+
+/*
+ * Hasta aquí la app da por hecha una pantalla grande: la barra de herramientas
+ * es una columna pegada al borde izquierdo, la paleta otra columna a su lado y
+ * la fila de Project / Layers / … se reparte arriba a la derecha. Eso funciona
+ * en un iPad y en un PC, y no funciona en un teléfono: en 390 px de ancho las
+ * dos columnas se comen más de la mitad del mapa y la fila de píldoras envuelve
+ * en tres líneas; en 390 px de ALTO —el mismo teléfono apaisado— la columna de
+ * veinte herramientas ni siquiera cabe y hay que desplazarla.
+ *
+ * Los dos casos tienen la misma solución, que es la de cualquier aplicación de
+ * mapa en un móvil: **los bordes de arriba y de abajo para los controles, todo
+ * el centro para el mapa**.
+ *
+ *   arriba   la fila de píldoras, en UNA línea que se desliza en horizontal
+ *   abajo    paleta (si está abierta), barra de herramientas, barra de estado
+ *
+ * Tres bloques, por lo que cada uno arregla:
+ *
+ *   A  estrecho O bajo   la disposición de arriba y abajo
+ *   B  estrecho          paneles a ancho completo, estado en dos líneas
+ *   C  bajo              sin rótulos en las herramientas
+ *
+ * El orden importa: B y C ajustan a la baja los altos que declara A, y una
+ * pantalla estrecha Y baja los recibe los tres, ganando C por ser el último.
+ *
+ * Los umbrales son de tamaño, no de aparato: una ventana estrecha en el PC
+ * recibe la misma disposición, que es justamente donde sale barato probarla.
+ */
+
+/* ---- A · estrecho o bajo: los controles a los bordes ---- */
+@media (max-width: 680px), (max-height: 520px) {
+  /*
+   * Los altos del pie, en un solo sitio: la paleta se apoya sobre la barra de
+   * herramientas, la barra sobre la de estado, y los controles de MapLibre por
+   * encima de todo ello. Sin esto, tocar un alto obligaba a repasar cinco
+   * reglas y a acordarse de las cinco.
+   *
+   * No son números redondos ni elegidos: `--bar-h` es 48 de botón + 10 de
+   * relleno + 2 de borde, y `--status-h`, la píldora de escala de 28 más 10 de
+   * relleno, con dos de holgura. Si cambia cualquiera de esas piezas, estos
+   * dos también. El bloque B los recalcula cuando el estado pasa a dos líneas.
+   */
+  :root {
+    --edge: 8px;
+    --bar-h: 60px;
+    --status-h: 40px;
+  }
+
+  /* Fila superior: una sola línea, deslizable.
+     Envolver era peor que deslizar — nueve píldoras en tres filas tapan un
+     tercio del mapa de forma permanente, mientras que una sola fila que se
+     arrastra solo cuesta el gesto de ir a buscar el botón. */
+  .top-right {
+    left: calc(var(--safe-l) + var(--edge));
+    right: calc(var(--safe-r) + var(--edge));
+    top: calc(var(--safe-t) + var(--edge));
+    max-width: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .top-right::-webkit-scrollbar {
+    display: none;
+  }
+
+  /*
+   * El margen automático hace de `justify-content: flex-end` sin su defecto:
+   * mientras sobre sitio empuja la fila contra el borde derecho, y cuando no
+   * cabe se resuelve en cero y la fila arranca por la izquierda, que es por
+   * donde hay que poder deslizarla. Con `flex-end` de verdad, lo que sobra se
+   * va por el lado izquierdo y ahí ya no se alcanza.
+   */
+  .top-right .pill:first-child {
+    margin-left: auto;
+  }
+
+  .top-right .pill {
+    flex: none;
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  /* Barra de herramientas: tira horizontal al pie, sobre la de estado. */
+  .toolbar {
+    top: auto;
+    left: calc(var(--safe-l) + var(--edge));
+    right: calc(var(--safe-r) + var(--edge));
+    bottom: calc(var(--safe-b) + var(--status-h));
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 6px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  /*
+   * El botón se ensancha con su rótulo en vez de partirlo en dos líneas: a 54
+   * px fijos «Follow trace» caía a dos renglones y estiraba la tira entera de
+   * 60 a 70 px, diez píxeles de mapa perdidos por una sola herramienta.
+   */
+  .tool {
+    flex: none;
+    width: auto;
+    min-width: 52px;
+    min-height: 48px;
+    padding: 5px 8px;
+  }
+
+  .tool span {
+    white-space: nowrap;
+  }
+
+  /* En columna el separador era una línea horizontal; en fila, vertical. */
+  .tool-sep {
+    width: 1px;
+    height: 34px;
+    align-self: center;
+    margin: 0 4px;
+    flex: none;
+  }
+
+  /*
+   * La paleta no entra aquí: dónde ponerla depende de qué falte. Estrecha (B)
+   * sobra alto y falta ancho, así que va de hoja al pie; baja (C) es al revés
+   * y vuelve a ser la columna del costado de siempre.
+   */
+
+  /* La barra de estado se aprieta: cada píxel suyo es un píxel de mapa, y la
+     tira de herramientas se apoya justo encima de ella. */
+  .statusbar {
+    padding: 5px calc(var(--safe-r) + var(--edge)) calc(var(--safe-b) + 5px)
+      calc(var(--safe-l) + var(--edge));
+    font-size: 11.5px;
+  }
+
+  .scale-pill {
+    min-height: 28px;
+    padding: 3px 10px;
+  }
+
+  /* Los controles de MapLibre —zoom, brújula, GPS y la escala gráfica— viven
+     en las esquinas de abajo, que es justo donde ahora está la tira. */
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    margin-bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+  }
+
+  /*
+   * Presión, inclinación y altitud del lápiz: 190 px de diagnóstico, y encima
+   * en la esquina que acaba de ocupar la tira de herramientas. Es una ayuda
+   * para calibrar el Pencil, no algo que se consulte en terreno, así que se
+   * retira y sigue estando en la tablet.
+   */
+  .pen-readout {
+    display: none;
+  }
+
+  /*
+   * La marca ya se escondía bajo 900 px de ancho. Aquí se va también en una
+   * ventana ancha pero baja: la fila de píldoras pasa a ocupar el borde
+   * superior entero y las dos se pisarían.
+   */
+  .brand {
+    display: none;
+  }
+
+  /* Cuelga de la píldora de escala, abajo a la izquierda, y no de la fila de
+     arriba: se queda abajo, pero por encima de la tira. */
+  #scale-menu {
+    top: auto;
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    max-height: calc(
+      100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - var(--bar-h) - 24px
+    );
+  }
+
+  .profile-sheet {
+    left: calc(var(--safe-l) + var(--edge));
+    right: calc(var(--safe-r) + var(--edge));
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    padding: 8px 10px 10px;
+  }
+
+  .profile-sheet header {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .profile-sheet h2 {
+    font-size: 12.5px;
+  }
+
+  /* Con la fila de botones envuelta, la fuente ya no cabe en medio. */
+  .pf-source {
+    flex: 1 1 100%;
+    order: 9;
+  }
+
+  .profile-sheet header .pill {
+    min-height: 30px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+  }
+
+  .pf-chart-wrap {
+    height: 118px;
+  }
+
+  /* Ocupaba media cabecera del perfil estructural y empujaba los botones de
+     exportación fuera de la vista. */
+  .sv-spacer {
+    display: none;
+  }
+
+  .sv-head h2 {
+    font-size: 13.5px;
+  }
+
+  .sv-head .pill {
+    min-height: 32px;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+}
+
+/* ---- B · estrecho: los paneles al ancho de la pantalla ---- */
+@media (max-width: 680px) {
+  /*
+   * En una sola fila de 390 px el mensaje de estado quedaba en unos 150 px, es
+   * decir, en nada: «Navigation mode — pick Line…». Sube a una línea entera
+   * para él solo y deja la de abajo a la escala y al contador. Cuesta 14 px de
+   * mapa y es lo único que va diciendo qué espera la app a continuación.
+   */
+  :root {
+    --status-h: 58px;
+  }
+
+  .statusbar {
+    flex-wrap: wrap;
+    align-items: center;
+    /* El atajo `gap` pisa a `row-gap`, así que van los dos en uno. */
+    gap: 3px 10px;
+  }
+
+  .statusbar #status-text {
+    flex: 1 1 100%;
+    order: -1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
+   * Paleta: hoja sobre la barra, no columna a su lado. En 390 px de ancho la
+   * columna de 106 px se llevaba más de un cuarto de la pantalla, y encima
+   * justo el borde por donde se entra a dibujar.
+   *
+   * El tope de 34dvh es el reparto: por encima, elegir el tipo de contacto
+   * dejaba sin sitio para dibujarlo. Lo que no quepa se desplaza.
+   */
+  .palette {
+    top: auto;
+    left: calc(var(--safe-l) + var(--edge));
+    right: calc(var(--safe-r) + var(--edge));
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    width: auto;
+    max-height: 34dvh;
+    padding: 9px 10px;
+  }
+
+  /*
+   * A lo ancho los grupos van uno al lado del otro y cada chip mide lo que
+   * dice su texto. En la columna de 106 px valía la pena que ocuparan el ancho
+   * entero; aquí solo dejaría filas de un chip y metros de vacío al lado.
+   */
+  .palette-scroll {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 14px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .palette-group {
+    flex: 1 1 150px;
+    min-width: 0;
+  }
+
+  .palette .chip {
+    width: auto;
+    min-height: 36px;
+    font-size: 12.5px;
+  }
+
+  .palette .certainty-row {
+    flex-wrap: nowrap;
+  }
+
+  .palette-number {
+    flex: 1 1 96px;
+  }
+
+  /* Anclados a un borde de 12 px, los desplegables dejaban un margen absurdo
+     en un lado y se salían por el otro. A esta anchura ocupan lo que hay. */
+  .dropdown,
+  .settings {
+    left: calc(var(--safe-l) + var(--edge));
+    right: calc(var(--safe-r) + var(--edge));
+    top: calc(var(--safe-t) + 58px);
+    width: auto;
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
+  }
+
+  .shortcuts {
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
+  }
+
+  .layer-panel {
+    width: min(420px, 94vw);
+  }
+
+  .props-menu {
+    width: min(320px, calc(100vw - 2 * var(--edge) - var(--safe-l) - var(--safe-r)));
+    max-height: 62dvh;
+  }
+
+  /* Centrado arriba pisaba la fila de píldoras; baja justo por debajo. */
+  .banner {
+    top: calc(var(--safe-t) + 58px);
+    max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 2 * var(--edge));
+  }
+
+  .section-view {
+    padding: calc(var(--safe-t) + 8px) calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px)
+      calc(var(--safe-l) + 8px);
+  }
+
+  .sv-head {
+    gap: 6px;
+  }
+
+  .sv-side {
+    max-height: 38%;
+  }
+
+  /*
+   * iOS hace zoom solo al enfocar un campo de menos de 16 px y después deja el
+   * mapa desencuadrado sin que nada lo devuelva a su sitio. Los 16 px de los
+   * formularios móviles son eso, no una elección estética.
+   */
+  input[type='text'],
+  input[type='number'],
+  input[type='email'],
+  input[type='password'],
+  input[type='search'],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ---- C · bajo: sin rótulos en las herramientas ---- */
+/*
+ * Con 390 px de alto —el teléfono apaisado, que es como se sostiene para
+ * dibujar una traza larga— la fila de arriba, la tira de abajo y la barra de
+ * estado dejaban el mapa en una franja. Los rótulos son lo primero que sobra:
+ * el icono ya identifica la herramienta y el `title` sigue ahí para el que
+ * dude. Se recuperan 14 px abajo y otros tantos de barra.
+ */
+@media (max-height: 520px) {
+  :root {
+    --bar-h: 54px;
+    --status-h: 40px;
+  }
+
+  .tool span {
+    display: none;
+  }
+
+  .tool {
+    width: 46px;
+    min-width: 0;
+    min-height: 42px;
+  }
+
+  /* Sin sitio para dos líneas: el mensaje vuelve a compartir fila. */
+  .statusbar #status-text {
+    flex: 1 1 auto;
+    order: 0;
+  }
+
+  /*
+   * Aquí la hoja al pie no sirve: en 390 px de alto, la fila de arriba, la
+   * tira, el estado y una hoja de 130 px dejaban el mapa en 120 px. Lo que
+   * sobra en una pantalla baja es ancho, así que la paleta vuelve a ser la
+   * columna de siempre —106 px, un 12 % de un móvil apaisado— encajada entre
+   * la fila de arriba y la tira de abajo.
+   */
+  .palette {
+    top: calc(var(--safe-t) + 52px);
+    left: calc(var(--safe-l) + var(--edge));
+    right: auto;
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    width: 106px;
+    max-height: none;
+    padding: 8px;
+  }
+
+  .palette-scroll {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .palette-group {
+    flex: none;
+  }
+
+  .palette .chip {
+    width: 100%;
+    min-height: 34px;
+    font-size: 11.5px;
+  }
+
+  .palette-number {
+    flex: 1 1 44px;
+  }
+
+  /* Con la paleta de vuelta en columna, la hoja del perfil empieza a su
+     derecha en vez de debajo: si no, tapa justo la columna que se acaba de
+     recuperar. */
+  .profile-sheet {
+    left: calc(var(--safe-l) + var(--edge) + 114px);
+  }
+
+  .pf-chart-wrap {
+    height: 96px;
+  }
+
+  .top-right .pill {
+    min-height: 36px;
+    padding: 6px 12px;
   }
 }

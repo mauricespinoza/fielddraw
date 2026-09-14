@@ -1,4 +1,4 @@
-# FieldDraw — mapeo geológico en tablet
+# FieldDraw — mapeo geológico en tablet, PC y teléfono
 
 Basemaps web, curvas de nivel generadas en el cliente, panel de capas con orden
 y transparencia, y digitalización con Apple Pencil (vértice a vértice + trazo
@@ -390,6 +390,91 @@ En macOS el modificador es ⌘ y se normaliza al mismo combo, así que no hay do
 tablas que mantener. Los símbolos ignoran `Shift` deliberadamente: en un teclado
 español `?` ya se escribe con `Shift`, y registrarlo como `Shift+?` lo haría
 inalcanzable en un teclado inglés.
+
+## En un teléfono
+
+La disposición de la app —barra de herramientas en columna a la izquierda,
+paleta en otra columna a su lado, fila de botones arriba a la derecha— da por
+hecha una pantalla grande. En un iPad y en un PC sobra sitio; en un teléfono no
+hay ninguno de los dos supuestos:
+
+- **En vertical falta ancho.** En 390 px, las dos columnas se llevan más de la
+  mitad de la pantalla, y encima el borde izquierdo, que es por donde entra la
+  mano a dibujar. La fila de nueve píldoras envuelve en tres líneas y se come
+  otro tercio.
+- **En apaisado falta alto.** Con 390 px de alto, la columna de veinte
+  herramientas ni siquiera cabe: hay que desplazarla para llegar a **Perfil** o
+  a **3D**.
+
+Los dos casos se arreglan igual, y es la disposición de cualquier app de mapa
+en un móvil: **los bordes de arriba y de abajo para los controles y todo el
+centro para el mapa**.
+
+| | Ancho | Alto |
+|---|---|---|
+| Fila de píldoras | arriba, en **una** línea que se desliza en horizontal | — |
+| Herramientas | — | abajo, en **una** tira que se desliza en horizontal |
+| Paleta | hoja sobre la tira | columna al costado |
+| Barra de estado | el mensaje en su propia línea | mensaje, escala y contador en una |
+
+Deslizar en vez de envolver es a propósito: nueve píldoras en tres filas tapan
+un tercio del mapa de forma **permanente**, mientras que una sola fila que se
+arrastra solo cuesta el gesto de ir a buscar el botón cuando hace falta.
+
+La paleta cambia de sitio según qué escasee, que es lo único que no es
+simétrico entre las dos orientaciones. En vertical sobra alto: va de hoja al
+pie, con los grupos uno al lado del otro y un tope de 34 dvh —por encima de
+eso, elegir el tipo de contacto dejaba sin sitio para dibujarlo—. En apaisado
+sobra ancho: vuelve a ser la columna de 106 px de siempre, que en un móvil
+tumbado es un 12 % de la pantalla, encajada entre la fila de arriba y la tira
+de abajo.
+
+Los rótulos de las herramientas desaparecen por debajo de 520 px de alto: el
+icono ya identifica cada una, el `title` sigue ahí para el que dude, y se
+recuperan unos 14 px arriba y otros tantos abajo. Lo que se retira del todo es
+el **diagnóstico del lápiz** —presión, inclinación, altitud—, que es una ayuda
+para calibrar el Pencil y no algo que se consulte en terreno, y la **marca** de
+la esquina, que ya se escondía por debajo de 900 px.
+
+Dos detalles que no se ven pero se notan:
+
+- Los altos van medidos en **`dvh`, no en `vh`**. En un navegador móvil `100vh`
+  es la ventana con la barra de direcciones retraída, que no es la que se ve al
+  abrir: un panel calculado con `vh` nace más alto que la pantalla y deja su
+  último botón fuera. La línea de `vh` se queda debajo como reserva para
+  navegadores que no entiendan `dvh`.
+- Los campos de texto pasan a **16 px**. iOS hace zoom solo al enfocar un campo
+  de menos de 16 px y después deja el mapa desencuadrado sin que nada lo
+  devuelva a su sitio.
+
+Los umbrales —680 px de ancho, 520 px de alto— son de tamaño, no de aparato:
+una ventana estrecha o baja en el PC recibe exactamente la misma disposición,
+que es justamente donde sale barato probarla. Todo está en un solo sitio, al
+final de `src/styles/app.css`, en tres bloques: **estrecho o bajo** (los
+controles a los bordes), **estrecho** (paneles a ancho completo) y **bajo**
+(sin rótulos).
+
+### De paso
+
+Dos fallos que solo se vieron al medir la pantalla entera y que no eran del
+teléfono:
+
+- **Ajustes no tenía tope de alto.** Es la lista más larga de la app y no cabe
+  entera ni en el iPad en vertical: todo lo que va de *Origen de cotas* hacia
+  abajo —incluido el botón de borrar el dibujo— quedaba fuera de la pantalla,
+  sin barra de desplazamiento ni forma de llegar. Ahora los desplegables y
+  Ajustes se topan contra la ventana y se desplazan.
+- **La marca tapaba la fila de certeza.** El logotipo de la esquina empieza en
+  los mismos 92 px y a la misma altura que la columna de la paleta, así que
+  *Observado / Inferido / Cubierto* quedaba debajo del logo, visible a medias y
+  sin poder pulsarse. Con la paleta abierta la marca se retira: una es un
+  crédito y la otra decide cómo se dibuja la siguiente línea.
+
+Y una tercera, de la misma medición: en la columna de 106 px la muestra del
+trazo se llevaba 40 px y al nombre le quedaban 24, así que **Normal** se
+dibujaba como *Norma*, cortado a media palabra y sin nada que avisara de que
+faltaba texto. La muestra baja a 24 px y lo que aun así no quepa se corta con
+puntos suspensivos.
 
 ## Continuar una línea
 
