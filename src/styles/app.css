@@ -364,6 +364,67 @@ body,
   max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 24px);
 }
 
+/*
+ * Marca de la app: logo y autoría, a la misma altura que la fila de Project /
+ * Layers / Units / ... de la derecha, para que ambas se lean como una sola
+ * barra. No es interactiva —ni botón ni enlace—, así que no le hace falta
+ * nada del vocabulario de foco y teclado que sí necesitan los `.pill`.
+ */
+.brand {
+  position: absolute;
+  top: calc(var(--safe-t) + 12px);
+  left: calc(var(--safe-l) + 92px);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 5px 14px 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.brand-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.brand-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.brand-by {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/*
+ * Debajo de esto la barra de herramientas ya ocupa buena parte del ancho y la
+ * fila de botones de la derecha empieza a envolver: la marca no cabría sin
+ * pisar una de las dos, así que se retira y deja el sitio.
+ */
+@media (max-width: 900px) {
+  .brand {
+    display: none;
+  }
+}
+
 /* Panel colgado de un botón de la fila superior (Proyecto). */
 .dropdown {
   position: absolute;
