@@ -389,16 +389,15 @@ body,
 }
 
 .brand-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
   flex: none;
 }
 
 .brand-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.15;
+  line-height: 1.25;
   white-space: nowrap;
 }
 
@@ -409,8 +408,17 @@ body,
   letter-spacing: 0.01em;
 }
 
-.brand-by {
-  font-size: 10px;
+/* El acento de "Draw" es el mismo teal de `--accent`: la marca queda atada al
+   color con que la propia app pinta rumbo y manteo, no a uno elegido aparte. */
+.brand-name em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.brand-by,
+.brand-uni {
+  font-size: 9.5px;
+  font-weight: 500;
   color: var(--muted);
 }
 

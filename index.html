@@ -288,11 +288,26 @@
            derecha, para que las dos lean como una sola barra superior. Se
            esconde en pantallas angostas (ver media query), donde ya compite
            por sitio con la barra de herramientas y la fila de botones. -->
+      <!-- El icono es propio de esta franja, no el de instalación (icons/icon-*.png,
+           el que ve el sistema operativo): un lápiz trazando una línea sobre
+           una tablet, que es literalmente lo que hace la app y no se confunde
+           con el logotipo de fábrica en un lanzador. -->
       <div class="brand" aria-hidden="false">
-        <img class="brand-logo" src="./icons/icon-192.png" alt="" width="30" height="30" />
+        <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true">
+          <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
+          <rect x="0.6" y="0.6" width="22.8" height="22.8" rx="5" fill="none" stroke="#e6edf3" stroke-opacity="0.16" stroke-width="1.2" />
+          <!-- la tablet -->
+          <rect x="3.6" y="8.8" width="12.6" height="10.2" rx="1.6" fill="none" stroke="#2dd4bf" stroke-width="1.4" />
+          <!-- el contacto que se está dibujando en su pantalla -->
+          <path d="M5.6 15.9 8.6 12.7 10.9 15 13.3 11.6" fill="none" stroke="#ffb300" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+          <!-- el lápiz, con la mina tocando el extremo del trazo -->
+          <line x1="20.2" y1="2.6" x2="15.1" y2="10" stroke="#f87171" stroke-width="2.3" stroke-linecap="round" />
+          <path d="M15.1 10 13.1 11.9 14.3 9.3z" fill="#e6edf3" />
+        </svg>
         <span class="brand-text">
-          <strong class="brand-name">FieldDraw</strong>
-          <span class="brand-by">by Mauricio Espinoza · Universidad de Concepción</span>
+          <strong class="brand-name">Field<em>Draw</em></strong>
+          <span class="brand-by">by Mauricio Espinoza · 2026</span>
+          <span class="brand-uni">Universidad de Concepción</span>
         </span>
       </div>
 
