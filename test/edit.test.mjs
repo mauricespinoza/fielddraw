@@ -408,7 +408,26 @@ console.log('== líneas a polígono ==');
      JSON.stringify(f[0].properties));
   ok('conserva la certeza de la línea', f[0].properties.certainty === 'observed');
   ok('id nuevo, no el de la línea', f[0].properties.id !== 'L');
-  ok('deshacer lo devuelve', (store.undo(), store.getState().features[0].geometry.type === 'LineString'));
+
+  /*
+   * Deshacer tiene que devolver la LÍNEA, no "algo parecido a una línea": la
+   * conversión es de un solo paso y la vuelta también, con su geometría y sus
+   * atributos intactos. Se comprueba entero porque es la operación de la app
+   * que más fácil sería dejar a medias — quita un elemento y añade otro— y
+   * porque volver atrás es justo lo que uno hace cuando se equivoca de unidad.
+   */
+  const antes = JSON.parse(JSON.stringify(store.getState().features));
+  store.undo();
+  const tras = store.getState().features;
+  ok('deshacer lo devuelve', tras.length === 1 && tras[0].geometry.type === 'LineString');
+  ok('con su geometría original', eq(tras[0].geometry.coordinates, cuadrado),
+     JSON.stringify(tras[0].geometry.coordinates));
+  ok('con su id original', tras[0].properties.id === 'L');
+  ok('y volviendo a ser una línea en los atributos', tras[0].properties.kind === 'line',
+     tras[0].properties.kind);
+  ok('rehacer la deja otra vez en polígono',
+     (store.redo(), eq(store.getState().features, antes)));
+  ok('y deshacer otra vez la devuelve', (store.undo(), store.getState().features[0].properties.id === 'L'));
 }
 
 {

@@ -83,6 +83,10 @@ const HILLSHADE_LAYER_IDS = ['hillshade'];
 const PROFILE_SOURCE = 'profile-src';
 const PROFILE_LAYER_IDS = ['profile-casing', 'profile-line', 'profile-nodes', 'profile-cursor'];
 
+/** Traza de afloramiento proyectada desde una medida; ver planeTrace.js. */
+const PLANE_TRACE_SOURCE = 'plane-trace-src';
+const PLANE_TRACE_LAYER_IDS = ['plane-trace-casing', 'plane-trace-line', 'plane-trace-anchor'];
+
 /**
  * Resalte del elemento ajeno que se está consultando —una capa importada—.
  * Es propio y no reutiliza el de la selección porque ese vive en la fuente del
@@ -187,6 +191,7 @@ function applyLayerStack(map, layers) {
     ...PICK_LAYER_IDS,
     ...THICKNESS_LAYER_IDS,
     ...PROFILE_LAYER_IDS,
+    ...PLANE_TRACE_LAYER_IDS,
     ...DRAFT_LAYER_IDS,
     ...EDIT_LAYER_IDS,
   ]) {
@@ -654,6 +659,48 @@ export function createMapView({
       },
     });
 
+    /*
+     * Traza de afloramiento a la espera de que se decida qué es.
+     *
+     * Va **punteada** y en el teal de la app, no en el negro de un contacto ni
+     * en el azul de una falla: mientras esté así no es ninguna de las dos
+     * cosas, es una predicción, y tiene que verse distinta de todo lo que sí
+     * está cartografiado. En cuanto se le pone tipo pasa a la fuente del
+     * dibujo y se pinta con su simbología de verdad.
+     */
+    map.addSource(PLANE_TRACE_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+    map.addLayer({
+      id: 'plane-trace-casing',
+      type: 'line',
+      source: PLANE_TRACE_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#04211f', 'line-width': 7, 'line-opacity': 0.6 },
+    });
+    map.addLayer({
+      id: 'plane-trace-line',
+      type: 'line',
+      source: PLANE_TRACE_SOURCE,
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': '#2dd4bf', 'line-width': 2.8, 'line-dasharray': [2.4, 1.6] },
+    });
+    map.addLayer({
+      id: 'plane-trace-anchor',
+      type: 'circle',
+      source: PLANE_TRACE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'anchor'],
+      paint: {
+        'circle-radius': 5.5,
+        'circle-color': '#2dd4bf',
+        'circle-stroke-color': '#04211f',
+        'circle-stroke-width': 2,
+      },
+    });
+
     ready = true;
     applyScaleLock();
     applyLayerStack(map, store.getState().layers);
@@ -661,6 +708,7 @@ export function createMapView({
     syncStrabo();
     syncDraft();
     syncProfile();
+    syncPlaneTrace();
     syncThickness();
     applyTerrain();
     collectSnapSources();
@@ -879,6 +927,39 @@ export function createMapView({
     src.setData({ type: 'FeatureCollection', features: out });
   }
 
+  /**
+   * Traza proyectada desde una medida, con la propia medida marcada encima.
+   *
+   * El ancla importa tanto como la línea: lo que se está mirando es hasta
+   * dónde se aleja la traza del único punto donde el plano se midió de verdad,
+   * y sin ese punto la línea parecería medida de punta a punta.
+   */
+  function syncPlaneTrace() {
+    if (!ready) return;
+    const src = map.getSource(PLANE_TRACE_SOURCE);
+    if (!src) return;
+    const { planeTrace } = store.getState();
+    if (!planeTrace || !planeTrace.coords || planeTrace.coords.length < 2) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    const out = [
+      {
+        type: 'Feature',
+        properties: { kind: 'trace' },
+        geometry: { type: 'LineString', coordinates: planeTrace.coords },
+      },
+    ];
+    if (planeTrace.origin) {
+      out.push({
+        type: 'Feature',
+        properties: { kind: 'anchor' },
+        geometry: { type: 'Point', coordinates: planeTrace.origin },
+      });
+    }
+    src.setData({ type: 'FeatureCollection', features: out });
+  }
+
   /** Vuelca las tres colecciones del dataset de StraboSpot a sus fuentes. */
   function syncStrabo() {
     if (!ready) return;
@@ -1000,7 +1081,7 @@ export function createMapView({
     }
   }
 
-  function fitToGeoJSON(fc) {
+  function fitToGeoJSON(fc, padding = 60) {
     const bounds = new maplibregl.LngLatBounds();
     let any = false;
     const visit = (c) => {
@@ -1012,7 +1093,7 @@ export function createMapView({
       } else for (const x of c) visit(x);
     };
     for (const f of fc.features) if (f.geometry) visit(f.geometry.coordinates);
-    if (any) map.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 700 });
+    if (any) map.fitBounds(bounds, { padding, maxZoom: 16, duration: 700 });
   }
 
   /*
@@ -2134,6 +2215,7 @@ export function createMapView({
       publishScale(true);
     }
     if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
+    if (store.changed('planeTrace')) syncPlaneTrace();
     if (store.changed('thickness') || store.changed('thicknessFrom')) syncThickness();
     if (store.changed('units')) applyUnitColors();
     if (store.changed('ornaments')) {
@@ -2234,7 +2316,9 @@ export function createMapView({
   // Gancho de depuración: útil para inspeccionar el estilo desde la consola
   // de Safari en el propio iPad, donde no hay devtools cómodas, y para que
   // las pruebas de navegador puedan ejercitar el snapping real.
-  window.__fielddraw = {
+  // `Object.assign` y no una asignación limpia: la interfaz cuelga lo suyo del
+  // mismo gancho, y quién arranca antes depende de cuándo cargue el estilo.
+  window.__fielddraw = Object.assign(window.__fielddraw || {}, {
     map,
     store,
     controller,
@@ -2253,7 +2337,7 @@ export function createMapView({
     beginVertexDrag,
     moveVertexDrag,
     endVertexDrag,
-  };
+  });
 
   return {
     map,
@@ -2265,14 +2349,23 @@ export function createMapView({
     /** Quita el resalte del elemento ajeno; lo llama la interfaz al cerrar. */
     clearForeignHighlight: () => highlightForeign(null),
     /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */
-    fitToCoords(coords) {
+    /**
+     * Encuadra una polilínea. `padding` admite el objeto de MapLibre —`{top,
+     * bottom, left, right}`— para dejar sitio a un panel abierto: encuadrar
+     * sobre el centro de la ventana cuando la mitad de abajo está tapada
+     * coloca justo lo que hay que mirar debajo del panel.
+     */
+    fitToCoords(coords, padding) {
       if (!Array.isArray(coords) || coords.length === 0) return;
-      fitToGeoJSON({
-        type: 'FeatureCollection',
-        features: [
-          { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } },
-        ],
-      });
+      fitToGeoJSON(
+        {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } },
+          ],
+        },
+        padding,
+      );
     },
     destroy() {
       controller.destroy();

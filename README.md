@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
 ```
 
-1144 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1204 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -53,7 +53,11 @@ título; el corte de líneas, incluido el cruce oblicuo que estaba roto; la
 traducción de una carta ajena a elementos del dibujo; y el espesor
 estratigráfico con su incertidumbre; el manteo aparente contra los casos donde
 la respuesta se sabe de antemano, las intersecciones del corte, y las cabeceras
-del shapefile releídas byte a byte.
+del shapefile releídas byte a byte; y la traza de un plano sobre la topografía
+contra terrenos sintéticos con solución cerrada —plano horizontal, ladera a lo
+largo del rumbo, quebrada que obliga a la V, plano vertical donde `tan 90°` no
+existe, y el caso degenerado en que el terreno **es** el plano medido y hay
+infinitos cortes en vez de uno.
 
 Lo que necesita navegador —`DOMParser` para el QML, el wasm de sql.js y JSTS—
 vive en `test/browser.html`: ábrela con el servidor corriendo en
@@ -158,6 +162,7 @@ carga.
 | Quitar un área interior | **Hole**: dibujar el contorno de lo que sobra dentro del polígono |
 | Editar una capa importada | botón **✎** de esa capa, en el panel de Capas |
 | Espesor estratigráfico | seleccionar un dip, **Measure thickness from here**, y tocar la otra superficie |
+| Traza de un plano sobre el terreno | seleccionar un dip, **Retrieve trace from DEM intersection**, y decir cuántos km a cada lado |
 | Perfil estructural | trazar un perfil y pulsar **Structural section** (con dips elegidos con el lazo, si se quieren solo esos) |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
@@ -407,34 +412,57 @@ hay ninguno de los dos supuestos:
   a **3D**.
 
 Los dos casos se arreglan igual, y es la disposición de cualquier app de mapa
-en un móvil: **los bordes de arriba y de abajo para los controles y todo el
-centro para el mapa**.
+en un móvil: **el borde de abajo para los controles, dos grupos pequeños en las
+esquinas de arriba y todo el resto para el mapa**.
 
-| | Ancho | Alto |
-|---|---|---|
-| Fila de píldoras | arriba, en **una** línea que se desliza en horizontal | — |
-| Herramientas | — | abajo, en **una** tira que se desliza en horizontal |
-| Paleta | hoja sobre la tira | columna al costado |
-| Barra de estado | el mensaje en su propia línea | mensaje, escala y contador en una |
+    ┌─────────────────────────────────────┐
+    │ ↶ ↷                       1:25 000  │   deshacer/rehacer · escala
+    │                                     │
+    │                MAPA                 │
+    │                                     │
+    │ Tap for the first vertex · press…   │   estado
+    │ ✋ ╱ ⬠ ⬡ ∠ ▷ …                      │   herramientas  (se desliza)
+    │ Project  Layers  Units  Symbols  …  │   opciones      (se desliza)
+    └─────────────────────────────────────┘
 
-Deslizar en vez de envolver es a propósito: nueve píldoras en tres filas tapan
-un tercio del mapa de forma **permanente**, mientras que una sola fila que se
-arrastra solo cuesta el gesto de ir a buscar el botón cuando hace falta.
+Todo lo de abajo se **desliza** en vez de envolver: nueve píldoras en tres
+filas tapan un tercio del mapa de forma **permanente**, mientras que una sola
+fila que se arrastra solo cuesta el gesto de ir a buscarlas cuando hacen falta.
 
-La paleta cambia de sitio según qué escasee, que es lo único que no es
-simétrico entre las dos orientaciones. En vertical sobra alto: va de hoja al
-pie, con los grupos uno al lado del otro y un tope de 34 dvh —por encima de
-eso, elegir el tipo de contacto dejaba sin sitio para dibujarlo—. En apaisado
-sobra ancho: vuelve a ser la columna de 106 px de siempre, que en un móvil
-tumbado es un 12 % de la pantalla, encajada entre la fila de arriba y la tira
-de abajo.
+La banda de opciones baja al pie por dos motivos. Arriba competía con lo único
+que de verdad quiere estar arriba, que es el mapa; y abajo cae donde ya está el
+pulgar, en vez de obligar a cruzar la pantalla entera para llegar a **Capas**.
+Los desplegables que cuelgan de ella bajan con ella, o quedarían en el extremo
+opuesto al botón que los abre.
 
-Los rótulos de las herramientas desaparecen por debajo de 520 px de alto: el
-icono ya identifica cada una, el `title` sigue ahí para el que dude, y se
-recuperan unos 14 px arriba y otros tantos abajo. Lo que se retira del todo es
-el **diagnóstico del lápiz** —presión, inclinación, altitud—, que es una ayuda
-para calibrar el Pencil y no algo que se consulte en terreno, y la **marca** de
-la esquina, que ya se escondía por debajo de 900 px.
+Lo que sube a las esquinas son las dos cosas que se usan sin mirar:
+
+- **Deshacer y rehacer**, a la izquierda. No existían: en la barra de
+  herramientas hay un `Undo` que retira el último **vértice** del trazo en
+  curso y que está apagado el resto del tiempo, y el deshacer del dibujo
+  entero solo se alcanzaba con `Ctrl+Z` —que un teléfono no tiene— o con el
+  doble toque de dos dedos, que nadie descubre solo. Convertir una línea en
+  polígono y arrepentirse no tenía salida.
+- **La escala**, a la derecha, con su panel colgando de ella. Estaba abajo a la
+  izquierda, que es justo donde ahora va la fila de herramientas.
+
+La paleta sigue cambiando de sitio según qué escasee, que es lo único que no es
+simétrico entre las dos orientaciones.
+
+En vertical sobra alto: va de hoja al pie, con los grupos uno al lado del otro
+y un tope de 34 dvh —por encima de eso, elegir el tipo de contacto dejaba sin
+sitio para dibujarlo—. En apaisado sobra ancho: vuelve a ser la columna de
+106 px de siempre, que en un móvil tumbado es un 12 % de la pantalla, encajada
+entre el borde de arriba y la tira de abajo.
+
+Los iconos de la tira bajan de 24 a 19 px y los rótulos desaparecen del todo
+por debajo de 520 px de alto: el icono ya identifica cada herramienta, el
+`title` sigue ahí para el que dude, y con veinte botones esos pocos píxeles por
+botón se notan sumados. Lo que se retira entero es el **diagnóstico del lápiz**
+—presión, inclinación, altitud—, que es una ayuda para calibrar el Pencil y no
+algo que se consulte en terreno; la **marca** de la esquina, que ya se escondía
+por debajo de 900 px; y el **contador de elementos**, que gastaba un tercio de
+la línea de estado en decir un número que ya se ve en el mapa.
 
 Dos detalles que no se ven pero se notan:
 
@@ -475,6 +503,12 @@ trazo se llevaba 40 px y al nombre le quedaban 24, así que **Normal** se
 dibujaba como *Norma*, cortado a media palabra y sin nada que avisara de que
 faltaba texto. La muestra baja a 24 px y lo que aun así no quepa se corta con
 puntos suspensivos.
+
+Un cuarto, que no era de disposición sino de alcance: **no había forma de
+deshacer sin teclado**. Está arriba, con los botones nuevos. El deshacer en sí
+estaba bien —convertir una línea en polígono y volver atrás devuelve la línea
+con su geometría, su id y sus atributos intactos, y está cubierto en
+`test/edit.test.mjs`—; lo que faltaba era poder pedirlo.
 
 ## Continuar una línea
 
@@ -928,6 +962,83 @@ También avisa cuando el segundo punto cae **por debajo** del plano del primero 
 lo largo de la normal: o la capa está invertida, o se marcaron los dos puntos al
 revés, y lo segundo es lo habitual.
 
+### Traza de afloramiento desde el DEM
+
+El problema inverso del resto de este módulo. En todo lo anterior se parte de
+una traza y sale un plano; aquí se parte de un plano —una medida ya tomada— y
+sale **dónde afloraría ese plano** a lo largo de unos kilómetros de rumbo.
+
+Con una medida seleccionada, **Retrieve trace from DEM intersection** en su
+menú de propiedades. Pide una sola cosa —cuántos kilómetros hacia cada lado del
+punto, rotulados por el cuadrante al que va cada lado y no por un «adelante» y
+un «atrás» que no significan nada en el cerro— y dibuja la traza punteada sobre
+el mapa. Solo **después**, con la línea ya a la vista, pregunta qué es y ofrece
+los mismos tipos y certezas de la paleta. Ese orden es deliberado: decidir que
+un contacto es una falla antes de ver por dónde pasa es exactamente lo que no
+se quiere.
+
+Es la **regla de la V** de toda la vida, hecha sobre el modelo en vez de a ojo
+sobre las curvas de nivel: un contacto de bajo manteo cruzando una quebrada
+dibuja una V que apunta aguas arriba, y cuánto se abre depende del manteo y de
+la pendiente del valle. A mano sobre una carta es lento y sistemáticamente
+optimista.
+
+#### La cuenta
+
+En el sistema local con origen en la medida, `s` a lo largo del rumbo y `u` a
+lo largo de la dirección de manteo, el plano baja `tan δ` por cada metro de `u`:
+
+    z_plano(s, u) = z₀ − u · tan δ
+
+La traza es donde el plano y el terreno se cortan, o sea el cero de
+
+    g(s, u) = (z_DEM(s, u) − z₀) · cos δ + u · sen δ
+
+que es lo mismo multiplicado por `cos δ`. Se escribe así por un caso concreto:
+un plano **vertical**. Con la tangente, `tan 90°` es una división por cero; con
+el seno y el coseno queda `g = u`, cuyo cero es `u = 0` — que es la respuesta
+correcta, porque un plano vertical aflora recto siga el terreno lo que siga.
+
+Para cada `s` se busca el cero en `u` abriendo en abanico a los dos lados de
+donde cortó en la sección anterior, con paso creciente, y afinando por
+bisección. Se toma **el más cercano**, no el primero: `g` puede tener varios
+ceros —un plano aflora dos veces a los lados de una loma— y lo que se sigue es
+UNA traza continua, no un salto entre ramas.
+
+#### Lo que se niega a hacer
+
+Por debajo de **3° de manteo** no traza, y no es una limitación técnica. Con el
+plano casi horizontal la traza deja de seguir al rumbo y pasa a ser una curva
+de nivel: a 1°, diez metros de desnivel la mueven 570 m de lado. Es el mismo
+umbral bajo el que la app dibuja el símbolo horizontal sin tic, porque un
+manteo así no declara dirección, y pedir «tantos km a cada lado del rumbo» ahí
+no significaría nada.
+
+Entre 3° y 10° traza, pero avisa de cuánto amplifica el error: el
+desplazamiento lateral es el error vertical dividido por `tan δ`, así que a 5°
+un metro mal leído en el DEM son once metros de traza mal puesta.
+
+Y corta la traza cuando se sale del corredor de búsqueda —que crece con lo que
+se pidió, con techo en 8 km— o cuando el modelo se queda sin cota. Corta y lo
+dice, en vez de inventar el tramo que falta.
+
+#### Lo que la traza es, y lo que no
+
+Es una **predicción geométrica, no un dato**. Afirma que el plano medido en UN
+punto sigue siendo plano y sigue teniendo la misma orientación hasta donde se
+pidió. Eso es razonable a cientos de metros en una secuencia tranquila y falso
+en cuanto hay un pliegue, una falla o un cambio de manteo.
+
+Por eso entra al dibujo como una línea más —se edita, se mueve y se borra igual
+que cualquier otra, y se deshace en un paso— y por eso se guarda de dónde
+salió. En el proyecto `.fdproj.json` van los números enteros; en el GeoPackage,
+las columnas `method` y `source` de `geol_lines`:
+
+    Projected from 090/40 over 1.50 km on AWS Terrain Tiles — not walked
+
+Quien abra la carta dentro de un año tiene derecho a distinguir un contacto
+caminado de uno proyectado. En el mapa acabado son la misma línea negra.
+
 ### Exportación
 
 Las medidas salen en una tercera tabla del GeoPackage, `geol_points`, con los
@@ -953,7 +1064,13 @@ en los nombres que espera el plugin de QGIS, más los campos de calidad.
 geometrías en GeoPackageBinary + WKB, EPSG:4326) con tres tablas —`geol_lines`,
 `geol_polygons` y `geol_points` (las medidas de rumbo y manteo)— y —lo
 importante— una tabla `layer_styles` con el QML y el SLD
-generados a partir de la simbología. Al abrirlo en QGIS el mapa aparece ya
+generados a partir de la simbología.
+
+`geol_lines` lleva además dos columnas de procedencia, `method` y `source`,
+vacías en todo lo digitalizado a mano y rellenas en las trazas proyectadas
+desde un manteo sobre el DEM (ver **Traza de afloramiento desde el DEM**): en
+la carta acabada las dos son la misma línea negra, y esto es lo único que las
+distingue. Al abrirlo en QGIS el mapa aparece ya
 simbolizado, con una regla por combinación tipo × certeza presente en los datos.
 
 **Importar** lee cualquier GeoPackage: geometrías (incluidas Multi\*, 3D y

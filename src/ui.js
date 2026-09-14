@@ -32,6 +32,12 @@ import {
   isObservedOnly,
 } from './symbology.js';
 import {
+  DEFAULT_TRACE_KM,
+  MAX_TRACE_KM,
+  MIN_TRACE_DIP_DEG,
+  traceFromPlane,
+} from './planeTrace.js';
+import {
   DEM_METHODS,
   MEASURE_METHODS,
   METHOD_BY_ID,
@@ -943,7 +949,16 @@ export function closePropsMenu() {
 /** Cajones laterales: solo uno abierto a la vez. */
 const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
-const POPOVERS = ['settings', 'project-menu', 'topo-menu', 'scale-menu', 'attrs', 'shortcuts'];
+const POPOVERS = [
+  'settings',
+  'project-menu',
+  'topo-menu',
+  'scale-menu',
+  'attrs',
+  'shortcuts',
+  'trace-menu',
+  'trace-type-menu',
+];
 
 /**
  * Elementos que NO cuentan como "fuera" al cerrar por clic.
@@ -1033,6 +1048,12 @@ function togglePanel(id) {
  * cualquier panel en una tablet.
  */
 export function closeOverlays() {
+  /*
+   * La traza a medio decidir se va con su diálogo. Dejarla dibujada sin el
+   * cuadro que pregunta qué es la convertiría en una línea punteada que no se
+   * puede ni guardar ni quitar: existiría solo en la pantalla.
+   */
+  if (!$('trace-type-menu').classList.contains('hidden')) store.clearPlaneTrace();
   for (const id of DRAWERS) $(id).classList.remove('open');
   for (const id of POPOVERS) $(id).classList.add('hidden');
   closePropsMenu();
@@ -2403,6 +2424,318 @@ async function runThickness(pending) {
   }
 }
 
+/* ---------- traza de un plano sobre el terreno ---------- */
+
+/**
+ * La medida desde la que se está proyectando. Se guarda porque el cálculo es
+ * asíncrono y el menú de propiedades ya se cerró cuando termina.
+ */
+let traceFrom = null;
+let traceBusy = false;
+
+/** La resolución real del modelo en uso: decide el paso y el detalle posible. */
+function demResolution(st) {
+  const dem = OPENTOPO_DEM_BY_ID.get(st.opentopoDem);
+  return st.profileSource === 'opentopo' && dem ? dem.nominal : TERRARIUM_NOMINAL_M;
+}
+
+/**
+ * Abre el diálogo de la traza para una medida concreta.
+ *
+ * Los dos rótulos se escriben con el cuadrante hacia el que va cada lado —«NE»
+ * y «SW», no «adelante» y «atrás»—: sobre el terreno uno sabe hacia dónde
+ * quiere estirar el contacto, y no hacia qué extremo arbitrario de un vector.
+ */
+function openTraceMenu(medida) {
+  const p = medida.properties;
+  const strike = Number(p.strike);
+  const dip = Number(p.dip);
+  const az = Number.isFinite(Number(p.dipAzimuth)) ? Number(p.dipAzimuth) : strike + 90;
+  const rumbo = ((az - 90) % 360 + 360) % 360;
+
+  traceFrom = {
+    id: p.id,
+    origin: medida.geometry.coordinates.slice(0, 2),
+    strike: rumbo,
+    dip,
+    dipAzimuth: az,
+    type: p.type,
+  };
+
+  $('trace-from').textContent =
+    `From ${formatStrikeDip(rumbo, dip)} (dip ${quadrant(az)}). The trace runs along strike from this point.`;
+  $('trace-back-label').textContent = `Toward ${quadrant((rumbo + 180) % 360)} (${Math.round((rumbo + 180) % 360)}°)`;
+  $('trace-forward-label').textContent = `Toward ${quadrant(rumbo)} (${Math.round(rumbo)}°)`;
+  $('trace-back').value = String(DEFAULT_TRACE_KM);
+  $('trace-forward').value = String(DEFAULT_TRACE_KM);
+
+  openPanel('trace-menu');
+
+  // Un manteo bajo el umbral no se traza, pero el diálogo se abre igual: es
+  // donde está escrito por qué, y esconder el botón dejaría la pregunta.
+  const puede = Number.isFinite(dip) && dip >= MIN_TRACE_DIP_DEG;
+  $('trace-run').disabled = !puede;
+  if (!puede) {
+    $('trace-from').textContent =
+      `A ${Number.isFinite(dip) ? dip.toFixed(0) : '—'}° dip is below the ${MIN_TRACE_DIP_DEG}° floor: that flat, the plane crops out along a contour line and its strike points nowhere, so there is no line to run along.`;
+  }
+}
+
+/** Calcula la traza con los kilómetros que dice el diálogo. */
+async function runPlaneTrace() {
+  if (traceBusy || !traceFrom) return;
+  const backKm = Number($('trace-back').value);
+  const forwardKm = Number($('trace-forward').value);
+
+  traceBusy = true;
+  const st = store.getState();
+  setBusy(st.profileSource === 'opentopo' ? 'Downloading the DEM…' : 'Reading elevations…');
+  try {
+    const sampler = samplerFor(st);
+    const resolution = demResolution(st);
+    /*
+     * OpenTopography necesita el recorte antes de contestar, y el recorte
+     * tiene que cubrir el corredor entero, no solo la recta del rumbo: la
+     * traza se aparta de ella justamente donde el terreno es accidentado, que
+     * es donde interesa. Se le pasan las cuatro esquinas.
+     */
+    if (sampler.loadGrid) {
+      await sampler.loadGrid(corridorCorners(traceFrom, backKm, forwardKm));
+    }
+
+    const r = await traceFromPlane({
+      ...traceFrom,
+      backKm,
+      forwardKm,
+      resolution,
+      elevationAt: (lng, lat) => sampler.elevationAt(lng, lat),
+    });
+
+    if (!r.ok) {
+      showBanner(r.reason);
+      return;
+    }
+
+    store.setPlaneTrace({
+      coords: r.coords,
+      origin: traceFrom.origin,
+      from: traceFrom.id,
+      strike: r.strike,
+      dip: r.dip,
+      dipAzimuth: r.dipAzimuth,
+      elevation: r.elevation,
+      demSource: st.profileSource,
+      stats: r.stats,
+      warnings: r.warnings,
+    });
+    /*
+     * Primero el panel y después el encuadre, no al revés: en un teléfono el
+     * cuadro de «¿qué es esta línea?» se lleva media pantalla, y encuadrar
+     * sobre el centro de la ventana dejaría la traza justo detrás de él —que
+     * es lo único que hay que mirar para contestar la pregunta.
+     */
+    openTraceTypeMenu();
+    if (mapBridge) mapBridge.fitToCoords(r.coords, paddingParaPanel('trace-type-menu'));
+    if (r.warnings.length) showBanner(r.warnings.join(' '));
+  } catch (err) {
+    showBanner(err.message);
+  } finally {
+    setBusy(null);
+    traceBusy = false;
+  }
+}
+
+/**
+ * Márgenes de encuadre que dejan libre el panel abierto.
+ *
+ * Se mide el panel de verdad en vez de suponer su alto: cambia con la
+ * disposición —al costado en una tablet, media pantalla en un teléfono— y con
+ * lo que tenga dentro.
+ */
+function paddingParaPanel(id) {
+  const el = $(id);
+  if (!el || el.classList.contains('hidden')) return 60;
+  const r = el.getBoundingClientRect();
+  const base = { top: 60, bottom: 60, left: 40, right: 40 };
+  // El panel ocupa el borde del que esté más cerca.
+  if (r.top > window.innerHeight - r.bottom) base.bottom = Math.round(r.height) + 24;
+  else base.top = Math.round(r.height) + 24;
+  // Un margen mayor que la ventana haría que `fitBounds` no encuadrara nada.
+  const alto = window.innerHeight - 80;
+  if (base.top + base.bottom > alto) {
+    const sobra = base.top + base.bottom - alto;
+    if (base.bottom > base.top) base.bottom = Math.max(40, base.bottom - sobra);
+    else base.top = Math.max(40, base.top - sobra);
+  }
+  return base;
+}
+
+/** Las cuatro esquinas del corredor que la traza puede llegar a recorrer. */
+function corridorCorners(from, backKm, forwardKm) {
+  const DEG = Math.PI / 180;
+  const ancho = Math.min(8000, Math.max(750, (backKm + forwardKm) * 1000));
+  const largo = Math.max(backKm, forwardKm) * 1000;
+  const r = Math.hypot(largo, ancho);
+  const dLat = r / 110540;
+  const dLng = r / (111320 * Math.max(Math.cos(from.origin[1] * DEG), 1e-6));
+  const [lng, lat] = from.origin;
+  return [
+    [lng - dLng, lat - dLat],
+    [lng + dLng, lat - dLat],
+    [lng + dLng, lat + dLat],
+    [lng - dLng, lat + dLat],
+  ];
+}
+
+/**
+ * Segundo paso: con la traza ya dibujada, qué es.
+ *
+ * Los tipos son los mismos de la paleta y no una lista aparte: una traza
+ * proyectada acaba siendo un contacto o una falla como cualquier otra, y
+ * ofrecerle un vocabulario propio solo produciría dos cartografías que después
+ * no se pueden mezclar.
+ */
+function openTraceTypeMenu() {
+  if (!store.getState().planeTrace) return;
+  openPanel('trace-type-menu');
+  renderTraceTypeMenu();
+}
+
+/**
+ * Repinta el contenido sin volver a abrir el panel.
+ *
+ * Separado de `openTraceTypeMenu` por un motivo concreto: elegir un tipo
+ * repinta la lista para marcar el chip activo, y si eso pasara por `openPanel`
+ * —que cierra todo lo demás antes de abrir— el cierre se llevaría por delante
+ * la propia traza que se está tipificando. Se abre una vez; después solo se
+ * repinta.
+ */
+function renderTraceTypeMenu() {
+  const t = store.getState().planeTrace;
+  if (!t) return;
+
+  const km = (t.stats.backKm + t.stats.forwardKm).toFixed(2);
+  $('trace-summary').textContent =
+    `${km} km of trace from ${formatStrikeDip(t.strike, t.dip)} at ${Math.round(t.elevation)} m, ${t.stats.points} points. It wanders up to ${Math.round(t.stats.maxOffset)} m off the strike line.`;
+
+  const body = $('trace-type-body');
+  body.replaceChildren();
+  const s = store.getState();
+
+  for (const g of LINE_GROUPS) {
+    const items = LINE_TYPES.filter((x) => x.group === g);
+    if (!items.length) continue;
+    const grupo = document.createElement('div');
+    grupo.className = 'palette-group';
+    const gl = document.createElement('span');
+    gl.className = 'palette-label';
+    gl.textContent = g;
+    grupo.appendChild(gl);
+    const fila = document.createElement('div');
+    fila.className = 'palette-row';
+    for (const t2 of items) {
+      fila.appendChild(
+        chip({
+          label: t2.short,
+          title: t2.label,
+          color: effectiveLineColor(t2.id, s.ornaments),
+          dash: (CERTAINTY_BY_ID.get(s.certainty) || {}).dash ?? null,
+          active: s.lineType === t2.id,
+          onClick: () => {
+            store.setLineType(t2.id);
+            renderTraceTypeMenu();
+          },
+        }),
+      );
+    }
+    grupo.appendChild(fila);
+    body.appendChild(grupo);
+  }
+
+  // La certeza, aquí más que en ninguna otra parte: una traza proyectada a dos
+  // kilómetros del único punto medido es, por definición, inferida.
+  const cert = document.createElement('div');
+  cert.className = 'palette-group';
+  const cl = document.createElement('span');
+  cl.className = 'palette-label';
+  cl.textContent = 'Certainty';
+  cert.appendChild(cl);
+  const certFila = document.createElement('div');
+  certFila.className = 'palette-row';
+  const soloObservado = isObservedOnly(s.lineType);
+  for (const c of CERTAINTIES) {
+    certFila.appendChild(
+      chip({
+        label: c.label,
+        color: '#e6edf3',
+        dash: c.dash,
+        active: s.certainty === c.id,
+        disabled: soloObservado && c.id !== 'observed',
+        onClick: () => {
+          store.setCertainty(c.id);
+          renderTraceTypeMenu();
+        },
+      }),
+    );
+  }
+  cert.appendChild(certFila);
+  body.appendChild(cert);
+}
+
+/** Pasa la traza al dibujo con el tipo elegido. */
+function addTraceAsLine() {
+  const t = store.getState().planeTrace;
+  if (!t) return;
+  const s = store.getState();
+  const f = store.createTraceLine({
+    coords: t.coords,
+    type: s.lineType,
+    certainty: s.certainty,
+    /*
+     * De dónde salió, escrito en el dato y no solo en la pantalla. El proyecto
+     * `.fdproj.json` lo guarda entero, y el GeoPackage lo resume en sus
+     * columnas `method` y `source` (ver gpkg/index.js): quien abra la carta
+     * dentro de un año tiene que poder distinguir un contacto caminado de uno
+     * proyectado desde un manteo y un modelo de elevación.
+     */
+    source: {
+      traceFrom: t.from,
+      traceStrike: Math.round(t.strike * 10) / 10,
+      traceDip: Math.round(t.dip * 10) / 10,
+      traceKm: Math.round((t.stats.backKm + t.stats.forwardKm) * 100) / 100,
+      demSource: t.demSource,
+    },
+  });
+  $('trace-type-menu').classList.add('hidden');
+  if (f) {
+    const tipo = LINE_TYPE_BY_ID.get(f.properties.type);
+    showBanner(
+      `Trace added as ${tipo ? tipo.label.toLowerCase() : f.properties.type}. Undo removes it in one step.`,
+      'info',
+    );
+  }
+}
+
+function discardTrace() {
+  store.clearPlaneTrace();
+  $('trace-type-menu').classList.add('hidden');
+}
+
+function wireTraceMenus() {
+  $('btn-close-trace').addEventListener('click', () => $('trace-menu').classList.add('hidden'));
+  $('trace-run').addEventListener('click', runPlaneTrace);
+  $('btn-close-trace-type').addEventListener('click', discardTrace);
+  $('trace-discard').addEventListener('click', discardTrace);
+  $('trace-add').addEventListener('click', addTraceAsLine);
+
+  for (const id of ['trace-back', 'trace-forward']) {
+    $(id).addEventListener('change', (e) => {
+      const v = Math.max(0, Math.min(MAX_TRACE_KM, Number(e.target.value) || 0));
+      e.target.value = String(v);
+    });
+  }
+}
+
 /** Metros con la precisión que el número aguanta, no la que sobra. */
 function formatMetres(v) {
   if (!Number.isFinite(v)) return '—';
@@ -2534,6 +2867,23 @@ function measurementSection(body, medida, reabrir) {
     }
   });
   esp.appendChild(btnEsp);
+
+  /*
+   * Traza de afloramiento. Vive junto al espesor porque son las dos cosas que
+   * un manteo permite calcular y que no son el manteo: una mira hacia dentro
+   * de la unidad y la otra a lo largo de ella.
+   */
+  const tr = section(body, 'Trace from the DEM');
+  const btnTr = document.createElement('button');
+  btnTr.className = 'pill wide';
+  btnTr.textContent = 'Retrieve trace from DEM intersection';
+  btnTr.title =
+    'Project this plane along strike and draw where it would crop out on the terrain';
+  btnTr.addEventListener('click', () => {
+    closePropsMenu();
+    openTraceMenu(medida);
+  });
+  tr.appendChild(btnTr);
 }
 
 /* ---------- proyectos ---------- */
@@ -2713,7 +3063,14 @@ function renderToolbar() {
       ? `Make the ${sel.length} selected features share vertices`
       : 'Make all adjacent features share vertices';
 
+  /*
+   * Los dos deshaceres de la app, que no son el mismo y por eso tienen botones
+   * distintos: el de la barra retira el último VÉRTICE del trazo en curso, y
+   * el de la esquina deshace la última operación sobre el dibujo.
+   */
   $('t-undo').disabled = !hasDraft;
+  $('btn-undo').disabled = !store.canUndo();
+  $('btn-redo').disabled = !store.canRedo();
   $('t-finish').disabled = !hasDraft;
   $('t-cancel').disabled = !hasDraft;
   $('t-delete').disabled = s.features.length === 0;
@@ -3083,6 +3440,21 @@ export function initUI() {
   wireProfilePointer();
   wireStructureControls();
   syncStructureControls();
+  wireTraceMenus();
+
+  // Mismo gancho de depuración que monta mapView: la traza se abre desde el
+  // menú de propiedades de una medida, y eso desde una prueba de navegador
+  // significaría simular un long-press sobre un símbolo de 20 px.
+  if (typeof window !== 'undefined') {
+    window.__fielddraw = Object.assign(window.__fielddraw || {}, { openTraceMenu, store });
+  }
+
+  $('btn-undo').addEventListener('click', () => {
+    if (!store.undo()) showBanner('Nothing left to undo.');
+  });
+  $('btn-redo').addEventListener('click', () => {
+    if (!store.redo()) showBanner('Nothing left to redo.');
+  });
 
   $('btn-shortcuts').addEventListener('click', () => togglePanel('shortcuts'));
   $('btn-close-shortcuts').addEventListener('click', () => $('shortcuts').classList.add('hidden'));

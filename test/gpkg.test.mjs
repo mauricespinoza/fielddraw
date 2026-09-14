@@ -6,6 +6,7 @@ import {
 } from '../src/gpkg/wkb.js';
 import { parseQgisColor, parseQgisFilter } from '../src/gpkg/qml.js';
 import { buildImportedLayers } from '../src/importedStyle.js';
+import { traceProvenance } from '../src/gpkg/index.js';
 
 let fails = 0;
 const ok = (name, cond, extra = '') => {
@@ -140,6 +141,32 @@ console.log('== capas MapLibre desde estilo importado ==');
 {
   const { layers } = buildImportedLayers({ id: 'imp', sourceId: 'src', kind: 'point', style: null });
   ok('punto produce una capa circle', layers.length === 1 && layers[0].type === 'circle');
+}
+
+console.log('== procedencia de una traza proyectada ==');
+{
+  ok('una línea dibujada a mano no lleva procedencia',
+     traceProvenance({ type: 'stratigraphic-contact' }) === null);
+  ok('ni una sin método', traceProvenance({}) === null && traceProvenance(null) === null);
+
+  const t = traceProvenance({
+    method: 'dem-trace',
+    traceStrike: 90,
+    traceDip: 40,
+    traceKm: 1.5,
+    demSource: 'terrarium',
+  });
+  ok('una proyectada dice de qué plano salió', t.includes('090/40'), t);
+  ok('hasta dónde llega', t.includes('1.50 km'), t);
+  ok('con qué modelo', t.includes('AWS Terrain Tiles'), t);
+  ok('y que no se caminó, que es lo que hay que poder distinguir',
+     t.includes('not walked'), t);
+
+  const o = traceProvenance({
+    method: 'dem-trace', traceStrike: 5, traceDip: 8, traceKm: 0.4, demSource: 'opentopo',
+  });
+  ok('el rumbo va a tres cifras, como se escribe un rumbo', o.includes('005/8'), o);
+  ok('y nombra el otro modelo cuando toca', o.includes('OpenTopography'), o);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

@@ -313,6 +313,29 @@
         </span>
       </div>
 
+      <!--
+        Deshacer y rehacer del DIBUJO, que no es lo mismo que el botón «Undo»
+        de la barra de herramientas: aquel deshace el último vértice del trazo
+        en curso y está apagado el resto del tiempo. Este es el de `Ctrl+Z`, y
+        en un teléfono no hay teclado que lo invoque ni gesto que se adivine
+        —el doble toque con dos dedos existe, pero nadie lo descubre solo—, así
+        que convertir una línea en polígono y querer volver atrás no tenía
+        salida. Solo se ve en la disposición compacta; en tablet y PC el sitio
+        se lo lleva la barra, y ahí el gesto y el atajo ya están.
+      -->
+      <div class="quick-actions" id="quick-actions">
+        <button class="quick" id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M4 9h11a5 5 0 0 1 0 10H9M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <button class="quick" id="btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M20 9H9a5 5 0 0 0 0 10h6M20 9l-4-4M20 9l-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+
       <div class="top-right">
         <button class="pill" id="btn-project">Project</button>
         <button class="pill" id="btn-layers">Layers</button>
@@ -442,6 +465,52 @@
           a ruler against the bar and type what it really measures. The bar is as wide as this
           panel allows, so a millimetre misread is well under one percent.
         </p>
+      </div>
+
+      <!-- Traza de afloramiento proyectada desde una medida de rumbo y manteo.
+           Dos pasos, y en este orden a propósito: primero cuánto trazar, que
+           es lo único que hace falta para calcularla, y solo DESPUÉS —con la
+           traza ya dibujada en el mapa— qué es esa línea. Decidir que un
+           contacto es una falla sin haberla visto sobre el terreno es
+           exactamente lo que no queremos. Ver src/planeTrace.js. -->
+      <div class="dropdown hidden" id="trace-menu">
+        <header>
+          <h2>Trace from the DEM</h2>
+          <button class="icon-btn" id="btn-close-trace" aria-label="Close">✕</button>
+        </header>
+        <p class="hint" id="trace-from"></p>
+        <label class="field">
+          <span id="trace-back-label">Back along strike</span>
+          <span class="tol-row">
+            <input type="number" id="trace-back" min="0" max="20" step="0.1" value="1" />
+            <span class="unit">km</span>
+          </span>
+        </label>
+        <label class="field">
+          <span id="trace-forward-label">Forward along strike</span>
+          <span class="tol-row">
+            <input type="number" id="trace-forward" min="0" max="20" step="0.1" value="1" />
+            <span class="unit">km</span>
+          </span>
+        </label>
+        <button class="pill wide" id="trace-run">Project the trace</button>
+        <p class="hint footnote">
+          Where this plane would crop out if it stayed planar and kept this orientation that far
+          — the V rule, read off the DEM instead of off the contour lines. It is a
+          <strong>prediction, not a measurement</strong>: a fold, a fault or any change of dip
+          between here and there breaks it. Check it on the ground before you publish it.
+        </p>
+      </div>
+
+      <div class="dropdown hidden" id="trace-type-menu">
+        <header>
+          <h2>What is this line?</h2>
+          <button class="icon-btn" id="btn-close-trace-type" aria-label="Close">✕</button>
+        </header>
+        <p class="hint" id="trace-summary"></p>
+        <div id="trace-type-body"></div>
+        <button class="pill wide" id="trace-add">Add it to the map</button>
+        <button class="pill danger wide" id="trace-discard">Discard the trace</button>
       </div>
 
       <!-- Se rellena desde la tabla de src/shortcuts.js, para que no pueda

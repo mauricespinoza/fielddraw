@@ -117,6 +117,12 @@ CREATE TABLE geol_lines (
   certainty TEXT,
   label TEXT,
   note TEXT,
+  -- Cómo se obtuvo la línea, y a partir de qué. Una traza proyectada desde un
+  -- manteo sobre el DEM (ver planeTrace.js) se dibuja igual que un contacto
+  -- caminado, y en la carta acabada son indistinguibles; aquí no. Vacío en
+  -- todo lo digitalizado a mano, que es la inmensa mayoría.
+  method TEXT,
+  source TEXT,
   created_at TEXT
 );
 
@@ -153,6 +159,23 @@ CREATE TABLE geol_points (
   created_at TEXT
 );
 `;
+
+/**
+ * Procedencia de una traza proyectada, en una sola frase legible.
+ *
+ * Va en texto y no en seis columnas más porque quien la lee está en QGIS
+ * mirando la tabla de atributos y necesita saber una cosa: esta línea no se
+ * caminó, salió de este manteo sobre este modelo y llega hasta aquí. Los
+ * números sueltos ya viajan enteros dentro del proyecto `.fdproj.json`.
+ */
+export function traceProvenance(p) {
+  if (!p || p.method !== 'dem-trace') return null;
+  const rumbo = String(Math.round(Number(p.traceStrike) || 0)).padStart(3, '0');
+  const manteo = Math.round(Number(p.traceDip) || 0);
+  const dem = p.demSource === 'opentopo' ? 'OpenTopography' : 'AWS Terrain Tiles';
+  const km = (Number(p.traceKm) || 0).toFixed(2);
+  return `Projected from ${rumbo}/${manteo} over ${km} km on ${dem} — not walked`;
+}
 
 function combosPresent(features, units) {
   const seen = new Map();
@@ -220,8 +243,15 @@ export async function exportGeoPackage(features, units, ornaments) {
         name: 'geol_lines',
         geomType: 'LINESTRING',
         rows: lines,
-        columns: ['type', 'certainty', 'label', 'note', 'created_at'],
-        valuesOf: (p) => [p.type, p.certainty, comboLabel(p.type, p.certainty), p.note || null],
+        columns: ['type', 'certainty', 'label', 'note', 'method', 'source', 'created_at'],
+        valuesOf: (p) => [
+          p.type,
+          p.certainty,
+          comboLabel(p.type, p.certainty),
+          p.note || null,
+          p.method || null,
+          traceProvenance(p),
+        ],
         qml: buildLineQML(combosPresent(lines), ornaments),
         sld: buildLineSLD(combosPresent(lines), ornaments),
         identifier: 'Contactos, fallas, pliegues y diques',

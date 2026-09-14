@@ -147,6 +147,15 @@ let state = {
   /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
   pendingPlane: null,
 
+  /**
+   * Traza de afloramiento calculada desde una medida y el DEM, todavía sin
+   * decidir qué es. Vive aparte de `features` a propósito: hasta que no se le
+   * pone tipo no es un contacto ni una falla, es una predicción geométrica, y
+   * dejarla entrar al dibujo antes de eso sería cartografiar una hipótesis.
+   * Ver `planeTrace.js`.
+   */
+  planeTrace: null,
+
   /* ---------- medidas estructurales ---------- */
 
   /** 'manual' | 'three-point' | 'plane-fit' (ver structure.js). */
@@ -864,6 +873,50 @@ export function setThickness(thickness) {
 
 export function clearThickness() {
   set({ thickness: null, thicknessFrom: null, pendingThickness: null });
+}
+
+/* ---------- traza de un plano sobre el terreno ---------- */
+
+/** Publica la traza recién calculada para que el mapa la enseñe. */
+export function setPlaneTrace(planeTrace) {
+  set({ planeTrace });
+}
+
+export function clearPlaneTrace() {
+  set({ planeTrace: null });
+}
+
+/**
+ * Convierte la traza en una línea del dibujo, ya con su tipo.
+ *
+ * Nace como cualquier otra línea —mismo `kind`, misma certeza, mismo
+ * historial— y desde ese momento se edita, se mueve y se borra igual. Lo único
+ * que la distingue es su procedencia, que se guarda en las propiedades: quien
+ * abra el GeoPackage dentro de un año tiene derecho a saber que ese contacto
+ * no se caminó, se proyectó desde una medida y un modelo de elevación.
+ */
+export function createTraceLine({ coords, type, certainty, source = {} }) {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const id = newId();
+  const tipo = type || state.lineType;
+  const feature = {
+    type: 'Feature',
+    id,
+    properties: {
+      id,
+      kind: 'line',
+      type: tipo,
+      certainty: certaintyFor(tipo, certainty || state.certainty),
+      opacity: 1,
+      method: 'dem-trace',
+      ...source,
+      createdAt: Date.now(),
+    },
+    geometry: { type: 'LineString', coordinates: coords.map((c) => [c[0], c[1]]) },
+  };
+  pushHistory();
+  set({ features: [...state.features, feature], planeTrace: null, selection: [id], draft: null });
+  return feature;
 }
 
 export function clearPendingHole() {
