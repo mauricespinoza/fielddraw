@@ -193,3 +193,120 @@ export function scaleDrifted(actual, objetivo, tolerancia = 0.005) {
   if (!Number.isFinite(actual) || !Number.isFinite(objetivo) || objetivo <= 0) return false;
   return Math.abs(actual - objetivo) / objetivo > tolerancia;
 }
+
+
+/* ======================================================= la pantalla === */
+
+/**
+ * EL TAMAÑO FÍSICO DE LA PANTALLA, QUE EL NAVEGADOR NO CUENTA
+ *
+ * Todo lo de arriba trabaja con `pixelMm`: cuántos milímetros mide un píxel
+ * CSS. Es el único número que convierte un mapa en pantalla en una escala de
+ * verdad, y es justo el que no se puede leer.
+ *
+ * Lo que SÍ se puede leer del dispositivo:
+ *
+ * - `screen.width` / `screen.height`, la resolución en píxeles CSS;
+ * - `devicePixelRatio`, cuántos píxeles del panel hay por píxel CSS.
+ *
+ * Lo que NO expone ninguna API: cuántos centímetros mide el vidrio. Dos
+ * pantallas de 1920×1080 —una de 13" y otra de 27"— son indistinguibles desde
+ * JavaScript, y sin embargo su píxel mide menos de la mitad en la primera. Por
+ * eso la única vía honesta es preguntar UNA cosa, la diagonal, y calcular el
+ * resto; o medir la barra con una regla, que es lo definitivo.
+ *
+ *
+ * POR QUÉ BASTA CON LA DIAGONAL
+ *
+ * Los píxeles son cuadrados en todas las pantallas que importan, así que la
+ * diagonal en píxeles y la diagonal en milímetros son la misma razón que el
+ * ancho en píxeles y el ancho en milímetros. Es decir:
+ *
+ *     mm por píxel = diagonal en mm / diagonal en píxeles
+ *
+ * y la diagonal en píxeles sale de Pitágoras sobre la resolución, que sí se
+ * puede leer. No hace falta preguntar ni el ancho ni la proporción.
+ */
+
+/** Milímetros que mide un píxel CSS, a partir de la diagonal en pulgadas. */
+export function pixelMmFromDiagonal(diagonalInches, cssWidth, cssHeight) {
+  const d = Number(diagonalInches);
+  const w = Number(cssWidth);
+  const h = Number(cssHeight);
+  if (!Number.isFinite(d) || d <= 0) return null;
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  const px = Math.hypot(w, h);
+  const mm = (d * 25.4) / px;
+  return Number.isFinite(mm) && mm > 0 ? Math.round(mm * 1000) / 1000 : null;
+}
+
+/** La inversa: qué diagonal en pulgadas implica un `pixelMm` dado. */
+export function diagonalFromPixelMm(pixelMm, cssWidth, cssHeight) {
+  const mm = Number(pixelMm);
+  const w = Number(cssWidth);
+  const h = Number(cssHeight);
+  if (!Number.isFinite(mm) || mm <= 0) return null;
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  return Math.round(((Math.hypot(w, h) * mm) / 25.4) * 10) / 10;
+}
+
+/**
+ * Tamaños de pantalla de catálogo.
+ *
+ * Son diagonales, no resoluciones, y eso es deliberado: la resolución se lee
+ * del dispositivo y la diagonal no, así que la lista solo tiene que cubrir lo
+ * que falta. Un 15,6" es un 15,6" tenga la resolución que tenga, y el cálculo
+ * sale bien en los dos casos sin duplicar la entrada.
+ *
+ * La etiqueta nombra el aparato típico porque nadie sabe de memoria la
+ * diagonal de su tablet, pero todos saben cuál tienen.
+ */
+export const SCREEN_SIZES = [
+  { inches: 7.9, label: '7.9″ — iPad mini' },
+  { inches: 8.3, label: '8.3″ — iPad mini 6' },
+  { inches: 9.7, label: '9.7″ — iPad / iPad Pro 9.7' },
+  { inches: 10.2, label: '10.2″ — iPad 9' },
+  { inches: 10.5, label: '10.5″ — iPad Air 3' },
+  { inches: 10.9, label: '10.9″ — iPad Air 4-5 / iPad 10' },
+  { inches: 11, label: '11″ — iPad Pro 11 / Galaxy Tab S9' },
+  { inches: 12.4, label: '12.4″ — Galaxy Tab S9+' },
+  { inches: 12.9, label: '12.9″ — iPad Pro 12.9' },
+  { inches: 13.3, label: '13.3″ — laptop' },
+  { inches: 14, label: '14″ — laptop' },
+  { inches: 15.6, label: '15.6″ — laptop' },
+  { inches: 16, label: '16″ — laptop' },
+  { inches: 17.3, label: '17.3″ — laptop' },
+  { inches: 21.5, label: '21.5″ — desktop monitor' },
+  { inches: 24, label: '24″ — desktop monitor' },
+  { inches: 27, label: '27″ — desktop monitor' },
+  { inches: 32, label: '32″ — desktop monitor' },
+];
+
+/**
+ * Largo de la barra de calibración, en milímetros.
+ *
+ * 100 mm y no 10: el error de leer una regla es de un milímetro se mida lo que
+ * se mida, así que sobre un patrón de 10 mm ese milímetro es un 10 % de error
+ * —peor que no calibrar— y sobre 100 mm es un 1 %, que ya no mueve la escala.
+ * Más largo no cabe en el desplegable de una tablet en vertical.
+ */
+export const RULER_MM = 100;
+
+/**
+ * Corrige `pixelMm` con lo que una regla de verdad mide sobre la barra.
+ *
+ * La barra se dibuja con `RULER_MM / pixelMm` píxeles, o sea declarando que
+ * mide `RULER_MM`. Si la regla dice otra cosa, el píxel real es mayor o menor
+ * en esa misma proporción, y ese es todo el cálculo.
+ */
+export function calibratePixelMm(pixelMm, measuredMm, nominalMm = RULER_MM) {
+  const p = Number(pixelMm);
+  const m = Number(measuredMm);
+  if (!Number.isFinite(p) || p <= 0) return null;
+  if (!Number.isFinite(m) || m <= 0) return null;
+  const v = (p * m) / nominalMm;
+  // Mismo rango que acepta el ajuste a mano: fuera de ahí no hay pantalla, es
+  // un dedo gordo en el teclado o una regla leída en pulgadas.
+  if (v < 0.05 || v > 1) return null;
+  return Math.round(v * 1000) / 1000;
+}

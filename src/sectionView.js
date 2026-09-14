@@ -14,7 +14,7 @@
  */
 
 import { LINE_TYPE_BY_ID } from './symbology.js';
-import { axisTicks, formatDistance, formatElevation } from './profile.js';
+import { axisTicks, endLabel, formatDistance, formatElevation } from './profile.js';
 import { elevationAt } from './section.js';
 
 export const MARGIN = { top: 18, right: 20, bottom: 34, left: 62 };
@@ -224,18 +224,6 @@ export function renderSection(svg, section, opts = {}) {
   svg.append(izq, der);
 
   return { scales: s };
-}
-
-/**
- * Rótulo del extremo del corte: la letra del cuadrante hacia el que mira.
- *
- * Un perfil se cita por sus extremos —«perfil W-E»— y ponerlos es lo que
- * permite orientar la figura sin volver al mapa.
- */
-export function endLabel(azimuth) {
-  const a = ((azimuth % 360) + 360) % 360;
-  const nombres = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  return nombres[Math.round(a / 45) % 8];
 }
 
 /* ========================================================= exportación === */

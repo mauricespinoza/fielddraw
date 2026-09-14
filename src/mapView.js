@@ -5,7 +5,7 @@ import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
 import { DEM_MAX_ZOOM, haversine } from './dem.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
-import { denominatorFromMpp, scaleDrifted, zoomDelta } from './scale.js';
+import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './scale.js';
 import { DrawController } from './drawController.js';
 import { processStroke } from './simplify.js';
 import { bboxIntersects, bboxOf, nearestOnPolyline, pickFeature, ringsOf } from './geom.js';
@@ -1003,9 +1003,127 @@ export function createMapView({
     if (any) map.fitBounds(bounds, { padding: 60, maxZoom: 16, duration: 700 });
   }
 
+  /*
+   * DE UN PÍXEL DE PANTALLA AL PUNTO DEL TERRENO
+   *
+   * En planta esto es una línea: `unproject` y ya está. Con el relieve 3D
+   * puesto deja de serlo, y es la razón por la que durante un tiempo no se
+   * dejó digitalizar en 3D.
+   *
+   * Las dos direcciones no se resuelven igual. `project` consulta la cota en
+   * el DEM y sube el punto, así que un contacto dibujado se pinta pegado a la
+   * ladera. `unproject` resuelve el relieve al revés, lanzando un rayo contra
+   * la malla del terreno a través de un framebuffer auxiliar — y ese camino
+   * PUEDE NO ESTAR: si el búfer de coordenadas no llegó a dibujarse, MapLibre
+   * vuelve en silencio al plano z = 0.
+   *
+   * Cuando vuelve al plano el vértice no queda un poco corrido, queda
+   * lejísimos. Medido aquí, con la cámara a 60° sobre terreno de 3.000 m, un
+   * clic en mitad de la pantalla guardaba un punto que se repintaba 700 px más
+   * arriba, fuera de la ventana. Eso no es imprecisión: es geometría
+   * inventada, y encima sin avisar.
+   *
+   * De ahí las tres capas de abajo, en orden de preferencia:
+   *
+   *   1. lo que diga `unproject`, que es la vía soportada;
+   *   2. si el punto NO se repinta donde se tocó, se busca el que sí: es una
+   *      raíz de `project(x) − píxel = 0`, y Newton con la jacobiana por
+   *      diferencias la encuentra, porque la semilla ya está cerca;
+   *   3. y si ni eso cierra —el rayo dio en el cielo, o el relieve de este
+   *      dispositivo no está en condiciones—, se avisa UNA vez y se sigue con
+   *      lo que haya. Un aviso es recuperable; un contacto movido un
+   *      kilómetro sin decirlo, no.
+   *
+   * La comprobación es barata y es la clave de todo: solo se acepta un punto
+   * que vuelve a caer sobre el píxel que se tocó, lo haya calculado quien lo
+   * haya calculado.
+   */
+
+  /** A cuántos píxeles del toque se da por bueno el vértice. */
+  const PICK_TOL_PX = 3;
+  /** Pasos de Newton, y paso en grados para la jacobiana (~1 m). */
+  const PICK_STEPS = 24;
+  const PICK_EPS = 1e-5;
+
+  /** Se avisa una vez por sesión: repetirlo en cada vértice sería insufrible. */
+  let avisadoRelieve = false;
+
+  /**
+   * `project` de un punto que puede no existir.
+   *
+   * Newton da pasos largos, y un paso largo cerca de un horizonte se sale del
+   * mundo. `map.project` no devuelve un valor raro en ese caso: LANZA
+   * («Invalid LngLat latitude value»), y la excepción sube por el manejador de
+   * puntero y mata el gesto entero. Visto de verdad al probar el 3D: un toque
+   * dejaba la app sin responder a nada más. Aquí se acota y se envuelve.
+   */
+  function projectSafe(lng, lat) {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    if (lat > 89.9 || lat < -89.9) return null;
+    try {
+      return map.project([lng, lat]);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Distancia en pantalla entre donde se tocó y donde se repinta el punto. */
+  function pickError(lngLat, px, py) {
+    const q = projectSafe(lngLat[0], lngLat[1]);
+    return q ? Math.hypot(q.x - px, q.y - py) : Infinity;
+  }
+
   const toLngLat = (p) => {
     const ll = map.unproject(p);
-    return [ll.lng, ll.lat];
+    const base = [ll.lng, ll.lat];
+    if (!terrainOn()) return base;
+
+    const px = Array.isArray(p) ? p[0] : p.x;
+    const py = Array.isArray(p) ? p[1] : p.y;
+    if (pickError(base, px, py) <= PICK_TOL_PX) return base;
+
+    let lng = base[0];
+    let lat = base[1];
+    for (let i = 0; i < PICK_STEPS; i++) {
+      const q = projectSafe(lng, lat);
+      if (!q) break;
+      const ex = px - q.x;
+      const ey = py - q.y;
+      if (Math.hypot(ex, ey) <= PICK_TOL_PX) return [lng, lat];
+
+      const qa = projectSafe(lng + PICK_EPS, lat);
+      const qb = projectSafe(lng, lat + PICK_EPS);
+      if (!qa || !qb) break;
+      const a11 = (qa.x - q.x) / PICK_EPS;
+      const a12 = (qb.x - q.x) / PICK_EPS;
+      const a21 = (qa.y - q.y) / PICK_EPS;
+      const a22 = (qb.y - q.y) / PICK_EPS;
+      const det = a11 * a22 - a12 * a21;
+      // Jacobiana degenerada: la pantalla ya no distingue movimientos del
+      // suelo —se está mirando el horizonte, o una pared vertical—. Seguir
+      // iterando solo produce ruido.
+      if (!Number.isFinite(det) || Math.abs(det) < 1e-9) break;
+
+      const dLng = (ex * a22 - ey * a12) / det;
+      const dLat = (a11 * ey - a21 * ex) / det;
+      if (!Number.isFinite(dLng) || !Number.isFinite(dLat)) break;
+      lng += dLng;
+      lat += dLat;
+      // Salirse del mundo es señal de que esta raíz no existe —se tocó el
+      // cielo—, no de que haga falta un paso más.
+      if (lat > 89.9 || lat < -89.9 || lng > 360 || lng < -360) break;
+    }
+
+    if (pickError([lng, lat], px, py) <= PICK_TOL_PX) return [lng, lat];
+
+    if (!avisadoRelieve) {
+      avisadoRelieve = true;
+      onEditMessage(
+        'This device cannot say which point of the relief you are pointing at, so vertices placed in 3D may land off the spot you touched. Turn 3D off to digitise; the drawing you already have is unaffected.',
+        'warn',
+      );
+    }
+    return base;
   };
 
   /* ---------- snapping y trazado ---------- */
@@ -1188,13 +1306,66 @@ export function createMapView({
    * da la del centro, que es la única escala que se puede declarar cuando el
    * resto de la pantalla ya no está a la misma.
    */
+  /**
+   * Factor entre la medida hecha sobre el mapa y la fórmula del zoom.
+   *
+   * Se aprende en planta, donde las dos vías valen, y se gasta con el relieve
+   * puesto, donde solo vale la fórmula. Vale ~1: existe para no depender de
+   * que MapLibre defina su zoom sobre teselas de 512 px, que es lo que la
+   * medida sobre el mapa evitaba tener que suponer.
+   */
+  let mppFactor = 1;
+
+  /** ¿Hay relieve real puesto ahora mismo? */
+  function terrainOn() {
+    try {
+      return !!(map.getTerrain && map.getTerrain());
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Metros de terreno por píxel en el centro de la pantalla.
+   *
+   * EL RELIEVE OBLIGA A CAMBIAR DE VÍA, Y NO ES UN DETALLE
+   *
+   * Medir desproyectando dos puntos es lo correcto en planta, pero con
+   * `setTerrain` puesto `unproject` deja de devolver el punto del plano y
+   * devuelve el punto del SUELO: lanza el rayo contra la malla del relieve.
+   * Sobre una ladera, dos píxeles contiguos pueden estar a mucha más distancia
+   * en el terreno que en el mapa, así que lo medido ya no es la escala
+   * cartográfica —que es plana, por definición— sino el largo de la pendiente.
+   *
+   * Eso rompía dos cosas a la vez. La lectura de la escala saltaba al pasar
+   * sobre un cerro, y con la escala FIJADA el mapa se descontrolaba: la
+   * corrección de `moveend` corregía contra un número que no dependía del zoom
+   * como 2^-z, volvía a saltar, y en dos o tres rebotes el zoom se iba contra
+   * el tope y ahí se quedaba clavado — con la rueda y el pellizco apagados por
+   * el propio candado, y sin manera de salir. Era el "se queda pegado".
+   *
+   * Con relieve se usa la fórmula del zoom, que es plana por construcción.
+   */
   function metresPerPixelNow() {
-    const c = map.getContainer();
-    const y = c.clientHeight / 2;
-    const x = c.clientWidth / 2;
-    const a = map.unproject([x - 50, y]);
-    const b = map.unproject([x + 50, y]);
-    return haversine([a.lng, a.lat], [b.lng, b.lat]) / 100;
+    const plano = metresPerPixel(map.getZoom(), map.getCenter().lat);
+    if (!Number.isFinite(plano) || plano <= 0) return NaN;
+
+    if (!terrainOn()) {
+      const c = map.getContainer();
+      const y = c.clientHeight / 2;
+      const x = c.clientWidth / 2;
+      const a = map.unproject([x - 50, y]);
+      const b = map.unproject([x + 50, y]);
+      const medido = haversine([a.lng, a.lat], [b.lng, b.lat]) / 100;
+      if (Number.isFinite(medido) && medido > 0) {
+        const k = medido / plano;
+        // Un factor lejos de 1 es un error de lectura, no una convención
+        // distinta: no se aprende de él.
+        if (k > 0.5 && k < 2) mppFactor = k;
+        return medido;
+      }
+    }
+    return plano * mppFactor;
   }
 
   function currentDenominator() {
@@ -1262,11 +1433,33 @@ export function createMapView({
   }
 
   map.on('move', () => publishScale());
+
+  /*
+   * Candado contra la reentrada.
+   *
+   * `jumpTo` dispara `moveend` EN EL ACTO y de forma síncrona, así que la
+   * corrección se llamaba a sí misma desde dentro de sí misma. Mientras
+   * converge no se nota; en cuanto deja de converger —o el zoom topa con su
+   * límite y la corrección ya no puede acercarse— es una escalera de saltos
+   * que deja el mapa donde no se pidió. Corregir una vez por movimiento es
+   * todo lo que hace falta: si quedara desviado, el propio salto genera otro
+   * `moveend` cuando este termine.
+   */
+  let corrigiendo = false;
   map.on('moveend', () => {
-    const fijada = store.getState().scaleLock;
-    // Mantener la escala al desplazarse: el denominador depende del coseno de
-    // la latitud, así que un paneo norte-sur la corre sin tocar el zoom.
-    if (fijada && scaleDrifted(currentDenominator(), fijada)) goToScale(fijada, { animate: false });
+    if (!corrigiendo) {
+      const fijada = store.getState().scaleLock;
+      // Mantener la escala al desplazarse: el denominador depende del coseno
+      // de la latitud, así que un paneo norte-sur la corre sin tocar el zoom.
+      if (fijada && scaleDrifted(currentDenominator(), fijada)) {
+        corrigiendo = true;
+        try {
+          goToScale(fijada, { animate: false });
+        } finally {
+          corrigiendo = false;
+        }
+      }
+    }
     publishScale(true);
   });
 

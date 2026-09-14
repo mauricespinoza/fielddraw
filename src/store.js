@@ -320,9 +320,12 @@ const geomKindForTool = (tool) => GEOM_KIND_FOR_TOOL[tool] || 'line';
 const TRANSIENT_KINDS = new Set(['cut', 'reshape', 'profile', 'plane', 'hole', 'thickness']);
 
 /**
- * Herramientas que crean o mueven geometría, y que por eso no se ofrecen con
- * el relieve 3D puesto: sobre terreno inclinado el punto tocado y el punto del
- * terreno no coinciden como en planta, así que lo dibujado saldría corrido.
+ * Herramientas que crean o mueven geometría.
+ *
+ * Ya no sirven para bloquear nada —con el relieve 3D puesto se digitaliza
+ * igual, ver `setTerrain3d`— pero la lista se queda porque nombra un grupo
+ * real: son las que tienen borrador y las que la interfaz trata como "estar
+ * dibujando", frente a navegar, elegir o consultar.
  */
 export const DRAWING_TOOLS = [
   'line',
@@ -414,10 +417,6 @@ export function setTool(tool) {
   // ancla puesta haría que un toque cualquiera, mucho después, calculara un
   // espesor desde una medida que ya nadie tenía en mente.
   if (tool !== 'thickness' && state.thicknessFrom) set({ thicknessFrom: null });
-
-  // Con el relieve puesto no se digitaliza: se avisa y no se cambia nada. El
-  // aviso lo da la interfaz, que es quien puede explicarlo.
-  if (state.terrain3d && DRAWING_TOOLS.includes(tool)) return false;
 
   // Con una sola línea seleccionada, pasar a Línea la continúa en vez de
   // empezar una nueva. Se resuelve al poner el primer vértice, que es cuando
@@ -1057,12 +1056,16 @@ export function setScalePixelMm(mm) {
   set({ scalePixelMm: Math.min(1, Math.max(0.05, Math.round(v * 1000) / 1000)) });
 }
 
+/**
+ * Enciende o apaga el relieve 3D.
+ *
+ * Antes esto expulsaba a Navegar y descartaba el borrador, porque con el
+ * relieve puesto no se dejaba dibujar. Ya no: MapLibre desproyecta contra la
+ * malla del terreno cuando `setTerrain` está activo, así que el punto tocado
+ * ES el punto del suelo y la herramienta en curso sigue valiendo. Cambiar de
+ * vista no debe tirar un contacto a medio trazar.
+ */
 export function setTerrain3d(terrain3d) {
-  if (terrain3d && DRAWING_TOOLS.includes(state.tool)) {
-    if (state.draft) cancelDraft();
-    set({ tool: 'navigate', terrain3d, selection: [] });
-    return;
-  }
   set({ terrain3d });
 }
 
@@ -1248,8 +1251,9 @@ export const SETTING_KEYS = [
  * repositorio como cualquier otro archivo del trabajo. Vive solo en el
  * dispositivo, en localStorage.
  *
- * `terrain3d` tampoco viaja: es un modo de visualización que además bloquea el
- * dibujo, y abrir un proyecto ajeno sin poder digitalizar no se entendería.
+ * `terrain3d` tampoco viaja: es cómo prefiere mirar el mapa quien lo dibujó, no
+ * un dato del levantamiento, y además cuesta caro de pintar en una tablet
+ * vieja — abrir un proyecto ajeno no debería arrancar en el modo más pesado.
  */
 
 export function currentSettings() {

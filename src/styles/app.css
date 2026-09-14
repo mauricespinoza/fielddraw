@@ -1138,6 +1138,12 @@ input[type='radio'] {
   top: auto;
   right: auto;
   left: calc(var(--safe-l) + 12px);
+  /*
+   * Más ancho que los demás: la barra de calibración se mide con una regla de
+   * verdad, y cuanto más larga sea, menos pesa el milímetro que se lee mal.
+   * Con los 320 px del resto daba para unos 60 mm.
+   */
+  width: min(400px, 92vw);
   /* Por encima de la barra de estado Y de la barra gráfica de MapLibre. */
   bottom: calc(var(--safe-b) + 84px);
   /*
@@ -1197,6 +1203,77 @@ input[type='radio'] {
 .scale-grid button:hover .drop,
 .scale-grid button:focus-within .drop {
   opacity: 1;
+}
+
+.dropdown h3.sub {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dropdown .field select {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/*
+ * Barra de calibración. El ancho lo pone el panel y el rótulo dice cuántos
+ * milímetros AFIRMA medir con el píxel configurado; lo que se ajusta es ese
+ * número contra el de la regla. Las patitas de los extremos son lo que permite
+ * alinear la regla sin dudar de por dónde empieza.
+ */
+.ruler {
+  position: relative;
+  height: 30px;
+  margin: 2px 0 6px;
+  /*
+   * Sin bordes laterales a propósito: lo que se mide es el ancho del elemento
+   * de borde a borde, y un borde de 1 px a cada lado dejaría en duda si la
+   * regla se apoya por dentro o por fuera de la línea. Las dos patitas de
+   * acento marcan los extremos exactos y no hay nada más en medio.
+   */
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ruler::before,
+.ruler::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: var(--accent);
+}
+
+.ruler::before {
+  left: 0;
+}
+
+.ruler::after {
+  right: 0;
+}
+
+.ruler span {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--panel-solid);
+  padding: 0 8px;
 }
 
 .banner {

@@ -39,8 +39,8 @@ export const SHORTCUTS = [
 
   /* ---------------- modificadores ---------------- */
   { id: 'toggle-snap', keys: ['s'], label: 'Snapping on/off', group: 'Drawing aids' },
-  { id: 'toggle-trace', keys: ['t'], label: 'Trace on/off', group: 'Drawing aids' },
-  { id: 'toggle-terrain', keys: ['3'], label: '3D terrain (disables drawing)', group: 'Drawing aids' },
+  { id: 'toggle-trace', keys: ['t'], label: 'Follow trace on/off', group: 'Drawing aids' },
+  { id: 'toggle-terrain', keys: ['3'], label: '3D terrain — drawing keeps working on it', group: 'Drawing aids' },
   { id: 'cycle-certainty', keys: ['c'], label: 'Cycle certainty: observed → inferred → concealed', group: 'Drawing aids' },
   { id: 'locate', keys: ['g'], label: 'Centre on my GPS position', group: 'Drawing aids' },
 
@@ -60,7 +60,7 @@ export const SHORTCUTS = [
   { id: 'panel-units', keys: ['shift+u'], label: 'Geological units', group: 'Panels and files' },
   { id: 'panel-symbology', keys: ['shift+y'], label: 'Symbology', group: 'Panels and files' },
   { id: 'panel-strabo', keys: ['shift+b'], label: 'StraboSpot', group: 'Panels and files' },
-  { id: 'panel-scale', keys: ['k'], label: 'Working scale (pick and lock)', group: 'Panels and files' },
+  { id: 'panel-scale', keys: ['k'], label: 'Working scale: pick, lock, and set this screen’s size', group: 'Panels and files' },
   { id: 'panel-settings', keys: ['mod+,'], label: 'Settings', group: 'Panels and files' },
   { id: 'project-save', keys: ['mod+s'], label: 'Save project', group: 'Panels and files' },
   { id: 'project-open', keys: ['mod+o'], label: 'Open project', group: 'Panels and files' },

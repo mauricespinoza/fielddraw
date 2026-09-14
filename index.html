@@ -140,17 +140,27 @@
           id="t-reshape"
           title="Reshape: draw a line across the selected feature to redraw that stretch of its outline"
         >
+          <!-- El contorno original, el tramo que se va a perder (punteado) y el
+               trazo nuevo que lo reemplaza. Los dos nodos marcan por dónde
+               entra y por dónde sale, que es lo único que hay que entender de
+               la herramienta. -->
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-            <path d="M4 16.5c0-6 4-9.5 8-9.5s5.5 2 7.5 2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-dasharray="3 2.5" />
-            <path d="M3.5 8.5h6.5v10H3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-            <circle cx="4" cy="16.5" r="1.9" fill="currentColor" />
-            <circle cx="19.5" cy="9" r="1.9" fill="currentColor" />
+            <path d="M6 19.5V9.2A3.2 3.2 0 0 1 9.2 6h9.3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M6 9.2h6.8v10.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-dasharray="2.4 2.4" opacity="0.55" />
+            <path d="M6 13.4c4.4 0 5.2-5.6 9.4-5.6 1.5 0 2.5.4 3.1 1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+            <circle cx="6" cy="13.4" r="2" fill="currentColor" />
+            <circle cx="18.5" cy="8.8" r="2" fill="currentColor" />
           </svg>
           <span>Reshape</span>
         </button>
         <button class="tool" id="t-merge" title="Merge the selected features" disabled>
+          <!-- La unión de dos elementos: el contorno exterior de los dos juntos
+               va marcado y la costura que desaparece queda punteada. Es el
+               mismo icono con que QGIS y ArcGIS dibujan «disolver», que es
+               exactamente lo que hace el botón. -->
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-            <path d="M4 6h5a5 5 0 0 1 5 5v2a5 5 0 0 0 5 5h1M4 18h5a5 5 0 0 0 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M9 4.5h9a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-3v3A1.5 1.5 0 0 1 13.5 21h-9A1.5 1.5 0 0 1 3 19.5v-9A1.5 1.5 0 0 1 4.5 9h3V6A1.5 1.5 0 0 1 9 4.5z" fill="currentColor" fill-opacity="0.16" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M15 9H9v7.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.2 2.2" opacity="0.65" />
           </svg>
           <span>Merge</span>
         </button>
@@ -177,13 +187,13 @@
           </svg>
           <span>Snap</span>
         </button>
-        <button class="tool" id="t-trace" title="Follow the edge of an existing feature">
+        <button class="tool" id="t-trace" title="Follow trace: run the new line along the edge of an existing feature">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M3 17c4 0 5-10 9-10s5 5 9 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             <circle cx="3" cy="17" r="2" fill="currentColor" />
             <circle cx="21" cy="12" r="2" fill="currentColor" />
           </svg>
-          <span>Trace</span>
+          <span>Follow trace</span>
         </button>
 
         <div class="tool-sep"></div>
@@ -195,7 +205,7 @@
           </svg>
           <span>Profile</span>
         </button>
-        <button class="tool" id="t-3d" title="3D terrain — a viewing mode: drawing is disabled while it is on">
+        <button class="tool" id="t-3d" title="3D terrain: drape the drawing over the real relief — you can keep digitising on it">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M12 2.8 21 8v8l-9 5.2L3 16V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
             <path d="M3 8l9 5.2L21 8M12 13.2v8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
@@ -204,6 +214,19 @@
         </button>
 
         <div class="tool-sep"></div>
+
+        <!-- La escala tiene botón propio en la barra, y no solo la píldora de
+             abajo: fijar la escala de trabajo es una decisión que se toma al
+             empezar el levantamiento, como elegir la herramienta, y en una
+             tablet la píldora del pie es lo primero que tapa el pulgar. -->
+        <button class="tool" id="t-scale" title="Working scale — pick one, lock the map to it, and tell the app how big this screen is">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <rect x="3" y="12.5" width="18" height="5.2" rx="0.9" fill="none" stroke="currentColor" stroke-width="1.6" />
+            <path d="M3 12.5h4.5v5.2H3zM12 12.5h4.5v5.2H12z" fill="currentColor" />
+            <path d="M3 12.5v-4M12 12.5v-3M21 12.5v-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          <span>Scale</span>
+        </button>
 
         <button class="tool" id="t-locate" title="Centre the map on your GPS position">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
@@ -340,20 +363,56 @@
             <button class="pill" id="scale-add">Add</button>
           </span>
         </label>
+        <button class="pill wide" id="scale-reset">Restore the default list</button>
+
+        <!-- A partir de aquí, el tamaño del píxel: qué significa "1:25 000" en
+             ESTA pantalla. Se ofrecen tres vías, de la más cómoda a la más
+             exacta, y las tres escriben el mismo número. -->
+        <h3 class="sub">This screen</h3>
+        <p class="hint" id="scale-screen-detected"></p>
         <label class="field">
-          <span>Assumed screen pixel (mm)</span>
+          <span>Screen size</span>
+          <select id="scale-screen-preset"></select>
+        </label>
+        <label class="field">
+          <span>Or type the diagonal, in inches</span>
+          <span class="tol-row">
+            <input type="number" id="scale-screen-diagonal" min="3" max="120" step="0.1" placeholder="15.6" />
+            <button class="pill" id="scale-screen-apply">Use</button>
+          </span>
+        </label>
+        <label class="field">
+          <span>Pixel size in use (mm)</span>
           <span class="tol-row">
             <input type="number" id="scale-pixel-mm" min="0.05" max="1" step="0.005" value="0.28" />
             <button class="pill" id="scale-pixel-reset">0.28</button>
           </span>
         </label>
         <p class="hint footnote">
-          0.28 mm is the OGC standard pixel — the same assumption QGIS and ArcGIS make, so a
-          1:25 000 here is their 1:25 000. It is not the true pixel of any particular screen: to
-          make the scale match a ruler held against <em>this</em> one, adjust until the scale bar
-          measures what it says.
+          The browser reports the resolution but not how big the glass is, so the diagonal is the
+          one thing that has to be told. <strong>0.28 mm</strong> is the OGC standard pixel — the
+          assumption QGIS and ArcGIS make — so leaving it there keeps a 1:25 000 here identical to
+          theirs, comparable between tools but not measurable with a ruler. Setting the real size
+          of this screen does the opposite: the map measures what it says, and stops matching
+          QGIS. Pick whichever matters for the job.
         </p>
-        <button class="pill wide" id="scale-reset">Restore the default list</button>
+
+        <!-- La comprobación con regla. Es la única que no depende de que la
+             diagonal declarada sea la de verdad. -->
+        <p class="hint" id="scale-ruler-hint"></p>
+        <div class="ruler" id="scale-ruler"><span id="scale-ruler-label"></span></div>
+        <label class="field">
+          <span>A real ruler across it reads (mm)</span>
+          <span class="tol-row">
+            <input type="number" id="scale-ruler-mm" min="5" max="600" step="0.5" />
+            <button class="pill" id="scale-ruler-apply">Calibrate</button>
+          </span>
+        </label>
+        <p class="hint footnote">
+          The surest way, and the only one that does not take the declared diagonal on trust: hold
+          a ruler against the bar and type what it really measures. The bar is as wide as this
+          panel allows, so a millimetre misread is well under one percent.
+        </p>
       </div>
 
       <!-- Se rellena desde la tabla de src/shortcuts.js, para que no pueda
@@ -545,10 +604,12 @@
           3D terrain
           <span class="sub">
             Real relief off the same DEM as the contour lines, with the drawing draped over it.
-            It is a <strong>viewing</strong> mode: while it is on, digitising is disabled, because
-            on tilted terrain the point you touch and the point on the ground no longer line up
-            the way they do in plan view. Off the tiles already cached it renders flat, and on an
-            older tablet it costs noticeably more to draw.
+            <strong>Digitising stays on:</strong> what you touch is unprojected against the relief
+            itself, so a vertex lands on the ground you are pointing at and not on the plane
+            underneath. The map is still a map — the scale printed at the foot is the plan-view
+            one at the centre of the screen, which is the only scale a tilted view has. Off the
+            tiles already cached it renders flat, and on an older tablet it costs noticeably more
+            to draw.
           </span>
         </label>
 
@@ -590,11 +651,11 @@
         </label>
 
         <label class="row column">
-          <span>Trace radius: <strong id="trace-tol-value">22 px</strong></span>
+          <span>Follow-trace radius: <strong id="trace-tol-value">22 px</strong></span>
           <input type="range" id="opt-trace-tol" min="6" max="60" step="2" value="22" />
           <span class="sub">
-            Kept separate from snapping: grabbing the edge you want to trace tolerates more slack
-            than pinning a vertex. If tracing will not catch, raise this.
+            Kept separate from snapping: grabbing the edge you want to follow tolerates more slack
+            than pinning a vertex. If Follow trace will not catch, raise this.
           </span>
         </label>
 
@@ -686,7 +747,9 @@
             id="btn-section"
             title="Project the structural data onto this profile with apparent dip"
           >Structural section</button>
-          <button class="pill" id="btn-profile-csv">CSV</button>
+          <button class="pill" id="btn-profile-csv" title="The sampled elevations as a table">CSV</button>
+          <button class="pill" id="btn-profile-png" title="Save the profile as a picture, laid out for a report">PNG</button>
+          <button class="pill" id="btn-profile-svg" title="Save the profile as vector art, editable in Illustrator or Inkscape">SVG</button>
           <button class="icon-btn" id="btn-close-profile" aria-label="Close profile">✕</button>
         </header>
         <div class="pf-chart-wrap">

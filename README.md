@@ -104,6 +104,7 @@ Las pesadas (JSTS, sql.js, PMTiles) se siguen pidiendo bajo demanda, ahora desde
 | Perfiles y rumbo/manteo sobre el DEM de AWS | ⚠️ solo lo ya visitado |
 | Perfiles vía OpenTopography (Copernicus) | ❌ necesita red y clave |
 | Relieve 3D y sombreado | ⚠️ solo lo ya visitado; fuera de eso se ve plano |
+| Guardar el perfil como figura (PNG/SVG) | ✅ se dibuja en el propio navegador |
 
 Un service worker no puede precachear un basemap mundial: son teselas
 ilimitadas. Lo que hace es guardar en una caché aparte —con tope de 6000
@@ -159,8 +160,9 @@ carga.
 | Perfil estructural | trazar un perfil y pulsar **Structural section** (con dips elegidos con el lazo, si se quieren solo esos) |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
 | Rumbo y manteo | **Dip**: un toque (brújula), tres toques (tres puntos) o trazar a lo largo del afloramiento |
-| Relieve 3D | botón **3D**; con él puesto no se digitaliza |
-| Fijar la escala | píldora `1:…` abajo a la izquierda, o `K` |
+| Relieve 3D | botón **3D**; se sigue digitalizando sobre él |
+| Fijar la escala | botón **Scale** de la barra, píldora `1:…` abajo a la izquierda, o `K` |
+| Decirle cuánto mide la pantalla | en el mismo panel: **This screen** |
 | Ir a mi posición | botón **Locate** |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
@@ -202,8 +204,10 @@ se entrega **a** una escala. Un mapa levantado deslizando el zoom libremente sal
 con el detalle repartido a capricho: un tramo digitalizado a 1:5.000 junto a otro
 a 1:60.000, y ninguno de los dos es el mapa que se declaró.
 
-La píldora de abajo a la izquierda —justo bajo la barra gráfica de MapLibre—
-muestra la escala vigente y abre la lista (`K`):
+Hay dos puertas al mismo panel (`K`): el botón **Scale** de la barra de
+herramientas, que es donde se busca cuando lo que se quiere es fijar la escala
+antes de empezar, y la píldora de abajo a la izquierda —justo bajo la barra
+gráfica de MapLibre—, que además muestra la escala vigente. Dentro:
 
 - **Tocar una escala** lleva el mapa a ella.
 - **El candado** la fija: el mapa se desplaza pero no hace zoom. Se apagan los
@@ -242,15 +246,72 @@ La convención —de la OGC, y lo que usan QGIS, OpenLayers y ArcGIS— es supon
 píxel de **0,28 mm** (~90,7 ppp). No es el píxel de ninguna pantalla concreta,
 pero es el mismo supuesto que hace el resto del gremio: un 1:25.000 de FieldDraw
 es el mismo 1:25.000 que vería QGIS, y eso es lo que hace que la cifra sirva para
-comunicarse. Quien además quiera que cuadre con una regla sobre **su** pantalla
-tiene el valor configurable en la misma lista.
+comunicarse. Es el valor de fábrica, y hay razones para dejarlo puesto.
 
-La escala se **mide sobre el propio mapa** —dos puntos separados cien píxeles y
-cuánto terreno hay entre ellos— en vez de despejarla del nivel de zoom. Así no
-depende de la convención interna de MapLibre (teselas de 512 px, no de 256; usar
-la equivocada da un factor 2 de error) y sigue siendo correcta con la cámara
-inclinada, donde la escala ya no es la misma en toda la pantalla y la del centro
-es la única que se puede declarar.
+#### Decirle a la app cuánto mide esta pantalla
+
+El panel de la escala tiene una sección **This screen** para el caso contrario:
+que el mapa mida lo que dice cuando se le pone una regla encima. Lo primero que
+hace es enseñar lo que el dispositivo **sí** cuenta de sí mismo —la resolución en
+píxeles CSS y cuántos píxeles del panel hay detrás de cada uno, `devicePixelRatio`—
+porque esa parte no hay que preguntarla.
+
+Lo que no cuenta ningún navegador, y no hay API que lo dé, es cuántos centímetros
+mide el vidrio. Dos pantallas de 1920 × 1080, una de 13" y otra de 27", son
+indistinguibles desde JavaScript y su píxel mide menos de la mitad en la primera.
+Así que se pregunta **una sola cosa**, la diagonal, y de ahí sale todo:
+
+    mm por píxel = diagonal en mm / diagonal en píxeles
+
+porque los píxeles son cuadrados y la diagonal en píxeles sale de Pitágoras sobre
+la resolución, que sí se lee. No hace falta el ancho ni la proporción. Hay tres
+maneras de dársela, de la más cómoda a la más exacta:
+
+1. **Una lista de tamaños estándar** —de 7,9" a 32", con el aparato típico al
+   lado, porque nadie sabe de memoria la diagonal de su tablet pero todos saben
+   cuál tienen—. Son diagonales y no resoluciones a propósito: la resolución ya
+   se leyó del dispositivo, y un 15,6" es un 15,6" tenga la que tenga.
+2. **La diagonal escrita a mano**, para lo que no esté en la lista.
+3. **La barra de calibración**, que es la única que no se fía de la diagonal
+   declarada: la barra dice cuántos milímetros mide con el píxel configurado, se
+   le pone una regla de verdad encima y se escribe lo que marca. Es tan ancha
+   como permite el panel para que un milímetro mal leído pese menos del uno por
+   ciento.
+
+Ejemplos, para ver que las cifras son las de las fichas técnicas y no las de la
+propia fórmula: un portátil de 15,6" a 1920 × 1080 da 141 ppp, o sea 0,180 mm; un
+iPad Pro de 11" da 264 ppp físicos y, como el navegador entrega píxeles CSS a 2×,
+0,192 mm.
+
+Las dos opciones son legítimas y excluyentes, y por eso el panel lo dice en voz
+alta: **con 0,28 mm** el 1:25.000 de aquí es el 1:25.000 de QGIS, comparable
+entre herramientas pero no medible con una regla; **con el tamaño real** el mapa
+mide lo que dice y deja de coincidir con QGIS. Lo que importe para el trabajo.
+
+#### Cómo se mide la escala, y qué pasa con el relieve
+
+En planta la escala se **mide sobre el propio mapa** —dos puntos separados cien
+píxeles y cuánto terreno hay entre ellos— en vez de despejarla del nivel de zoom.
+Así no depende de la convención interna de MapLibre (teselas de 512 px, no de
+256; usar la equivocada da un factor 2 de error).
+
+Con el relieve 3D puesto esa vía deja de valer, y no es un detalle. `unproject`
+con `setTerrain` activo devuelve el punto del **suelo**, no el del plano: sobre
+una ladera, dos píxeles contiguos pueden estar a mucha más distancia en el
+terreno que en el mapa. Lo medido pasa a ser el largo de la pendiente, y la
+escala cartográfica es plana por definición. Eso rompía dos cosas a la vez: la
+lectura saltaba al pasar sobre un cerro, y con la escala **fijada** el mapa se
+descontrolaba —la corrección de `moveend` perseguía un número que ya no dependía
+del zoom como 2⁻ᶻ, volvía a saltar, y en dos o tres rebotes el zoom se iba contra
+su tope y ahí se quedaba clavado, con la rueda y el pellizco apagados por el
+propio candado y sin manera de salir. Era el *"se queda pegado"*.
+
+Con relieve se usa la fórmula del zoom, que es plana por construcción, corregida
+por un factor aprendido en planta —donde las dos vías valen— para no tener que
+suponer nada sobre el tamaño de tesela. Y la corrección de `moveend` lleva
+candado contra la reentrada, porque `jumpTo` dispara `moveend` en el acto y de
+forma síncrona: la corrección se estaba llamando a sí misma desde dentro de sí
+misma.
 
 ## Desde un PC
 
@@ -301,9 +362,9 @@ grosería.
 | `R` | Reshape |
 | `D` | Rumbo y manteo |
 | `F` | Perfil topográfico |
-| `S` · `T` | Snap · Trace |
+| `S` · `T` | Snap · Follow trace |
 | `C` | Rotar la certeza: observado → inferido → cubierto |
-| `3` | Relieve 3D |
+| `3` | Relieve 3D (se puede dibujar con él puesto) |
 | `G` | Centrar en mi posición |
 | `M` · `Y` | Unir · Topología |
 | `↵` · `⌫` | Cerrar el elemento · deshacer el último vértice |
@@ -312,7 +373,7 @@ grosería.
 | `Ctrl+Z` · `Ctrl+Shift+Z` | Deshacer · rehacer |
 | `Ctrl+A` | Seleccionar todo |
 | `Shift+L` · `Shift+U` · `Shift+Y` · `Shift+B` | Capas · Unidades · Símbolos · StraboSpot |
-| `K` | Escala de trabajo (elegir y fijar) |
+| `K` | Escala de trabajo: elegir, fijar y calibrar la pantalla |
 | `Ctrl+,` | Ajustes |
 | `Ctrl+S` · `Ctrl+O` · `Ctrl+E` | Guardar proyecto · abrir · exportar GeoPackage |
 | `?` · `F1` | Esta lista |
@@ -355,14 +416,14 @@ Se desarma sola al vaciar la selección, al seleccionar dos elementos (es
 ambiguo por cuál seguir), con un polígono (no tiene extremos) y al borrar la
 línea marcada.
 
-## Snapping y trace
+## Snapping y Follow trace
 
 - **Snap** engancha a vértices y segmentos de todo lo visible: tu propio dibujo
   y las capas importadas. El vértice tiene prioridad sobre el segmento, como en
   QGIS. El marcador magenta muestra a qué se va a enganchar; es cuadrado sobre
   un vértice y una cruz sobre un segmento. El radio es configurable (4–32 px).
-- **Trace** hace que el nuevo elemento siga el borde de uno existente: tocas un
-  punto sobre otra geometría y el trazo recorre el camino más corto por su
+- **Follow trace** hace que el nuevo elemento siga el borde de uno existente:
+  tocas un punto sobre otra geometría y el trazo recorre el camino más corto por su
   contorno hasta el toque anterior, en vez de saltar en línea recta. Por debajo
   es un Dijkstra sobre el grafo de segmentos visibles, con nodos temporales
   insertados donde el snap cae en medio de un segmento — el mismo enfoque que
@@ -450,6 +511,36 @@ haría parecer relieve.
 
 Un tramo sin dato **corta** la curva en vez de saltarlo con una recta: unir los
 dos extremos de un hueco dibujaría una ladera que nadie midió.
+
+### Guardar la traza como figura
+
+Además del **CSV** con las cotas muestreadas, la hoja del perfil saca la
+visualización en **PNG** y en **SVG**.
+
+Lo que se guarda **no** es el SVG que está en pantalla, y el motivo es doble: ese
+va con `preserveAspectRatio="none"` —se estira al alto que tenga la hoja, así que
+fuera de su caja saldría deformado— y se pinta con clases de `app.css`, que en un
+archivo suelto no existen; el resultado sería un gráfico sin color ni ejes. La
+figura se vuelve a dibujar a 1200 × 560 con los estilos escritos en cada
+elemento, así que se abre igual en Illustrator, en un navegador o dentro de un
+Word. El PNG sale del mismo SVG, a 2×, de modo que las dos salidas no pueden
+desalinearse.
+
+La figura lleva lo que un informe necesita y un panel no: los **rótulos de los
+extremos** con la letra del cuadrante hacia el que mira la traza —un perfil se
+cita por sus extremos—, el resumen de longitud, cotas y desniveles, la
+procedencia del dato con su resolución nominal, y la **exageración vertical**.
+
+Esa última es la que la vuelve publicable. Un perfil dibujado para que quepa en
+un recuadro casi nunca está a 1:1: unos kilómetros a lo largo contra unos
+cientos de metros de desnivel dan, en un gráfico apaisado, factores de diez o de
+veinte. En pantalla da igual, porque se lee la curva; en cuanto la figura sale a
+un informe alguien va a medir un ángulo sobre ella, y rotularlo es la diferencia
+entre una figura y una figura engañosa.
+
+Sale en claro aunque la app se vea en oscuro: una figura guardada termina en un
+informe, en una diapositiva o pegada en un Word, y ahí el fondo es blanco. Quien
+la quiera oscura tiene el SVG, donde cambiar dos colores es trivial.
 
 ## Perfil estructural
 
@@ -545,12 +636,49 @@ dibujo se drapea solo sobre el relieve. La exageración vertical se ajusta en el
 panel de Capas, donde también está el **sombreado** (hillshade), apagado por
 omisión.
 
-Es un modo de **visualización**, y por eso con él puesto las herramientas de
-dibujo quedan deshabilitadas. No es una limitación técnica: sobre terreno
-inclinado, el punto que se toca y el punto del terreno dejan de coincidir como
-en planta, así que digitalizar en 3D produce geometría desplazada sin que se
-note al momento. Activarlo devuelve a **Navegar** y descarta lo que hubiera a
-medias; apagarlo devuelve el dibujo.
+### Digitalizar sobre el relieve
+
+Durante un tiempo con el 3D puesto las herramientas de dibujo quedaban
+deshabilitadas, con el argumento de que sobre terreno inclinado el punto que se
+toca y el punto del terreno no coinciden. **Ya no**: se dibuja en 3D, que es
+justo donde se entiende por dónde va un contacto, y encender el relieve ya no
+cambia de herramienta ni descarta lo que hubiera a medias.
+
+Lo que hacía falta para poder hacerlo sin mentir es que el vértice caiga donde
+se tocó, y ahí conviene saber que las dos direcciones de la proyección no se
+resuelven igual:
+
+- `project` consulta la cota en el DEM y sube el punto. Por eso lo dibujado se
+  pinta pegado a la ladera.
+- `unproject` resuelve el relieve al revés, lanzando un rayo contra la malla del
+  terreno a través de un framebuffer auxiliar. Ese camino **puede no estar**: si
+  el búfer de coordenadas no llegó a dibujarse, MapLibre vuelve en silencio al
+  plano z = 0.
+
+Y cuando vuelve al plano el vértice no queda un poco corrido: queda lejísimos.
+Medido durante el desarrollo, con la cámara a 60° sobre terreno de 3.000 m, un
+clic en mitad de la pantalla guardaba un punto que se repintaba **700 px más
+arriba**, fuera de la ventana. No es imprecisión: es geometría inventada, y
+encima sin avisar.
+
+De ahí tres capas, en orden de preferencia, con una comprobación barata que es
+la clave de todo —solo se acepta un punto que vuelve a caer sobre el píxel que
+se tocó, lo haya calculado quien lo haya calculado—:
+
+1. lo que diga `unproject`, que es la vía soportada;
+2. si el punto no se repinta donde se tocó, se busca el que sí: es una raíz de
+   `project(x) − píxel = 0`, y Newton con la jacobiana calculada por diferencias
+   la encuentra, porque la semilla ya está cerca y la superficie es suave;
+3. y si ni eso cierra —el rayo dio en el cielo, o el relieve de ese dispositivo
+   no está en condiciones—, se **avisa una vez** y se sigue con lo que haya. Un
+   aviso es recuperable; un contacto movido un kilómetro sin decirlo, no.
+
+Sobre un risco visto de canto la solución puede no ser única, porque el rayo
+corta la ladera dos veces. Se devuelve la que está bajo el cursor; pedir más que
+eso no lo resuelve ninguna app 2,5D.
+
+La escala que sigue apareciendo al pie es la **planimétrica del centro de la
+pantalla**, que es la única que tiene una vista inclinada.
 
 Al encenderlo se **comprueba que quedó puesto**. `setTerrain` no siempre lanza
 cuando no puede: en un contexto WebGL sin las extensiones que necesita vuelve sin
@@ -1446,7 +1574,7 @@ Las cinco cosas tienen prueba de regresión.
   o Enter.
 - ✅ Exportación a GeoPackage con `layer_styles` (QML + SLD).
 - ✅ Importación de GeoPackage respetando la simbología QGIS.
-- ✅ Snapping a vértice y segmento, y herramienta Trace.
+- ✅ Snapping a vértice y segmento, y herramienta Follow trace.
 - ✅ MBTiles y PMTiles, raster y vectorial.
 - ✅ Selección por toque y por lazo rectangular; corte y unión con JSTS.
 - ✅ Edición de vértices con edición topológica.
@@ -1477,9 +1605,10 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Reshape de polígonos y líneas, sin dependencias.
 - ✅ Botón de GPS para centrar el mapa en la posición propia.
 - ✅ Perfiles topográficos sobre el DEM ya cacheado o sobre Copernicus vía
-  OpenTopography, con gráfico interactivo ligado al mapa y exportación a CSV.
-- ✅ Relieve 3D y sombreado desde el mismo DEM, como modo de visualización con
-  el dibujo bloqueado.
+  OpenTopography, con gráfico interactivo ligado al mapa, exportación a CSV y la
+  traza guardada como figura en PNG o SVG, con la exageración vertical rotulada.
+- ✅ Relieve 3D y sombreado desde el mismo DEM, digitalizando sobre él: el
+  vértice se comprueba contra donde se repinta, y si no cierra se avisa.
 - ✅ Rumbo y manteo por brújula, por tres puntos o ajustando un plano a una
   traza, con la incertidumbre propagada desde el error del DEM y los avisos de
   calidad al lado del número.
@@ -1492,8 +1621,10 @@ Las cinco cosas tienen prueba de regresión.
   la incertidumbre propagada y los avisos de oblicuidad y base corta.
 - ✅ Atributos de las capas importadas de un GeoPackage con la pulsación
   sostenida, con el elemento resaltado en el mapa.
-- ✅ Escala de trabajo: lectura 1:N, salto a una escala de mapeo y candado que la
-  mantiene al desplazarse, con lista editable y píxel de pantalla configurable.
+- ✅ Escala de trabajo: botón propio en la barra, lectura 1:N, salto a una escala
+  de mapeo y candado que la mantiene al desplazarse, con lista editable y el
+  tamaño de la pantalla resuelto por diagonal, por tamaño estándar o con una
+  regla de verdad sobre una barra de calibración.
 - ✅ Quitar un área interior de un polígono, dejando un anillo interior real que
   sobrevive a la fusión con la unidad vecina.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que

@@ -85,5 +85,48 @@ ok('un 0,3 % no cuenta como deriva', S.scaleDrifted(25075, 25000) === false);
 ok('un 2 % sí', S.scaleDrifted(25500, 25000) === true);
 ok('sin objetivo no hay deriva', S.scaleDrifted(25000, NaN) === false);
 
+console.log('== tamaño de la pantalla ==');
+/*
+ * Las cifras de contraste salen de fichas técnicas reales, no de la propia
+ * fórmula: un test que se comprueba contra sí mismo no comprueba nada.
+ *
+ *   - portátil de 15,6" a 1920×1080 → 141 ppp → 0,180 mm el píxel;
+ *   - iPad Pro de 11" → 264 ppp físicos, y como el navegador da píxeles CSS a
+ *     2×, el píxel CSS son 132 ppp → 0,192 mm. Por eso se pasa 834×1194, que
+ *     es la resolución CSS y no la del panel.
+ */
+ok(
+  'un 15,6" a 1920×1080 da un píxel de 0,180 mm',
+  Math.abs(S.pixelMmFromDiagonal(15.6, 1920, 1080) - 0.18) < 0.002,
+  String(S.pixelMmFromDiagonal(15.6, 1920, 1080)),
+);
+ok(
+  'un iPad Pro de 11" da 0,192 mm en píxeles CSS',
+  Math.abs(S.pixelMmFromDiagonal(11, 834, 1194) - 0.192) < 0.002,
+  String(S.pixelMmFromDiagonal(11, 834, 1194)),
+);
+ok('sin diagonal no hay cálculo', S.pixelMmFromDiagonal(0, 1920, 1080) === null);
+ok('sin resolución tampoco', S.pixelMmFromDiagonal(15.6, 0, 1080) === null);
+ok('ni con basura', S.pixelMmFromDiagonal('grande', 1920, 1080) === null);
+
+// La vuelta tiene que devolver la diagonal de partida: es lo que permite que
+// el desplegable marque solo el tamaño que corresponde al píxel en uso.
+ok(
+  'la diagonal se recupera del píxel',
+  Math.abs(S.diagonalFromPixelMm(S.pixelMmFromDiagonal(15.6, 1920, 1080), 1920, 1080) - 15.6) < 0.05,
+);
+
+console.log('== calibración con regla ==');
+// La barra dice medir 100 mm y la regla lee 112: el píxel es un 12 % mayor.
+ok(
+  'una barra que mide de más agranda el píxel',
+  S.calibratePixelMm(0.28, 112, 100) === 0.314,
+  String(S.calibratePixelMm(0.28, 112, 100)),
+);
+ok('medir lo declarado no cambia nada', S.calibratePixelMm(0.28, 100, 100) === 0.28);
+ok('con otro nominal también', S.calibratePixelMm(0.2, 40, 80) === 0.1);
+ok('una lectura imposible se rechaza', S.calibratePixelMm(0.28, 1000, 100) === null);
+ok('y una lectura de cero también', S.calibratePixelMm(0.28, 0, 100) === null);
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

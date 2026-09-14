@@ -1,5 +1,14 @@
 import * as store from './store.js';
-import { STANDARD_PIXEL_MM, formatScale, niceScale, parseScale } from './scale.js';
+import {
+  SCREEN_SIZES,
+  STANDARD_PIXEL_MM,
+  calibratePixelMm,
+  diagonalFromPixelMm,
+  formatScale,
+  niceScale,
+  parseScale,
+  pixelMmFromDiagonal,
+} from './scale.js';
 import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
 import { COMPASS_DIP_SIGMA_DEG, COMPASS_STRIKE_SIGMA_DEG, measureThickness } from './thickness.js';
 import {
@@ -44,6 +53,8 @@ import {
   formatElevation,
   indexAtDistance,
   profileCSV,
+  profilePNG,
+  profileSVG,
   renderProfileChart,
 } from './profile.js';
 import {
@@ -1158,6 +1169,7 @@ export function renderScale(denominator) {
   $('scale-value').textContent = formatScale(denominator);
   $('scale-lock-mark').hidden = !fijada;
   $('btn-scale').classList.toggle('locked', !!fijada);
+  $('t-scale').classList.toggle('active', !!fijada);
   if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
 }
 
@@ -1201,6 +1213,88 @@ function renderScaleMenu() {
   $('scale-lock').checked = !!fijada;
   const px = $('scale-pixel-mm');
   if (document.activeElement !== px) px.value = String(s.scalePixelMm);
+
+  renderScreenSection(s.scalePixelMm);
+}
+
+/**
+ * Lo que el dispositivo SÍ cuenta de su pantalla.
+ *
+ * Resolución en píxeles CSS y cuántos píxeles físicos hay detrás de cada uno.
+ * El tamaño del vidrio no está en esta lista porque no existe ninguna API que
+ * lo dé: es justo el dato que hay que preguntar.
+ *
+ * Se lee de `window.screen` y no del tamaño de la ventana a propósito. La
+ * ventana se redimensiona —media pantalla, split view en el iPad— y el píxel
+ * no cambia de tamaño por eso; la pantalla es la que tiene una diagonal fija
+ * que el usuario puede ir a medir.
+ */
+function detectScreen() {
+  const w = Math.round(window.screen && window.screen.width ? window.screen.width : 0);
+  const h = Math.round(window.screen && window.screen.height ? window.screen.height : 0);
+  const dpr = Number(window.devicePixelRatio) || 1;
+  return { w, h, dpr, ok: w > 0 && h > 0 };
+}
+
+/** Rellena, una sola vez, la lista de tamaños estándar. */
+function fillScreenSizes() {
+  const sel = $('scale-screen-preset');
+  if (sel.options.length) return;
+  const nada = document.createElement('option');
+  nada.value = '';
+  nada.textContent = 'OGC standard pixel (0.28 mm)';
+  sel.appendChild(nada);
+  for (const s of SCREEN_SIZES) {
+    const o = document.createElement('option');
+    o.value = String(s.inches);
+    o.textContent = s.label;
+    sel.appendChild(o);
+  }
+}
+
+/**
+ * La parte de "esta pantalla" del desplegable.
+ *
+ * Los tres controles dicen lo mismo de tres maneras y por eso se mantienen
+ * sincronizados: elegir 15,6" escribe el milímetro correspondiente, y escribir
+ * un milímetro a mano deja marcada la diagonal que lo produce, si es una de la
+ * lista. Sin eso, el panel mostraría a la vez un tamaño elegido y un píxel que
+ * no se corresponde con él, y no habría manera de saber cuál manda.
+ */
+function renderScreenSection(pixelMm) {
+  fillScreenSizes();
+  const sc = detectScreen();
+
+  $('scale-screen-detected').textContent = sc.ok
+    ? `Detected: ${sc.w} × ${sc.h} CSS pixels at ${sc.dpr.toFixed(2)}× device ratio (${Math.round(sc.w * sc.dpr)} × ${Math.round(sc.h * sc.dpr)} real pixels). How big the glass is, no browser will say.`
+    : 'This browser does not report the screen resolution; use the ruler below.';
+
+  const diagonal = sc.ok ? diagonalFromPixelMm(pixelMm, sc.w, sc.h) : null;
+
+  const campo = $('scale-screen-diagonal');
+  if (document.activeElement !== campo) campo.value = diagonal === null ? '' : String(diagonal);
+
+  const sel = $('scale-screen-preset');
+  const estandar = Math.abs(pixelMm - STANDARD_PIXEL_MM) < 0.0005;
+  // La coincidencia con la lista se juzga con holgura: 15,6" y 15,61" son la
+  // misma pantalla, y exigir igualdad exacta dejaría el desplegable en blanco
+  // justo después de haber elegido en él.
+  const match = estandar || diagonal === null
+    ? null
+    : SCREEN_SIZES.find((s) => Math.abs(s.inches - diagonal) < 0.15);
+  sel.value = match ? String(match.inches) : '';
+
+  const bar = $('scale-ruler');
+  const ancho = bar.getBoundingClientRect().width || bar.offsetWidth;
+  const mm = ancho * pixelMm;
+  $('scale-ruler-label').textContent = mm > 0 ? `${mm.toFixed(1)} mm` : '—';
+  $('scale-ruler-hint').textContent =
+    'Check it with a real ruler. With the pixel size above, this bar claims to measure:';
+  const campoRegla = $('scale-ruler-mm');
+  if (document.activeElement !== campoRegla) campoRegla.placeholder = mm > 0 ? mm.toFixed(1) : '';
+  // El ancho medido es el que hay que devolverle a la calibración; el panel
+  // puede estar más angosto en una tablet en vertical que en un monitor.
+  bar.dataset.mm = String(mm);
 }
 
 /**
@@ -1217,10 +1311,15 @@ function pickScale(denominator) {
 }
 
 function wireScale() {
-  $('btn-scale').addEventListener('click', () => {
+  const abrir = () => {
     togglePanel('scale-menu');
     if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
-  });
+  };
+  // Dos puertas al mismo panel: la píldora del pie, que además muestra la
+  // escala vigente, y el botón de la barra, que es donde se busca cuando lo
+  // que se quiere es FIJARLA antes de empezar a dibujar.
+  $('btn-scale').addEventListener('click', abrir);
+  $('t-scale').addEventListener('click', abrir);
   $('btn-close-scale').addEventListener('click', () => closeOverlays());
 
   $('scale-lock').addEventListener('change', (e) => {
@@ -1263,6 +1362,66 @@ function wireScale() {
   $('scale-reset').addEventListener('click', () => {
     store.resetScalePresets();
     renderScaleMenu();
+  });
+
+  /* --- el tamaño de esta pantalla --- */
+
+  const desdeDiagonal = (pulgadas) => {
+    const sc = detectScreen();
+    if (!sc.ok) {
+      showBanner('This browser does not report the screen resolution; use the ruler instead.');
+      return;
+    }
+    const mm = pixelMmFromDiagonal(pulgadas, sc.w, sc.h);
+    if (mm === null) {
+      showBanner('That is not a screen diagonal. Type it in inches, like 15.6.');
+      return;
+    }
+    store.setScalePixelMm(mm);
+    renderScaleMenu();
+    showBanner(
+      `A ${pulgadas}″ screen at ${sc.w} × ${sc.h} puts one pixel at ${mm.toFixed(3)} mm. The map now measures what it says — but it no longer matches QGIS, which assumes 0.28 mm.`,
+      'info',
+    );
+  };
+
+  $('scale-screen-preset').addEventListener('change', (e) => {
+    const v = e.target.value;
+    // La entrada vacía es el píxel estándar, que es una decisión y no un
+    // "sin elegir": vuelve al supuesto de la OGC.
+    if (!v) {
+      store.setScalePixelMm(STANDARD_PIXEL_MM);
+      renderScaleMenu();
+      return;
+    }
+    desdeDiagonal(Number(v));
+  });
+
+  const aplicarDiagonal = () => desdeDiagonal(Number($('scale-screen-diagonal').value));
+  $('scale-screen-apply').addEventListener('click', aplicarDiagonal);
+  $('scale-screen-diagonal').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') aplicarDiagonal();
+  });
+
+  const calibrar = () => {
+    const medido = Number($('scale-ruler-mm').value);
+    const nominal = Number($('scale-ruler').dataset.mm);
+    const mm = calibratePixelMm(store.getState().scalePixelMm, medido, nominal);
+    if (mm === null) {
+      showBanner('That reading does not fit any screen. Measure the bar in millimetres.');
+      return;
+    }
+    store.setScalePixelMm(mm);
+    $('scale-ruler-mm').value = '';
+    renderScaleMenu();
+    showBanner(
+      `Calibrated: one pixel is ${mm.toFixed(3)} mm on this screen, so the scale bar now measures what it says.`,
+      'info',
+    );
+  };
+  $('scale-ruler-apply').addEventListener('click', calibrar);
+  $('scale-ruler-mm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') calibrar();
   });
 }
 
@@ -1515,18 +1674,15 @@ function runTopology() {
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '');
 
 /**
- * Cambia de herramienta explicando el rechazo.
+ * Cambia de herramienta.
  *
- * Con el relieve 3D puesto los botones de la barra salen deshabilitados y se
- * ve por qué, pero una tecla no se puede deshabilitar: sin este aviso, pulsar
- * `L` con el 3D encendido no haría absolutamente nada y parecería un fallo.
+ * Queda como envoltorio de `setTool` —y no como llamada directa— porque el
+ * despachador de teclas y el botón de Hueco pasan por aquí: es el único sitio
+ * donde meter un aviso si alguna herramienta vuelve a poder rechazarse. Hoy
+ * ninguna lo hace.
  */
 function pickTool(tool) {
-  if (store.setTool(tool) === false) {
-    showBanner(
-      'Drawing is disabled while 3D terrain is on: on tilted ground the point you click is not the point on the map. Press 3 to go back to plan view.',
-    );
-  }
+  store.setTool(tool);
 }
 
 /** Rota la certeza activa. Los tipos acotados (pliegues) se quedan en observado. */
@@ -1694,6 +1850,7 @@ function annotateToolbarShortcuts() {
     'btn-units': 'panel-units',
     'btn-symbology': 'panel-symbology',
     'btn-strabo': 'panel-strabo',
+    't-scale': 'panel-scale',
     'btn-scale': 'panel-scale',
     'btn-settings': 'panel-settings',
     'btn-project': 'project-save',
@@ -1704,12 +1861,10 @@ function annotateToolbarShortcuts() {
     if (!el) continue;
     const teclas = labelsFor(accion, IS_MAC);
     if (!teclas.length) continue;
-    const base = defaultTitle(id) || el.textContent.trim();
-    // Se guarda como base la ayuda YA anotada: `defaultTitle` la cachea, y el
-    // bloqueo por relieve la restaura desde ahí.
-    const anotada = `${base} (${teclas[0]})`;
-    el.title = anotada;
-    defaultTitles.set(id, anotada);
+    // Corre una sola vez, al arrancar, así que no hay que guardar la ayuda
+    // original en ninguna parte: lo que hay en el HTML es la base.
+    const base = el.title || el.textContent.trim();
+    el.title = `${base} (${teclas[0]})`;
   }
 }
 
@@ -1954,7 +2109,46 @@ function wireProfilePointer() {
 function downloadProfileCSV() {
   const result = store.getState().profile;
   if (!result) return;
-  downloadText(profileCSV(result), `profile-${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8');
+  downloadText(profileCSV(result), `${profileBaseName()}.csv`, 'text/csv;charset=utf-8');
+}
+
+/** Nombre de archivo de las salidas del perfil: la fecha basta para ordenarlas. */
+function profileBaseName() {
+  return `profile-${new Date().toISOString().slice(0, 10)}`;
+}
+
+/**
+ * La figura se exporta en claro aunque la app se vea en oscuro.
+ *
+ * Un perfil guardado termina en un informe, en una diapositiva o pegado en un
+ * Word, y ahí el fondo es blanco: un PNG de fondo negro obliga a rehacerlo.
+ * Quien lo quiera oscuro tiene el SVG, donde cambiar dos colores es trivial.
+ */
+const PROFILE_FIGURE = { width: 1200, height: 560, theme: 'light' };
+
+function downloadProfileSVG() {
+  const result = store.getState().profile;
+  if (!result) return;
+  downloadBlob(
+    new Blob([profileSVG(result, PROFILE_FIGURE)], { type: 'image/svg+xml' }),
+    `${profileBaseName()}.svg`,
+  );
+  showBanner('Profile saved as SVG — editable in Illustrator or Inkscape.', 'info');
+}
+
+async function downloadProfilePNG() {
+  const result = store.getState().profile;
+  if (!result) return;
+  setBusy('Rendering the figure…');
+  try {
+    const blob = await profilePNG(result, { ...PROFILE_FIGURE, scale: 2 });
+    downloadBlob(blob, `${profileBaseName()}.png`);
+    showBanner('Profile saved as a 2400 × 1120 PNG, ready to drop into a report.', 'info');
+  } catch (err) {
+    showBanner(`Could not render the figure: ${err.message}`);
+  } finally {
+    setBusy(null);
+  }
 }
 
 /* ---------- rumbo y manteo ---------- */
@@ -2368,32 +2562,6 @@ async function doImportGeoPackage(file) {
 
 /* ---------- barra de herramientas y estado ---------- */
 
-/** Botones que crean o mueven geometría, y que el relieve 3D deshabilita. */
-const GEOMETRY_TOOL_BUTTONS = [
-  't-line',
-  't-poly',
-  't-hole',
-  't-measure',
-  't-vertices',
-  't-cut',
-  't-reshape',
-  't-profile',
-];
-
-const TERRAIN_BLOCKED_TITLE =
-  'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
-
-/**
- * Ayuda original de cada botón, capturada del HTML la primera vez. Hace falta
- * para poder devolverla al apagar el relieve, en vez de dejar el mensaje del
- * bloqueo puesto para siempre.
- */
-const defaultTitles = new Map();
-function defaultTitle(id) {
-  if (!defaultTitles.has(id)) defaultTitles.set(id, $(id).title);
-  return defaultTitles.get(id);
-}
-
 function renderToolbar() {
   const s = store.getState();
   const hasDraft = !!s.draft && s.draft.coords.length > 0;
@@ -2416,31 +2584,31 @@ function renderToolbar() {
   $('t-3d').classList.toggle('active', s.terrain3d);
 
   /*
-   * Con el relieve puesto, las herramientas que crean o mueven geometría se
-   * apagan en vez de fallar en silencio: sobre terreno inclinado el vértice no
-   * cae donde se toca, y el resultado sería un dibujo corrido que nadie
-   * relacionaría con haber tenido el 3D encendido.
+   * El relieve 3D ya NO apaga las herramientas de dibujo.
+   *
+   * Lo hacía por un motivo que era cierto y dejó de serlo: se daba por hecho
+   * que con la cámara inclinada el punto tocado y el punto del terreno no
+   * coinciden. Eso pasa si la pantalla se desproyecta contra el plano z=0,
+   * pero MapLibre, con `setTerrain` puesto, lanza el rayo contra la malla del
+   * relieve —`unproject` y `project` reciben el terreno—, así que el vértice
+   * cae sobre el suelo que se está señalando y vuelve a dibujarse ahí.
+   *
+   * Y el bloqueo costaba caro: el 3D es justo donde se entiende por dónde va
+   * un contacto, y obligaba a apagarlo, dibujar a ciegas en planta y volver a
+   * encenderlo para comprobar.
    */
-  for (const id of GEOMETRY_TOOL_BUTTONS) {
-    const btn = $(id);
-    const original = defaultTitle(id); // se captura siempre, no solo al restaurar
-    btn.disabled = s.terrain3d;
-    btn.title = s.terrain3d ? TERRAIN_BLOCKED_TITLE : original;
-  }
 
   // Unir exige dos o más elementos del mismo tipo de geometría.
   const sel = store.selectedFeatures();
   const kinds = new Set(sel.map((f) => f.geometry.type));
-  $('t-merge').disabled = s.terrain3d || sel.length < 2 || kinds.size > 1;
+  $('t-merge').disabled = sel.length < 2 || kinds.size > 1;
 
   // La topología trabaja sobre la selección, o sobre todo si no hay ninguna.
   const alcance = sel.length || s.features.length;
-  $('t-topo').disabled = s.terrain3d || alcance < 2;
-  $('t-topo').title = s.terrain3d
-    ? TERRAIN_BLOCKED_TITLE
-    : sel.length
-      ? `Make the ${sel.length} selected features share vertices`
-      : 'Make all adjacent features share vertices';
+  $('t-topo').disabled = alcance < 2;
+  $('t-topo').title = sel.length
+    ? `Make the ${sel.length} selected features share vertices`
+    : 'Make all adjacent features share vertices';
 
   $('t-undo').disabled = !hasDraft;
   $('t-finish').disabled = !hasDraft;
@@ -2456,9 +2624,9 @@ function renderStatus() {
   const s = store.getState();
   const n = s.draft ? s.draft.coords.length : 0;
   $('status-count').textContent = `${s.features.length} feature${s.features.length === 1 ? '' : 's'}`;
-  if (s.terrain3d) {
+  if (s.terrain3d && s.tool === 'navigate') {
     $('status-text').textContent =
-      '3D terrain on — viewing only: drag with two fingers to tilt, tap 3D again to draw';
+      '3D terrain on — drag with two fingers to tilt · pick a tool and you can draw straight onto the relief';
   } else if (s.tool === 'navigate') {
     $('status-text').textContent = 'Navigation mode — pick Line or Polygon to draw';
   } else if (s.tool === 'profile') {
@@ -2637,9 +2805,9 @@ export function initUI() {
     if (store.getState().terrain3d !== encender) return;
     showBanner(
       encender
-        ? 'Viewing mode: the drawing is draped over the relief but digitising is disabled. Off the cached tiles the ground renders flat, and on an older tablet this costs noticeably more to render.'
-        : 'Back to plan view: you can draw again.',
-      encender ? 'warn' : 'info',
+        ? 'The drawing is draped over the relief, and you can keep digitising on it: a vertex lands on the ground you point at, not on the plane underneath. Off the cached tiles the ground renders flat, and on an older tablet this costs noticeably more to render.'
+        : 'Back to plan view.',
+      'info',
     );
   });
   $('t-merge').addEventListener('click', runMerge);
@@ -2797,6 +2965,8 @@ export function initUI() {
   $('btn-close-profile').addEventListener('click', () => store.clearProfile());
   $('btn-section').addEventListener('click', openSectionFromProfile);
   $('btn-profile-csv').addEventListener('click', downloadProfileCSV);
+  $('btn-profile-png').addEventListener('click', downloadProfilePNG);
+  $('btn-profile-svg').addEventListener('click', downloadProfileSVG);
   wireProfilePointer();
   wireStructureControls();
   syncStructureControls();
@@ -2919,6 +3089,7 @@ export function initUI() {
       const fijada = store.getState().scaleLock;
       $('scale-lock-mark').hidden = !fijada;
       $('btn-scale').classList.toggle('locked', !!fijada);
+      $('t-scale').classList.toggle('active', !!fijada);
       if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
     }
     if (store.changed('structureStyle')) syncStructureControls();

@@ -315,15 +315,18 @@ ok('cerrar publica la traza', store.getState().pendingProfile.coords.length === 
 ok('la traza NO se guarda como elemento del mapa', store.getState().features.length === 0);
 store.clearProfile();
 
-// El relieve 3D es modo de visualización: con él puesto no se digitaliza.
+// El relieve 3D ya no bloquea el dibujo: MapLibre desproyecta contra la malla
+// del terreno, así que el vértice cae sobre el suelo señalado. Encenderlo con
+// una línea a medias tampoco puede tirarla.
 store.setTool('line');
+store.addVertex([-71.4, -37.2]);
 store.setTerrain3d(true);
-ok('activar el relieve saca de la herramienta de dibujo', store.getState().tool === 'navigate');
-ok('y con él puesto no se puede volver a dibujar', store.setTool('line') === false);
-ok('la herramienta no cambió', store.getState().tool === 'navigate');
-ok('navegar sí se permite', store.setTool('navigate') !== false);
+ok('encender el relieve no cambia de herramienta', store.getState().tool === 'line');
+ok('ni descarta el borrador en curso', store.getState().draft.coords.length === 1);
+ok('y se sigue pudiendo dibujar', store.setTool('polygon') !== false);
+store.cancelDraft();
 store.setTerrain3d(false);
-ok('al apagarlo se vuelve a poder dibujar', store.setTool('line') === true);
+ok('apagarlo tampoco cambia de herramienta', store.getState().tool === 'polygon');
 
 store.setTerrainExaggeration(99);
 ok('la exageración se acota', store.getState().terrainExaggeration === 3);
