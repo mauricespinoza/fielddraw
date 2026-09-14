@@ -218,6 +218,17 @@ body,
   margin: 2px 6px;
 }
 
+/*
+ * Deshacer y rehacer del DIBUJO —no el «Undo» de vértice, que ya vive más
+ * abajo en esta misma barra— escondidos salvo en la disposición compacta (ver
+ * el bloque final). En tablet y PC el atajo `Ctrl+Z` y el gesto de dos dedos
+ * ya lo resuelven; en un teléfono no hay ni uno ni otro, y sin esto convertir
+ * una línea en polígono y arrepentirse no tenía salida.
+ */
+.doc-undo {
+  display: none;
+}
+
 /* ---------- paleta de tipos ---------- */
 /* Columna estrecha junto a la barra: deja el mapa casi entero a la vista. */
 .palette {
@@ -397,48 +408,6 @@ body,
  * barra. No es interactiva —ni botón ni enlace—, así que no le hace falta
  * nada del vocabulario de foco y teclado que sí necesitan los `.pill`.
  */
-/*
- * Deshacer y rehacer, sueltos en la esquina.
- *
- * Nacen escondidos: en tablet y PC el sitio de arriba a la izquierda es de la
- * barra de herramientas, y allí el atajo y el gesto de dos dedos ya cubren
- * esto. El bloque compacto del final los enciende.
- */
-.quick-actions {
-  display: none;
-  position: absolute;
-  z-index: 12;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-}
-
-.quick {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.quick:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.quick:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
 .brand {
   position: absolute;
   top: calc(var(--safe-t) + 12px);
@@ -2055,50 +2024,24 @@ input[type='radio'] {
    * reglas y a acordarse de las cinco.
    *
    * No son números redondos ni elegidos: `--bar-h` es 48 de botón + 10 de
-   * relleno + 2 de borde; `--opts-h`, 40 de píldora + 8; y `--status-h`, una
-   * línea de 17 más 6 de relleno. Si cambia cualquiera de esas piezas, estos
-   * tres también. `--foot` es la suma, que es lo que tienen que esquivar la
-   * paleta, la hoja del perfil y los controles de MapLibre.
+   * relleno + 2 de borde, y `--status-h`, la píldora de escala de 28 más 10 de
+   * relleno, con dos de holgura. Si cambia cualquiera de esas piezas, estos
+   * dos también. El bloque B los recalcula cuando el estado pasa a dos líneas.
    */
   :root {
     --edge: 8px;
     --bar-h: 60px;
-    --opts-h: 48px;
-    --status-h: 24px;
-    --foot: calc(var(--opts-h) + var(--bar-h) + var(--status-h));
+    --status-h: 40px;
   }
 
-  /*
-   * Deshacer y rehacer: arriba a la izquierda, sueltos sobre el mapa.
-   *
-   * Es la esquina que deja libre la barra de herramientas al bajar al pie, y
-   * la más cerca del pulgar izquierdo. Sin esto, en un teléfono no había
-   * ninguna forma de deshacer —convertir una línea en polígono y arrepentirse
-   * era definitivo—, porque el `Undo` de la barra es el del vértice en curso.
-   */
-  .quick-actions {
-    display: flex;
-    top: calc(var(--safe-t) + var(--edge));
-    left: calc(var(--safe-l) + var(--edge));
-  }
-
-  /*
-   * La banda de opciones baja al pie, debajo de la barra de herramientas.
-   *
-   * Arriba competía con lo único que de verdad quiere estar arriba —el mapa— y
-   * dejaba la mano cruzando la pantalla entera para llegar a Capas. Abajo cae
-   * donde ya está el pulgar, y el borde superior queda para dos grupos
-   * pequeños en las esquinas.
-   *
-   * Sigue siendo UNA línea que se desliza. Envolver era peor: nueve píldoras
-   * en tres filas tapan un tercio del mapa de forma permanente, mientras que
-   * una fila que se arrastra solo cuesta el gesto de ir a buscar el botón.
-   */
+  /* Fila superior: una sola línea, deslizable.
+     Envolver era peor que deslizar — nueve píldoras en tres filas tapan un
+     tercio del mapa de forma permanente, mientras que una sola fila que se
+     arrastra solo cuesta el gesto de ir a buscar el botón. */
   .top-right {
     left: calc(var(--safe-l) + var(--edge));
     right: calc(var(--safe-r) + var(--edge));
-    top: auto;
-    bottom: calc(var(--safe-b) + 4px);
+    top: calc(var(--safe-t) + var(--edge));
     max-width: none;
     flex-wrap: nowrap;
     justify-content: flex-start;
@@ -2114,6 +2057,17 @@ input[type='radio'] {
     display: none;
   }
 
+  /*
+   * El margen automático hace de `justify-content: flex-end` sin su defecto:
+   * mientras sobre sitio empuja la fila contra el borde derecho, y cuando no
+   * cabe se resuelve en cero y la fila arranca por la izquierda, que es por
+   * donde hay que poder deslizarla. Con `flex-end` de verdad, lo que sobra se
+   * va por el lado izquierdo y ahí ya no se alcanza.
+   */
+  .top-right .pill:first-child {
+    margin-left: auto;
+  }
+
   .top-right .pill {
     flex: none;
     min-height: 40px;
@@ -2126,7 +2080,7 @@ input[type='radio'] {
     top: auto;
     left: calc(var(--safe-l) + var(--edge));
     right: calc(var(--safe-r) + var(--edge));
-    bottom: calc(var(--safe-b) + var(--opts-h));
+    bottom: calc(var(--safe-b) + var(--status-h));
     flex-direction: row;
     align-items: center;
     gap: 2px;
@@ -2177,59 +2131,41 @@ input[type='radio'] {
   }
 
   /*
+   * Deshacer y rehacer del dibujo entran a la tira, escondidos el resto del
+   * tiempo: aquí es donde no hay atajo de teclado ni gesto que los reemplace.
+   */
+  .doc-undo {
+    display: flex;
+  }
+
+  .tool-sep.doc-undo {
+    display: block;
+  }
+
+  /*
    * La paleta no entra aquí: dónde ponerla depende de qué falte. Estrecha (B)
    * sobra alto y falta ancho, así que va de hoja al pie; baja (C) es al revés
    * y vuelve a ser la columna del costado de siempre.
    */
 
-  /*
-   * La barra de estado se queda con lo único que le queda —el mensaje y el
-   * contador— y se aprieta a una línea: la escala se fue arriba a la derecha y
-   * la fila de píldoras ocupa ahora el borde de abajo.
-   */
+  /* La barra de estado se aprieta: cada píxel suyo es un píxel de mapa, y la
+     tira de herramientas se apoya justo encima de ella. */
   .statusbar {
-    bottom: calc(var(--safe-b) + var(--opts-h) + var(--bar-h));
-    padding: 3px calc(var(--safe-r) + var(--edge)) 4px calc(var(--safe-l) + var(--edge));
+    padding: 5px calc(var(--safe-r) + var(--edge)) calc(var(--safe-b) + 5px)
+      calc(var(--safe-l) + var(--edge));
     font-size: 11.5px;
-    background: none;
-    align-items: center;
   }
 
-  .statusbar #status-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    /* Sin el degradado de fondo hace falta que el texto se despegue del mapa. */
-    text-shadow: 0 1px 3px rgba(13, 17, 23, 0.95), 0 0 6px rgba(13, 17, 23, 0.8);
-  }
-
-  .statusbar .count {
-    text-shadow: 0 1px 3px rgba(13, 17, 23, 0.95), 0 0 6px rgba(13, 17, 23, 0.8);
-  }
-
-  /*
-   * La escala sube a la esquina superior derecha, enfrente de deshacer.
-   *
-   * `fixed` y no `absoluto`: vive dentro de la barra de estado, que ya está
-   * posicionada, así que en absoluto no podría salir de ella. La app no
-   * desplaza nada —`overflow: hidden` en el `body`—, de modo que aquí `fixed`
-   * es exactamente "respecto de la pantalla" y no se mueve nunca.
-   */
   .scale-pill {
-    position: fixed;
-    top: calc(var(--safe-t) + var(--edge));
-    right: calc(var(--safe-r) + var(--edge));
-    z-index: 12;
-    min-height: 38px;
-    padding: 6px 14px;
-    font-size: 13px;
+    min-height: 28px;
+    padding: 3px 10px;
   }
 
   /* Los controles de MapLibre —zoom, brújula, GPS y la escala gráfica— viven
      en las esquinas de abajo, que es justo donde ahora está la tira. */
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {
-    margin-bottom: calc(var(--safe-b) + var(--foot) + 6px);
+    margin-bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
   }
 
   /*
@@ -2251,24 +2187,20 @@ input[type='radio'] {
     display: none;
   }
 
-  /*
-   * Cuelga de la píldora de la escala, que aquí vive arriba a la derecha: en
-   * la disposición ancha colgaba del pie porque la píldora estaba abajo, y
-   * dejarlo allí lo pondría en el extremo opuesto de la pantalla al botón que
-   * lo abre.
-   */
+  /* Cuelga de la píldora de escala, abajo a la izquierda, y no de la fila de
+     arriba: se queda abajo, pero por encima de la tira. */
   #scale-menu {
-    top: calc(var(--safe-t) + 56px);
-    bottom: auto;
-    left: auto;
-    right: calc(var(--safe-r) + var(--edge));
-    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--foot) - 70px);
+    top: auto;
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    max-height: calc(
+      100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - var(--bar-h) - 24px
+    );
   }
 
   .profile-sheet {
     left: calc(var(--safe-l) + var(--edge));
     right: calc(var(--safe-r) + var(--edge));
-    bottom: calc(var(--safe-b) + var(--foot) + 6px);
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
     padding: 8px 10px 10px;
   }
 
@@ -2317,13 +2249,28 @@ input[type='radio'] {
 /* ---- B · estrecho: los paneles al ancho de la pantalla ---- */
 @media (max-width: 680px) {
   /*
-   * El contador de elementos se va: en 390 px se comía un tercio de la línea
-   * para decir un número que ya se ve en el mapa, y lo que hace falta ahí es
-   * el mensaje entero —«Tap for the first vertex · press and hold for
-   * freehand»—, que es lo único que va diciendo qué espera la app.
+   * En una sola fila de 390 px el mensaje de estado quedaba en unos 150 px, es
+   * decir, en nada: «Navigation mode — pick Line…». Sube a una línea entera
+   * para él solo y deja la de abajo a la escala y al contador. Cuesta 14 px de
+   * mapa y es lo único que va diciendo qué espera la app a continuación.
    */
-  .statusbar .count {
-    display: none;
+  :root {
+    --status-h: 58px;
+  }
+
+  .statusbar {
+    flex-wrap: wrap;
+    align-items: center;
+    /* El atajo `gap` pisa a `row-gap`, así que van los dos en uno. */
+    gap: 3px 10px;
+  }
+
+  .statusbar #status-text {
+    flex: 1 1 100%;
+    order: -1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /*
@@ -2338,7 +2285,7 @@ input[type='radio'] {
     top: auto;
     left: calc(var(--safe-l) + var(--edge));
     right: calc(var(--safe-r) + var(--edge));
-    bottom: calc(var(--safe-b) + var(--foot) + 6px);
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
     width: auto;
     max-height: 34dvh;
     padding: 9px 10px;
@@ -2378,30 +2325,19 @@ input[type='radio'] {
     flex: 1 1 96px;
   }
 
-  /*
-   * Los desplegables cuelgan de la banda de opciones, así que bajan con ella:
-   * anclados arriba quedarían en el extremo opuesto de la pantalla al botón
-   * que los abre. A este ancho ocupan además todo lo que hay — con un borde de
-   * 12 px dejaban un margen absurdo en un lado y se salían por el otro.
-   */
+  /* Anclados a un borde de 12 px, los desplegables dejaban un margen absurdo
+     en un lado y se salían por el otro. A esta anchura ocupan lo que hay. */
   .dropdown,
   .settings {
     left: calc(var(--safe-l) + var(--edge));
     right: calc(var(--safe-r) + var(--edge));
-    top: auto;
-    bottom: calc(var(--safe-b) + var(--opts-h) + 4px);
+    top: calc(var(--safe-t) + 58px);
     width: auto;
-    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--opts-h) - 60px);
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
   }
 
   .shortcuts {
-    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--opts-h) - 60px);
-  }
-
-  /* Es un ID, así que la regla de `.dropdown` de aquí arriba no lo alcanza. */
-  #scale-menu {
-    left: calc(var(--safe-l) + var(--edge));
-    width: auto;
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
   }
 
   /*
@@ -2423,9 +2359,9 @@ input[type='radio'] {
     max-height: 62dvh;
   }
 
-  /* Por debajo de deshacer y de la escala, que ahora son lo único de arriba. */
+  /* Centrado arriba pisaba la fila de píldoras; baja justo por debajo. */
   .banner {
-    top: calc(var(--safe-t) + 56px);
+    top: calc(var(--safe-t) + 58px);
     max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 2 * var(--edge));
   }
 
@@ -2469,7 +2405,7 @@ input[type='radio'] {
 @media (max-height: 520px) {
   :root {
     --bar-h: 54px;
-    --opts-h: 44px;
+    --status-h: 40px;
   }
 
   .tool span {
@@ -2482,9 +2418,10 @@ input[type='radio'] {
     min-height: 42px;
   }
 
-  .quick {
-    width: 34px;
-    height: 34px;
+  /* Sin sitio para dos líneas: el mensaje vuelve a compartir fila. */
+  .statusbar #status-text {
+    flex: 1 1 auto;
+    order: 0;
   }
 
   /*
@@ -2498,7 +2435,7 @@ input[type='radio'] {
     top: calc(var(--safe-t) + 52px);
     left: calc(var(--safe-l) + var(--edge));
     right: auto;
-    bottom: calc(var(--safe-b) + var(--foot) + 6px);
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
     width: 106px;
     max-height: none;
     padding: 8px;
@@ -2539,10 +2476,4 @@ input[type='radio'] {
     min-height: 36px;
     padding: 6px 12px;
   }
-
-  .scale-pill {
-    min-height: 34px;
-    padding: 5px 12px;
-  }
-
 }

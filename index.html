@@ -52,6 +52,35 @@
       </div>
 
       <div class="toolbar" id="toolbar">
+        <!--
+          Deshacer y rehacer del DIBUJO, que no es lo mismo que el «Undo» de más
+          abajo: aquel deshace el último VÉRTICE del trazo en curso y está
+          apagado el resto del tiempo. Este es el de `Ctrl+Z`.
+
+          Solo se ve en la disposición compacta (clase `.doc-undo`, ver
+          app.css): en tablet y PC el atajo y el gesto de dos dedos ya lo
+          resuelven, y en un teléfono no hay ni lo uno ni lo otro —el doble
+          toque con dos dedos existe, pero nadie lo descubre solo—, así que
+          convertir una línea en polígono y querer volver atrás no tenía
+          salida. Viven en la propia barra de herramientas y no sueltos sobre
+          el mapa: es el sitio al que ya se viene a buscar un control de
+          dibujo, y la barra en compacto se desliza igual que el resto.
+        -->
+        <button class="tool doc-undo" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M4 9h11a5 5 0 0 1 0 10H9M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Undo</span>
+        </button>
+        <button class="tool doc-undo" id="btn-redo" title="Redo (Ctrl+Shift+Z)" disabled>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M20 9H9a5 5 0 0 0 0 10h6M20 9l-4-4M20 9l-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Redo</span>
+        </button>
+
+        <div class="tool-sep doc-undo"></div>
+
         <button class="tool active" id="t-nav" title="Pan and zoom">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path
@@ -311,29 +340,6 @@
           <span class="brand-by">by Mauricio Espinoza · 2026</span>
           <span class="brand-uni">Universidad de Concepción</span>
         </span>
-      </div>
-
-      <!--
-        Deshacer y rehacer del DIBUJO, que no es lo mismo que el botón «Undo»
-        de la barra de herramientas: aquel deshace el último vértice del trazo
-        en curso y está apagado el resto del tiempo. Este es el de `Ctrl+Z`, y
-        en un teléfono no hay teclado que lo invoque ni gesto que se adivine
-        —el doble toque con dos dedos existe, pero nadie lo descubre solo—, así
-        que convertir una línea en polígono y querer volver atrás no tenía
-        salida. Solo se ve en la disposición compacta; en tablet y PC el sitio
-        se lo lleva la barra, y ahí el gesto y el atajo ya están.
-      -->
-      <div class="quick-actions" id="quick-actions">
-        <button class="quick" id="btn-undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path d="M4 9h11a5 5 0 0 1 0 10H9M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-        <button class="quick" id="btn-redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-            <path d="M20 9H9a5 5 0 0 0 0 10h6M20 9l-4-4M20 9l-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
       </div>
 
       <div class="top-right">

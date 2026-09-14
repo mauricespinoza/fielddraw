@@ -412,57 +412,48 @@ hay ninguno de los dos supuestos:
   a **3D**.
 
 Los dos casos se arreglan igual, y es la disposición de cualquier app de mapa
-en un móvil: **el borde de abajo para los controles, dos grupos pequeños en las
-esquinas de arriba y todo el resto para el mapa**.
+en un móvil: **los bordes de arriba y de abajo para los controles y todo el
+centro para el mapa**.
 
     ┌─────────────────────────────────────┐
-    │ ↶ ↷                       1:25 000  │   deshacer/rehacer · escala
+    │ Project  Layers  Units  Symbols  …  │   opciones      (se desliza)
     │                                     │
     │                MAPA                 │
     │                                     │
     │ Tap for the first vertex · press…   │   estado
-    │ ✋ ╱ ⬠ ⬡ ∠ ▷ …                      │   herramientas  (se desliza)
-    │ Project  Layers  Units  Symbols  …  │   opciones      (se desliza)
+    │ ↶ ↷ ✋ ╱ ⬠ ⬡ ∠ ▷ …                  │   herramientas  (se desliza)
     └─────────────────────────────────────┘
 
-Todo lo de abajo se **desliza** en vez de envolver: nueve píldoras en tres
-filas tapan un tercio del mapa de forma **permanente**, mientras que una sola
-fila que se arrastra solo cuesta el gesto de ir a buscarlas cuando hacen falta.
+Todo lo de arriba y de abajo se **desliza** en vez de envolver: nueve píldoras
+en tres filas tapan un tercio del mapa de forma **permanente**, mientras que
+una sola fila que se arrastra solo cuesta el gesto de ir a buscarlas cuando
+hacen falta.
 
-La banda de opciones baja al pie por dos motivos. Arriba competía con lo único
-que de verdad quiere estar arriba, que es el mapa; y abajo cae donde ya está el
-pulgar, en vez de obligar a cruzar la pantalla entera para llegar a **Capas**.
-Los desplegables que cuelgan de ella bajan con ella, o quedarían en el extremo
-opuesto al botón que los abre.
+Dentro de la misma tira de herramientas, al principio, van **deshacer y
+rehacer del dibujo**. No existían: la barra ya trae un `Undo` que retira el
+último **vértice** del trazo en curso y que está apagado el resto del tiempo, y
+el deshacer del dibujo entero solo se alcanzaba con `Ctrl+Z` —que un teléfono
+no tiene— o con el doble toque de dos dedos, que nadie descubre solo. Convertir
+una línea en polígono y arrepentirse no tenía salida. Van ahí y no sueltos
+sobre el mapa: la barra ya es el sitio al que se viene a buscar un control de
+dibujo, y en tablet y PC —donde el atajo y el gesto ya alcanzan— se quedan
+escondidos, sin ocupar el sitio de una herramienta.
 
-Lo que sube a las esquinas son las dos cosas que se usan sin mirar:
-
-- **Deshacer y rehacer**, a la izquierda. No existían: en la barra de
-  herramientas hay un `Undo` que retira el último **vértice** del trazo en
-  curso y que está apagado el resto del tiempo, y el deshacer del dibujo
-  entero solo se alcanzaba con `Ctrl+Z` —que un teléfono no tiene— o con el
-  doble toque de dos dedos, que nadie descubre solo. Convertir una línea en
-  polígono y arrepentirse no tenía salida.
-- **La escala**, a la derecha, con su panel colgando de ella. Estaba abajo a la
-  izquierda, que es justo donde ahora va la fila de herramientas.
-
-La paleta sigue cambiando de sitio según qué escasee, que es lo único que no es
-simétrico entre las dos orientaciones.
-
-En vertical sobra alto: va de hoja al pie, con los grupos uno al lado del otro
-y un tope de 34 dvh —por encima de eso, elegir el tipo de contacto dejaba sin
-sitio para dibujarlo—. En apaisado sobra ancho: vuelve a ser la columna de
-106 px de siempre, que en un móvil tumbado es un 12 % de la pantalla, encajada
-entre el borde de arriba y la tira de abajo.
+La paleta cambia de sitio según qué escasee, que es lo único que no es
+simétrico entre las dos orientaciones. En vertical sobra alto: va de hoja al
+pie, con los grupos uno al lado del otro y un tope de 34 dvh —por encima de
+eso, elegir el tipo de contacto dejaba sin sitio para dibujarlo—. En apaisado
+sobra ancho: vuelve a ser la columna de 106 px de siempre, que en un móvil
+tumbado es un 12 % de la pantalla, encajada entre la fila de arriba y la tira
+de abajo.
 
 Los iconos de la tira bajan de 24 a 19 px y los rótulos desaparecen del todo
 por debajo de 520 px de alto: el icono ya identifica cada herramienta, el
 `title` sigue ahí para el que dude, y con veinte botones esos pocos píxeles por
 botón se notan sumados. Lo que se retira entero es el **diagnóstico del lápiz**
 —presión, inclinación, altitud—, que es una ayuda para calibrar el Pencil y no
-algo que se consulte en terreno; la **marca** de la esquina, que ya se escondía
-por debajo de 900 px; y el **contador de elementos**, que gastaba un tercio de
-la línea de estado en decir un número que ya se ve en el mapa.
+algo que se consulte en terreno, y la **marca** de la esquina, que ya se
+escondía por debajo de 900 px.
 
 Dos detalles que no se ven pero se notan:
 
@@ -505,11 +496,10 @@ faltaba texto. La muestra baja a 24 px y lo que aun así no quepa se corta con
 puntos suspensivos.
 
 Un cuarto, que no era de disposición sino de alcance: **no había forma de
-deshacer sin teclado**. Está arriba, con los botones nuevos. El deshacer en sí
-estaba bien —convertir una línea en polígono y volver atrás devuelve la línea
-con su geometría, su id y sus atributos intactos, y está cubierto en
+deshacer sin teclado**. Está en la barra, con los botones nuevos. El deshacer
+en sí estaba bien —convertir una línea en polígono y volver atrás devuelve la
+línea con su geometría, su id y sus atributos intactos, y está cubierto en
 `test/edit.test.mjs`—; lo que faltaba era poder pedirlo.
-
 ## Continuar una línea
 
 Seleccionar una línea y activar **Línea** no empieza otra: **continúa esa**, por
