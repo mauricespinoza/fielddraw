@@ -2102,11 +2102,96 @@ localStorage, aparte de los ornamentos de falla del dibujo propio: son símbolos
 ajenos, y agrandarlos para verlos mejor no debería tocar la simbología del mapa
 que se está construyendo.
 
-**Subida.** Siempre a un dataset **nuevo**: `POST /db/datasetspots/{id}`
+**Ver el Type de una línea o un polígono.** Un spot de StraboSpot no tiene una
+propiedad `type`: lo que dice qué es una línea vive en `trace` y lo de un
+polígono en `surface_feature`. La columna se arma de ahí, de lo general a lo
+particular —`geologic structure fault thrust`—, para que al filtrar por tipo
+todas las fallas queden juntas y el sentido de movimiento las separe dentro del
+grupo. La unidad de un polígono sale de los tags del proyecto, igual que en
+Estructuras. Antes se leía una propiedad `type` que ningún dataset real trae, y
+las dos columnas salían vacías siempre.
+
+## Subir el dibujo a StraboSpot
+
+Siempre a un dataset **nuevo** del proyecto elegido: `POST /db/datasetspots/{id}`
 reemplaza todos los spots del dataset de destino, así que escribir en uno
-existente lo destruiría. Las líneas y polígonos del dibujo se convierten en
-spots con las columnas del plugin (`Name`, `Date`, `Unit`, `Notes`, `Type`,
-`Field`, `Geologist`).
+existente lo destruiría.
+
+Lo que decide si un dato *se entiende* al otro lado no son sus atributos
+sueltos, sino los tres objetos del modelo nativo por los que StraboSpot
+categoriza y simboliza. Las equivalencias están en `src/strabo/mapping.js`, y se
+comprobaron contra el código de la app oficial (StraboField, `src/assets/forms/`
+y `src/modules/maps/symbology/`): los valores que se escriben son los `name` de
+las listas del formulario, que es lo que se guarda, no sus etiquetas, que es lo
+que se ve.
+
+**Medidas → `orientation_data[]`.** Una medición planar con `strike`, `dip`,
+`dip_direction` y su `feature_type`, que es lo que elige el símbolo:
+`bedding`, `foliation`, `fault`, y `fracture` con `fracture_type: joint` para
+las diaclasas. El símbolo lo rota StraboSpot con el rumbo, y una estratificación
+invertida lleva `facing: overturned`, que es lo que le da su símbolo propio.
+
+**Líneas → `trace{}`.** El color de la traza sale de `trace_type` y el patrón de
+línea de `trace_quality`, que es exactamente la certeza de FieldDraw:
+observado → `known`, inferido → `inferred`, cubierto → `concealed`. Los
+contactos van bajo `contact` (negro) y las fallas y ejes de pliegue bajo
+`geologic_struc` (rojo); un dique **no** es una estructura, es un contacto
+intrusivo, y así lo dibuja la app.
+
+**Polígonos → `surface_feature{}` + un tag del proyecto.** Un polígono no lleva
+el nombre de su unidad: en StraboSpot el nombre y el color vienen de un tag de
+tipo `geologic_unit` que apunta al spot. Por eso la subida escribe también los
+tags —nombre, sigla en `unit_label_abbreviation`, color y litología— y sin ellos
+el polígono llega anónimo y azul. Se puede desactivar con una casilla, porque es
+la única escritura que toca el **proyecto** y no solo el dataset nuevo.
+
+| FieldDraw | StraboSpot |
+| --- | --- |
+| Bedding · Foliation · Joint · Fault plane | `feature_type` `bedding` · `foliation` · `fracture` (+`fracture_type: joint`) · `fault` |
+| Stratigraphic contact | `contact` + `depositional` + `stratigraphic` |
+| Intrusive contact | `contact` + `intrusive` |
+| Structural contact | `contact` + `other` (+ el término en `other_contact_type`) |
+| Thrust · Normal · Dextral · Sinistral | `geologic_struc` + `fault` + `shear_sense` |
+| Undifferentiated fault | `geologic_struc` + `fault`, sin `shear_sense` |
+| Antiform · Synform | `fold_axial_tra` + `fold_type` `anticline` · `syncline` |
+| Dyke | `contact` + `intrusive` + `dike` |
+| Observado · Inferido · Cubierto | `trace_quality` `known` · `inferred` · `concealed` |
+| Unidad de un polígono | tag `geologic_unit` + `surface_feature_type: rock_unit` |
+| Zona de alteración | `surface_feature_type: other` («alteration zone») |
+
+Cuatro decisiones que el dato no toma solo:
+
+- **`quality` de una medición no se escribe nunca.** Es una escala 1–5 de cómo
+  estaba expuesto y se midió el plano, y eso la app no lo sabe: la incertidumbre
+  de un ajuste sobre el DEM mide otra cosa. Traducir una a la otra sería
+  inventar una observación de terreno que nadie hizo.
+- **Los ejes de pliegue suben como `anticline` / `syncline`**, que es lo que
+  espera una carta publicada, aunque la paleta los llame antiforme y sinforme.
+- **«Structural contact» sube como contacto**, no como estructura geológica: se
+  cartografió un contacto, y el término exacto queda en `other_contact_type`.
+  Clasificarlo como falla afirmaría algo que el dibujo no dice.
+- **Rumbo, manteo y azimut se redondean a entero**, porque el formulario de
+  StraboSpot los declara enteros. El valor exacto del ajuste no se pierde: viaja
+  en el bloque `fielddraw` del spot, junto al método, las desviaciones estándar,
+  el RMS, la base y la fuente del DEM. Un resumen legible de todo eso va además
+  en las notas de la medición, que es lo único de esto que se ve al abrir el
+  spot en StraboSpot.
+
+**Los tags no se pisan.** `POST /db/project` reenvía el proyecto **entero**, así
+que la subida lee el proyecto, le añade los tags y lo devuelve completo: lo que
+no se mande se pierde. Una unidad que ya existía —mismo nombre— no se reescribe;
+solo gana los polígonos nuevos. El color, la litología y la edad que alguien
+haya afinado en StraboSpot valen más que los del catálogo local, y pisarlos en
+cada subida sería destruir trabajo ajeno sin avisar.
+
+Las dos escrituras se informan por separado a propósito: si los tags fallan, los
+spots ya están arriba, y eso es una subida incompleta, no una fallida.
+
+**Los ids son de 14 dígitos**, milisegundos por diez más un dígito aleatorio,
+como los de la app oficial. Con esa fórmula solo caben diez ids por
+milisegundo y una subida crea cientos en un bucle apretado, así que un contador
+monótono garantiza que no se repitan sin salirse del formato: dos spots con el
+mismo id serían uno solo al llegar.
 
 Un detalle de la API que costó encontrar: StraboSpot responde **406** ante
 cualquier petición con `Accept: application/json`, aunque JSON sea justo lo que
@@ -2215,9 +2300,10 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ PWA instalable: dependencias en `vendor/`, service worker con precache del
   app shell y caché de las teselas ya visitadas.
 - ✅ StraboSpot: sesión, descarga de spots (Estructuras/Observación con la misma
-  simbología que el plugin de QGIS), subida del dibujo como dataset nuevo, ver
-  atributos desde Navegar y desde Elegir, filtrar por tipo y tamaño de símbolo
-  ajustable.
+  simbología que el plugin de QGIS), subida del dibujo como dataset nuevo —con
+  las medidas como orientaciones planares, las líneas como trazas y las unidades
+  como tags del proyecto—, ver atributos desde Navegar y desde Elegir, filtrar
+  por tipo y tamaño de símbolo ajustable.
 - ✅ Reshape de polígonos y líneas, sin dependencias.
 - ✅ Botón de GPS para centrar el mapa en la posición propia.
 - ✅ Perfiles topográficos sobre el DEM ya cacheado o sobre Copernicus vía

@@ -9,7 +9,8 @@ import {
   flattenPointFeatures,
   rowsToGeoJSON,
 } from './spots.js';
-import { featuresToSpots, uploadableCount } from './upload.js';
+import { mergeGeologicUnitTags } from './mapping.js';
+import { featuresToSpots, uploadBreakdown, uploadableCount } from './upload.js';
 
 /**
  * Panel de StraboSpot: sesión, elegir proyecto y dataset, bajar spots y subir
@@ -82,6 +83,16 @@ export function render() {
   const n = uploadableCount(store.getState().features);
   $('strabo-upload').disabled = !signedIn || n === 0 || !projectSel.value;
   $('strabo-upload').textContent = n ? `Upload ${n} feature(s) as new dataset` : 'Nothing to upload';
+  // El desglose dice qué se va a subir COMO QUÉ, que es lo que importa: una
+  // medida no llega igual que una traza, y el recuento total lo esconde.
+  $('strabo-upload-summary').textContent = n
+    ? `${describe(uploadBreakdown(store.getState().features))} will be uploaded.`
+    : '';
+  // El nombre sugerido se rellena solo, pero no se pisa lo que ya se escribió.
+  const nameInput = $('strabo-dataset-name');
+  if (!nameInput.value.trim() && document.activeElement !== nameInput) {
+    nameInput.placeholder = suggestedDatasetName();
+  }
 
   $('strabo-loaded').classList.toggle('hidden', !data);
   if (data) {
@@ -91,6 +102,21 @@ export function render() {
     $('strabo-loaded-text').textContent =
       `${data.datasetName}: ${e} structure(s), ${o} observation(s), ${l} line/polygon(s).`;
   }
+}
+
+/** Nombre por omisión del dataset: lo que se sube y cuándo. */
+const suggestedDatasetName = () => `FieldDraw ${new Date().toISOString().slice(0, 10)}`;
+
+/** «3 measurement(s), 2 line(s)», saltándose lo que no hay. */
+function describe(breakdown) {
+  const partes = [
+    [breakdown.measurements, 'measurement'],
+    [breakdown.lines, 'line'],
+    [breakdown.polygons, 'polygon'],
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} ${label}${n === 1 ? '' : 's'}`);
+  return partes.join(', ') || 'nothing';
 }
 
 /* ---------- tamaño del símbolo ---------- */
@@ -357,7 +383,7 @@ async function doDownload() {
     const observacion = rowsToGeoJSON(buildObservacion(rows, { field, geologist }));
     const lineas = {
       type: 'FeatureCollection',
-      features: buildLineasPoligonos([...spots.line, ...spots.polygon], { field, geologist }),
+      features: buildLineasPoligonos([...spots.line, ...spots.polygon], { field, geologist, spotTags }),
     };
 
     store.setStraboData({
@@ -401,6 +427,15 @@ async function getProjectTags(projectId) {
   return out;
 }
 
+/**
+ * Sube el dibujo como un dataset nuevo del proyecto elegido.
+ *
+ * Son dos escrituras distintas y se informan por separado a propósito: los
+ * spots van al dataset nuevo y no tocan nada de lo que ya había, pero los tags
+ * de unidad se escriben en el PROYECTO, que es un objeto compartido. Si lo
+ * segundo falla, lo primero ya está subido y hay que decirlo así, no como un
+ * fracaso entero.
+ */
 async function doUpload() {
   const projectId = $('strabo-project').value;
   if (!projectId) {
@@ -408,24 +443,19 @@ async function doUpload() {
     return;
   }
 
-  const features = store.getState().features;
-  const { collection, count } = featuresToSpots(features, {
+  const st = store.getState();
+  const { collection, count, tags, breakdown } = featuresToSpots(st.features, {
     field: $('strabo-field').value.trim(),
     geologist: $('strabo-geologist').value.trim(),
+    units: st.units,
   });
   if (count === 0) {
-    onMessage('There are no lines or polygons to upload.', 'warn');
+    onMessage('There is nothing to upload: draw a measurement, a line or a polygon first.', 'warn');
     return;
   }
 
-  const suggested = `FieldDraw ${new Date().toISOString().slice(0, 10)}`;
-  const name = prompt(
-    `Name for the new StraboSpot dataset.\n\n${count} feature(s) will be uploaded into a NEW ` +
-      `dataset. Existing datasets are never touched.`,
-    suggested,
-  );
-  if (name === null) return;
-  const datasetName = name.trim() || suggested;
+  const datasetName = $('strabo-dataset-name').value.trim() || suggestedDatasetName();
+  const conTags = $('strabo-upload-tags').checked && tags.length > 0;
 
   onBusy('Creating dataset…');
   try {
@@ -434,8 +464,24 @@ async function doUpload() {
     onBusy(`Uploading ${count} spot(s)…`);
     await api.uploadSpots(dataset.id, collection);
 
+    let notaTags = '';
+    if (conTags) {
+      onBusy('Writing geologic-unit tags…');
+      try {
+        const { added, updated } = await writeUnitTags(projectId, tags);
+        notaTags =
+          ` ${added.length} new geologic unit(s)` +
+          (updated.length ? ` and ${updated.length} existing one(s) updated.` : '.');
+      } catch (err) {
+        // Los spots ya están arriba: esto es una subida incompleta, no fallida.
+        notaTags =
+          ` The spots are up, but the geologic-unit tags could not be written (${err.message}); ` +
+          `the polygons will show without a unit name or colour.`;
+      }
+    }
+
     onMessage(
-      `Uploaded ${count} feature(s) to StraboSpot as dataset “${datasetName}”. ` +
+      `Uploaded ${describe(breakdown)} to StraboSpot as dataset “${datasetName}”.${notaTags} ` +
         `Refresh the project in StraboSpot to see it.`,
       'info',
     );
@@ -447,4 +493,15 @@ async function doUpload() {
     onBusy(null);
     render();
   }
+}
+
+/**
+ * Añade los tags de unidad al proyecto. Se lee primero porque `POST /db/project`
+ * reenvía el proyecto entero y lo que no se mande se pierde.
+ */
+async function writeUnitTags(projectId, tags) {
+  const actual = await api.getProject(projectId);
+  const { project, added, updated } = mergeGeologicUnitTags(actual, tags);
+  await api.updateProject(project);
+  return { added, updated };
 }

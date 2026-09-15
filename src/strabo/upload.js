@@ -1,125 +1,29 @@
 import { LINE_TYPE_BY_ID, STRUCTURE_TYPE_BY_ID } from '../symbology.js';
 import { formatStrikeDip } from '../structure.js';
 import { newStraboId } from './api.js';
-
-/**
- * Superficie medida -> valor de `Type` en StraboSpot.
- *
- * Se usan los mismos literales que reconoce la expresión de iconos de
- * `layers.js`, que a su vez replica el QML del plugin de QGIS: así una medida
- * tomada aquí y bajada después con el plugin sale con su símbolo, y no con el
- * genérico de "indeterminada".
- */
-const STRABO_TYPE = {
-  bedding: 'bedding',
-  foliation: 'foliation',
-  joint: 'fracture',
-  'fault-plane': 'fault',
-};
-
-const esMedida = (f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement';
+import {
+  geologicUnitTag,
+  planarOrientation,
+  pruneEmpty,
+  surfaceFeatureFor,
+  traceFor,
+} from './mapping.js';
 
 /**
  * Convierte el dibujo de FieldDraw en spots de StraboSpot.
  *
- * Cada línea o polígono pasa a ser un spot con geometría propia. Las
- * propiedades usan los mismos nombres que el plugin de QGIS da a sus capas de
- * líneas y polígonos (`Name`, `Date`, `Unit`, `Notes`, `Type`, `Field`,
- * `Geologist`), para que el viaje de ida y vuelta sea reconocible: lo que se
- * sube desde aquí se lee igual al bajarlo con el plugin.
+ * Lo que decide si un dato «se entiende» al otro lado no son sus atributos
+ * sueltos sino los objetos nativos del modelo —`orientation_data`, `trace`,
+ * `surface_feature` y los tags de unidad—, que es lo que arma `mapping.js`.
+ * Aquí se construye el spot que los envuelve.
  *
  * Los campos que StraboSpot necesita sí o sí en cada spot son `id`, `name`,
- * `date` y `modified_timestamp`; el resto viaja como atributos libres.
+ * `date`, `time` y `modified_timestamp`. Lo demás viaja como atributos libres:
+ * el servidor los guarda tal cual y vuelven a bajar intactos, que es lo que
+ * permite conservar la trazabilidad del ajuste sin ensuciar el modelo.
  */
 
-/** Nombre legible del tipo, que es lo que se lee en StraboSpot. */
-function typeLabel(feature) {
-  const t = feature.properties.type;
-  if (esMedida(feature)) return STRABO_TYPE[t] || 'bedding';
-  if (feature.geometry.type === 'Polygon') return feature.properties.unit || t || 'unit';
-  const meta = LINE_TYPE_BY_ID.get(t);
-  return meta ? meta.label : t || 'line';
-}
-
-function spotName(feature, index) {
-  const p = feature.properties;
-  // Una medida se nombra por lo que es: `Bedding 045/32` se reconoce de un
-  // vistazo en la lista de spots, `bedding 7` no.
-  if (esMedida(feature)) {
-    const meta = STRUCTURE_TYPE_BY_ID.get(p.type);
-    return `${meta ? meta.label : p.type} ${formatStrikeDip(p.strike, p.dip)}`;
-  }
-  if (p.unit && feature.geometry.type === 'Polygon') {
-    return p.code ? `${p.unit} (${p.code})` : p.unit;
-  }
-  return `${typeLabel(feature)} ${index + 1}`;
-}
-
-/** Atributos propios de una medida estructural, con su calidad. */
-function measurementProps(feature) {
-  const p = feature.properties;
-  return {
-    // Los nombres que espera el plugin de QGIS y que ya lee `layers.js`.
-    Strike: p.strike,
-    Dip: p.dip,
-    'Dip Direction': p.dipAzimuth,
-    // Trazabilidad de cómo se obtuvo, que es lo que decide si el dato sirve.
-    method: p.method || 'manual',
-    overturned: !!p.overturned,
-    strike_sd: p.strikeSd ?? null,
-    dip_sd: p.dipSd ?? null,
-    fit_rms_m: p.rms ?? null,
-    fit_points: p.n ?? null,
-    base_m: p.baseline ?? null,
-    dem_source: p.demSource || null,
-  };
-}
-
-/**
- * @param {Array} features features de FieldDraw
- * @param {{field?: string, geologist?: string, dataset?: string}} meta
- * @returns {{collection: object, count: number}}
- */
-export function featuresToSpots(features, meta = {}) {
-  const now = Date.now();
-  const iso = new Date(now).toISOString();
-
-  const spots = features.filter(subible).map((f, i) => ({
-    type: 'Feature',
-    geometry: f.geometry,
-    properties: {
-      id: newStraboId(),
-      name: spotName(f, i),
-      date: iso,
-      time: iso,
-      modified_timestamp: now,
-      // `spotType` distingue la geometría en la app móvil de StraboSpot.
-      spotType: SPOT_TYPE[f.geometry.type],
-      notes: f.properties.notes || '',
-
-      // Atributos con los nombres del plugin de QGIS.
-      Name: spotName(f, i),
-      Date: iso,
-      Unit: f.properties.unit || '',
-      Notes: f.properties.notes || '',
-      Type: typeLabel(f),
-      Field: meta.field || '',
-      Geologist: meta.geologist || '',
-
-      // Trazabilidad: de dónde salió y con qué certeza se dibujó.
-      source: 'FieldDraw',
-      certainty: f.properties.certainty || '',
-      unit_code: f.properties.code || '',
-
-      ...(esMedida(f) ? measurementProps(f) : {}),
-    },
-  }));
-
-  return {
-    collection: { type: 'FeatureCollection', features: spots },
-    count: spots.length,
-  };
-}
+const esMedida = (f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement';
 
 const SPOT_TYPE = { Polygon: 'polygon', LineString: 'line', Point: 'point' };
 
@@ -133,4 +37,157 @@ const subible = (f) => !!f.geometry && !!SPOT_TYPE[f.geometry.type] && (f.geomet
 /** Cuántos elementos del dibujo son subibles, para avisar antes de empezar. */
 export function uploadableCount(features) {
   return features.filter(subible).length;
+}
+
+/** Desglose por tipo, que es lo que se le enseña a quien va a subir. */
+export function uploadBreakdown(features) {
+  const out = { measurements: 0, lines: 0, polygons: 0 };
+  for (const f of features.filter(subible)) {
+    if (esMedida(f)) out.measurements++;
+    else if (f.geometry.type === 'Polygon') out.polygons++;
+    else out.lines++;
+  }
+  return out;
+}
+
+/** Nombre legible del tipo, que es lo que se lee en la lista de spots. */
+function typeLabel(feature) {
+  const p = feature.properties;
+  if (esMedida(feature)) {
+    const meta = STRUCTURE_TYPE_BY_ID.get(p.type);
+    return meta ? meta.label : p.type || 'measurement';
+  }
+  if (feature.geometry.type === 'Polygon') return p.unit || p.type || 'unit';
+  const meta = LINE_TYPE_BY_ID.get(p.type);
+  return meta ? meta.label : p.type || 'line';
+}
+
+/**
+ * Nombre del spot. Numera por tipo y no sobre el total: «Normal fault 3» dice
+ * algo, «Normal fault 47» de un dibujo con 47 elementos de diez clases no.
+ */
+function spotName(feature, counters) {
+  const p = feature.properties;
+  // Una medida se nombra por lo que es: `Bedding 045/32` se reconoce de un
+  // vistazo en la lista de spots, `Bedding 7` no.
+  if (esMedida(feature)) return `${typeLabel(feature)} ${formatStrikeDip(p.strike, p.dip)}`;
+  if (p.unit && feature.geometry.type === 'Polygon') {
+    const n = (counters.get(p.unit) || 0) + 1;
+    counters.set(p.unit, n);
+    return p.code ? `${p.unit} (${p.code}) ${n}` : `${p.unit} ${n}`;
+  }
+  const label = typeLabel(feature);
+  const n = (counters.get(label) || 0) + 1;
+  counters.set(label, n);
+  return `${label} ${n}`;
+}
+
+/**
+ * Trazabilidad del dato, agrupada y no desparramada por `properties`.
+ *
+ * Va aparte a propósito: son campos de FieldDraw, no del modelo de StraboSpot,
+ * y mezclarlos con los suyos haría creer que la app los interpreta. Aquí se
+ * conservan los valores EXACTOS —el rumbo y el manteo del spot van redondeados
+ * a entero, porque el formulario los declara enteros—, que es lo que permite
+ * recalcular después sin haber perdido precisión.
+ */
+function fielddrawBlock(feature) {
+  const p = feature.properties;
+  return pruneEmpty({
+    source: 'FieldDraw',
+    feature_id: p.id,
+    type: p.type,
+    certainty: p.certainty,
+    unit: p.unit,
+    unit_code: p.code,
+    ...(esMedida(feature)
+      ? {
+          method: p.method || 'manual',
+          strike: p.strike,
+          dip: p.dip,
+          dip_azimuth: p.dipAzimuth,
+          overturned: !!p.overturned,
+          strike_sd: p.strikeSd,
+          dip_sd: p.dipSd,
+          fit_rms_m: p.rms,
+          fit_points: p.n,
+          baseline_m: p.baseline,
+          dem_source: p.demSource,
+        }
+      : {}),
+  });
+}
+
+/** La fecha como la escribe StraboSpot: ISO con los milisegundos a cero. */
+function isoNow() {
+  const d = new Date();
+  d.setMilliseconds(0);
+  return d.toISOString();
+}
+
+/**
+ * @param {Array} features features de FieldDraw
+ * @param {{field?: string, geologist?: string, units?: Array}} meta
+ * @returns {{collection: object, count: number, tags: Array, breakdown: object}}
+ *   `tags` son los tags `geologic_unit` que hay que escribir en el proyecto
+ *   para que los polígonos salgan con su unidad y su color; sin ellos el
+ *   polígono llega, pero llega anónimo.
+ */
+export function featuresToSpots(features, meta = {}) {
+  const now = Date.now();
+  const iso = isoNow();
+  const counters = new Map();
+  const units = Array.isArray(meta.units) ? meta.units : [];
+  /** unidad -> ids de los spots de polígono que le pertenecen. */
+  const porUnidad = new Map();
+
+  const spots = features.filter(subible).map((f) => {
+    const p = f.properties;
+    const id = newStraboId();
+    const name = spotName(f, counters);
+    const notas = (p.notes || p.note || '').trim();
+
+    const propiedades = {
+      id,
+      name,
+      date: iso,
+      time: iso,
+      modified_timestamp: now,
+      notes: notas,
+
+      // Lo que hace que StraboSpot lo entienda, según la geometría.
+      ...(esMedida(f) ? { orientation_data: [planarOrientation(p, newStraboId())] } : {}),
+      ...(f.geometry.type === 'LineString' ? { trace: traceFor(p) } : {}),
+      ...(f.geometry.type === 'Polygon' ? { surface_feature: surfaceFeatureFor(p) } : {}),
+
+      // Metadatos de la campaña. No son del modelo de StraboSpot, pero son los
+      // nombres de columna que el plugin de QGIS enseña, y es lo que el usuario
+      // acaba de escribir en el panel.
+      Field: meta.field || '',
+      Geologist: meta.geologist || '',
+
+      fielddraw: fielddrawBlock(f),
+    };
+
+    if (f.geometry.type === 'Polygon') {
+      const unidad = units.find((u) => u.id === p.type) || (p.unit ? { id: p.type, name: p.unit, code: p.code } : null);
+      if (unidad && unidad.name) {
+        if (!porUnidad.has(unidad.name)) porUnidad.set(unidad.name, { unit: unidad, spots: [] });
+        porUnidad.get(unidad.name).spots.push(id);
+      }
+    }
+
+    return { type: 'Feature', geometry: f.geometry, properties: propiedades };
+  });
+
+  const tags = [...porUnidad.values()].map(({ unit, spots: ids }) =>
+    geologicUnitTag(unit, ids, newStraboId()),
+  );
+
+  return {
+    collection: { type: 'FeatureCollection', features: spots },
+    count: spots.length,
+    tags,
+    breakdown: uploadBreakdown(features),
+  };
 }

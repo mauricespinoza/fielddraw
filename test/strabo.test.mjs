@@ -1,6 +1,7 @@
 import {
   buildEstructuras,
   buildLineasPoligonos,
+  featureTypeLabel,
   buildObservacion,
   flattenPointFeatures,
   pairOrientations,
@@ -8,7 +9,8 @@ import {
   rowsToGeoJSON,
   senseOfSlip,
 } from '../src/strabo/spots.js';
-import { featuresToSpots, uploadableCount } from '../src/strabo/upload.js';
+import { featuresToSpots, uploadBreakdown, uploadableCount } from '../src/strabo/upload.js';
+import { mergeGeologicUnitTags } from '../src/strabo/mapping.js';
 import {
   STRABO_FILTER_FIELD,
   applyStraboFilter,
@@ -172,38 +174,168 @@ console.log('== líneas y polígonos del dataset ==');
   ok('aplica el geólogo', feats[0].properties.Geologist === 'MEV');
 }
 
-console.log('== subida: features de FieldDraw -> spots ==');
+console.log('== Type de lineas y poligonos sale de trace / surface_feature ==');
+{
+  ok('una falla se lee entera',
+    featureTypeLabel({ trace: { trace_type: 'geologic_struc', geologic_structure_type: 'fault', shear_sense: 'thrust' } })
+      === 'geologic structure fault thrust');
+  ok('un contacto dice de que tipo',
+    featureTypeLabel({ trace: { trace_type: 'contact', contact_type: 'intrusive', intrusive_contact_type: 'dike' } })
+      === 'contact intrusive dike');
+  ok('un poligono sale de surface_feature',
+    featureTypeLabel({ surface_feature: { surface_feature_type: 'rock_unit' } }) === 'rock unit');
+  ok('un `other` muestra el texto escrito',
+    featureTypeLabel({ surface_feature: { surface_feature_type: 'other', other_surface_feature_type: 'alteration zone' } })
+      === 'alteration zone');
+  ok('sin nada no revienta', featureTypeLabel(null) === '' && featureTypeLabel({}) === '');
+
+  const fc = buildLineasPoligonos(
+    [{ properties: { id: 55, name: 'P-1', surface_feature: { surface_feature_type: 'rock_unit' } }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } }],
+    { spotTags: { 55: ['Fm. Cura-Mallin'] } },
+  );
+  ok('la unidad del poligono sale de los tags', fc[0].properties.Unit === 'Fm. Cura-Mallin', fc[0].properties.Unit);
+  ok('y el tipo de su superficie', fc[0].properties.Type === 'rock unit');
+}
+
+console.log('== subida: features de FieldDraw -> spots nativos ==');
 {
   const features = [
     {
       type: 'Feature',
-      properties: { id: 'f1', kind: 'line', type: 'thrust-fault', certainty: 'observed' },
+      properties: {
+        id: 'm1', kind: 'point', geomKind: 'measurement', type: 'bedding',
+        strike: 45.4, dip: 32.6, dipAzimuth: 135.4, overturned: true,
+        method: 'plane-fit', strikeSd: 3.2, dipSd: 1.8, rms: 4.5, baseline: 180, n: 12,
+        demSource: 'Terrarium',
+      },
+      geometry: { type: 'Point', coordinates: [-71.2, -37.2] },
+    },
+    {
+      type: 'Feature',
+      properties: { id: 'f1', kind: 'line', type: 'thrust-fault', certainty: 'inferred' },
       geometry: { type: 'LineString', coordinates: [[-71, -37], [-70.9, -37.1]] },
     },
     {
       type: 'Feature',
-      properties: { id: 'f2', kind: 'polygon', type: 'unit-1', unit: 'Fm. Cura-Mallín', code: 'Kcm' },
+      properties: { id: 'f2', kind: 'polygon', type: 'unit-1', unit: 'Fm. Cura-Mallin', code: 'Kcm', certainty: 'observed' },
       geometry: { type: 'Polygon', coordinates: [[[-71, -37], [-70, -37], [-70, -36], [-71, -37]]] },
     },
   ];
+  const units = [{ id: 'unit-1', name: 'Fm. Cura-Mallin', code: 'Kcm', color: '#ffb74d' }];
 
-  ok('cuenta lo subible', uploadableCount(features) === 2);
-  const { collection, count } = featuresToSpots(features, { geologist: 'MEV', field: 'Campaña 1' });
-  ok('produce una FeatureCollection', collection.type === 'FeatureCollection' && count === 2);
+  ok('cuenta lo subible', uploadableCount(features) === 3);
+  ok('desglosa por tipo', JSON.stringify(uploadBreakdown(features)) === JSON.stringify({ measurements: 1, lines: 1, polygons: 1 }));
 
-  const [linea, poligono] = collection.features;
-  ok('cada spot lleva id numérico', typeof linea.properties.id === 'number');
+  const { collection, count, tags } = featuresToSpots(features, { geologist: 'MEV', field: 'Campana 1', units });
+  ok('produce una FeatureCollection', collection.type === 'FeatureCollection' && count === 3);
+
+  const [medida, linea, poligono] = collection.features;
+
+  ok('cada spot lleva id de 14 digitos', String(medida.properties.id).length === 14, String(medida.properties.id));
+  ok('los ids no se repiten', new Set(collection.features.map((f) => f.properties.id)).size === 3);
   ok('lleva modified_timestamp', typeof linea.properties.modified_timestamp === 'number');
-  ok('spotType distingue la geometría', linea.properties.spotType === 'line' && poligono.properties.spotType === 'polygon');
-  ok('la geometría se conserva', poligono.geometry.coordinates[0].length === 4);
-  ok('el nombre de la falla es legible', /thrust|reverse/i.test(linea.properties.Name), linea.properties.Name);
-  ok('el polígono se nombra por su unidad', poligono.properties.Name === 'Fm. Cura-Mallín (Kcm)', poligono.properties.Name);
-  ok('columnas del plugin presentes', ['Name','Date','Unit','Notes','Type','Field','Geologist'].every((k) => k in linea.properties));
-  ok('marca el origen', linea.properties.source === 'FieldDraw');
-  ok('conserva la certeza', linea.properties.certainty === 'observed');
+  ok('la fecha va sin milisegundos', linea.properties.date.endsWith('.000Z'), linea.properties.date);
+  ok('la geometria se conserva', poligono.geometry.coordinates[0].length === 4);
+
+  // --- la medida entra como orientacion planar, que es lo que StraboSpot lee
+  const [o] = medida.properties.orientation_data;
+  ok('la medida lleva orientation_data', medida.properties.orientation_data.length === 1);
+  ok('es una orientacion planar', o.type === 'planar_orientation');
+  ok('feature_type es el de StraboSpot', o.feature_type === 'bedding', o.feature_type);
+  ok('rumbo y manteo redondeados a entero', o.strike === 45 && o.dip === 33, JSON.stringify([o.strike, o.dip]));
+  ok('el azimut de manteo viaja', o.dip_direction === 135, String(o.dip_direction));
+  ok('el volcamiento es facing', o.facing === 'overturned');
+  ok('NO se inventa quality', !('quality' in o), JSON.stringify(o.quality));
+  ok('la trazabilidad va en las notas', /plane|least-squares/i.test(o.notes) && o.notes.includes('RMS'), o.notes);
+  ok('el valor exacto se conserva aparte', medida.properties.fielddraw.strike === 45.4);
+  ok('el nombre de la medida se lee', /Bedding/.test(medida.properties.name), medida.properties.name);
+
+  // --- un joint es fracture, no `option_13`
+  const [joint] = featuresToSpots(
+    [{ type: 'Feature', properties: { id: 'j', geomKind: 'measurement', type: 'joint', strike: 10, dip: 80 }, geometry: { type: 'Point', coordinates: [0, 0] } }],
+  ).collection.features;
+  ok('un joint es fracture con su subtipo',
+    joint.properties.orientation_data[0].feature_type === 'fracture'
+      && joint.properties.orientation_data[0].fracture_type === 'joint');
+
+  // --- la linea entra como traza
+  const t = linea.properties.trace;
+  ok('la linea lleva trace', !!t);
+  ok('trace_feature marcado', t.trace_feature === true);
+  ok('una falla es estructura geologica', t.trace_type === 'geologic_struc' && t.geologic_structure_type === 'fault');
+  ok('el tipo de falla va en shear_sense', t.shear_sense === 'thrust', t.shear_sense);
+  ok('la certeza es trace_quality', t.trace_quality === 'inferred', t.trace_quality);
+  ok('la linea no lleva orientation_data', !linea.properties.orientation_data);
+
+  // --- contactos y pliegues
+  const linea2 = (type, certainty = 'observed') => featuresToSpots([
+    { type: 'Feature', properties: { id: 'x', kind: 'line', type, certainty }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } },
+  ]).collection.features[0].properties.trace;
+
+  const strat = linea2('stratigraphic-contact', 'covered');
+  ok('un contacto estratigrafico es depositional/stratigraphic',
+    strat.trace_type === 'contact' && strat.contact_type === 'depositional' && strat.depositional_contact_type === 'stratigraphic');
+  ok('cubierto es concealed', strat.trace_quality === 'concealed', strat.trace_quality);
+
+  const structural = linea2('structural-contact');
+  ok('el contacto estructural sigue siendo contacto',
+    structural.trace_type === 'contact' && structural.contact_type === 'other'
+      && structural.other_contact_type === 'structural contact');
+
+  const dique = linea2('dike');
+  ok('un dique es contacto intrusivo, no estructura',
+    dique.trace_type === 'contact' && dique.intrusive_contact_type === 'dike');
+
+  ok('antiforme -> anticline', linea2('antiform').fold_type === 'anticline');
+  ok('sinforme -> syncline', linea2('synform').fold_type === 'syncline');
+  ok('el eje de pliegue es traza axial', linea2('antiform').geologic_structure_type === 'fold_axial_tra');
+
+  // --- el poligono entra como superficie, y su unidad como tag del proyecto
+  ok('el poligono lleva surface_feature', poligono.properties.surface_feature.surface_feature_type === 'rock_unit');
+  ok('el poligono no lleva trace', !poligono.properties.trace);
+  ok('se genera un tag por unidad', tags.length === 1);
+  ok('el tag es de unidad geologica', tags[0].type === 'geologic_unit');
+  ok('el tag lleva nombre, sigla y color',
+    tags[0].name === 'Fm. Cura-Mallin' && tags[0].unit_label_abbreviation === 'Kcm' && tags[0].color === '#ffb74d');
+  ok('el tag apunta al spot del poligono', tags[0].spots.length === 1 && tags[0].spots[0] === poligono.properties.id);
+
+  const alteracion = featuresToSpots([
+    { type: 'Feature', properties: { id: 'a', kind: 'polygon', type: 'alteration-zone', unit: 'Argilica' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } },
+  ]).collection.features[0].properties.surface_feature;
+  ok('una zona de alteracion no se declara unidad de roca',
+    alteracion.surface_feature_type === 'other' && alteracion.other_surface_feature_type === 'alteration zone');
 
   const soloPuntos = featuresToSpots([{ properties: {}, geometry: { type: 'Point', coordinates: [0, 0] } }]);
-  ok('ignora geometrías no soportadas', soloPuntos.count === 0);
+  ok('un punto que no es medida no se sube', soloPuntos.count === 0);
+}
+
+console.log('== los tags de unidad se mezclan, no se pisan ==');
+{
+  const proyecto = {
+    id: 1, description: { project_name: 'P' },
+    tags: [
+      { id: 9, type: 'geologic_unit', name: 'Fm. Cura-Mallin', color: '#123456', rock_type: 'sedimentary', spots: [111] },
+      { id: 8, type: 'concept', name: 'Otro', spots: [222] },
+    ],
+  };
+  const nuevos = [
+    { id: 7, type: 'geologic_unit', name: 'fm. cura-mallin', color: '#ffffff', spots: [333] },
+    { id: 6, type: 'geologic_unit', name: 'Fm. Nueva', color: '#00ff00', spots: [444] },
+  ];
+  const { project, added, updated } = mergeGeologicUnitTags(proyecto, nuevos);
+
+  ok('la unidad que ya existia no se duplica', project.tags.filter((t) => t.type === 'geologic_unit').length === 2);
+  ok('el color propio del proyecto se respeta', project.tags[0].color === '#123456');
+  ok('la litologia del proyecto se respeta', project.tags[0].rock_type === 'sedimentary');
+  ok('pero gana los spots nuevos', JSON.stringify(project.tags[0].spots) === JSON.stringify([111, 333]));
+  ok('los tags que no son de unidad no se tocan', project.tags[1].type === 'concept');
+  ok('la unidad nueva se agrega', project.tags[2].name === 'Fm. Nueva');
+  ok('informa de lo agregado y lo actualizado', added.length === 1 && updated.length === 1);
+  ok('el resto del proyecto viaja entero', project.description.project_name === 'P' && project.id === 1);
+  ok('marca el proyecto como modificado', typeof project.modified_timestamp === 'number');
+
+  const vacio = mergeGeologicUnitTags({ id: 2 }, nuevos);
+  ok('un proyecto sin tags no revienta', vacio.project.tags.length === 2);
 }
 
 console.log('== pairOrientations sin datos ==');

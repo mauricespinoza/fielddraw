@@ -294,20 +294,77 @@ export function rowsToGeoJSON(rows) {
  */
 export const LINEAS_POLIGONOS_COLUMNS = ['Name', 'Date', 'Unit', 'Notes', 'Type', 'Field', 'Geologist'];
 
-export function buildLineasPoligonos(features, { field = '', geologist = '' } = {}) {
+/** Etiquetas legibles de los valores de `trace`; las claves son lo que se guarda. */
+const TRACE_LABELS = {
+  contact: 'contact',
+  geologic_struc: 'geologic structure',
+  geomorphic_fea: 'geomorphic feature',
+  anthropenic_fe: 'anthropogenic feature',
+  fold_axial_tra: 'fold axial trace',
+  shear_zone: 'shear zone',
+  deformation_zo: 'deformation zone',
+  other_structur: 'other structural zone',
+  rock_unit: 'rock unit',
+  contiguous_outcrop: 'contiguous outcrop',
+  geologic_structure: 'geologic structure',
+  geomorphic_feature: 'geomorphic feature',
+  anthropogenic_feature: 'anthropogenic feature',
+  extent_of_mapping: 'extent of mapping',
+  strat_interval: 'strat interval',
+};
+
+const label = (v) => (v ? TRACE_LABELS[v] || String(v).replace(/_/g, ' ') : '');
+
+/**
+ * Columna `Type` de una línea o un polígono.
+ *
+ * Un spot de StraboSpot NO tiene una propiedad `type`: lo que dice qué es una
+ * línea vive en `trace` y lo de un polígono en `surface_feature`. Leyendo solo
+ * `type` la columna salía vacía en cualquier dataset real, no solo en los
+ * subidos desde aquí.
+ *
+ * Se arma de lo general a lo particular —«geologic structure fault thrust»—
+ * para que agrupe bien al filtrar por tipo: todas las fallas quedan juntas y el
+ * sentido de movimiento las separa dentro del grupo.
+ */
+export function featureTypeLabel(props) {
+  const p = props || {};
+  const t = p.trace;
+  if (t && typeof t === 'object') {
+    const partes = [
+      label(t.trace_type),
+      label(t.geologic_structure_type),
+      label(t.shear_sense),
+      label(t.fold_type),
+      label(t.contact_type),
+      label(t.depositional_contact_type || t.intrusive_contact_type || t.metamorphic_contact_type),
+    ].filter(Boolean);
+    if (partes.length) return partes.join(' ');
+  }
+  const s = p.surface_feature;
+  if (s && typeof s === 'object' && s.surface_feature_type) {
+    return label(s.surface_feature_type === 'other' ? s.other_surface_feature_type : s.surface_feature_type);
+  }
+  return p.type || '';
+}
+
+export function buildLineasPoligonos(features, { field = '', geologist = '', spotTags = {} } = {}) {
   return (features || [])
     .filter((f) => f.geometry && f.geometry.coordinates)
     .map((f, i) => {
       const p = f.properties || {};
+      // La unidad de un polígono tampoco vive en el spot: es un tag del
+      // proyecto que apunta a él, igual que en la tabla de Estructuras.
+      const tags = spotTags[p.id] || [];
       return {
         type: 'Feature',
         id: `sp-${i}`,
         properties: {
           Name: p.name || '',
           Date: p.date || p.time || '',
-          Unit: '',
+          Unit: tags.length ? tags[0] : '',
           Notes: p.notes || '',
-          Type: p.type || '',
+          Type: featureTypeLabel(p),
           Field: field,
           Geologist: geologist,
         },

@@ -188,7 +188,30 @@ export async function uploadSpots(datasetId, featureCollection) {
   await request('POST', `${DB}/datasetspots/${datasetId}`, { body: featureCollection });
 }
 
-/** Ids al estilo StraboSpot: milisegundos + 4 dígitos aleatorios. */
+/**
+ * Escribe las propiedades del proyecto (descripción, tags, …).
+ *
+ * OJO: el cuerpo es el proyecto ENTERO, no un parche. Hay que partir del que
+ * devuelve `getProject` y modificarlo, porque lo que no se mande se pierde. Es
+ * lo mismo que hace la app oficial al sincronizar.
+ */
+export async function updateProject(project) {
+  return request('POST', `${DB}/project`, { body: project });
+}
+
+/**
+ * Ids al estilo StraboSpot: 14 dígitos, milisegundos por diez más un dígito
+ * aleatorio, que es como los genera la app oficial.
+ *
+ * Con esa fórmula solo caben diez ids por milisegundo, y una subida crea
+ * cientos en un bucle apretado: la colisión no es hipotética. El contador
+ * monótono garantiza que no se repitan sin salirse del formato — dos spots con
+ * el mismo id serían uno solo al llegar.
+ */
+let lastStraboId = 0;
+
 export function newStraboId() {
-  return Number(`${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`);
+  const id = Math.floor((Date.now() + Math.random()) * 10);
+  lastStraboId = id > lastStraboId ? id : lastStraboId + 1;
+  return lastStraboId;
 }

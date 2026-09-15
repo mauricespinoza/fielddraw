@@ -730,7 +730,22 @@
           <p class="hint">
             Upload always creates a <strong>new</strong> dataset in the selected project. StraboSpot
             replaces every spot in a dataset on upload, so existing ones are never written to.
+            Measurements go up as planar orientations, lines as traces and polygons as surface
+            features, so StraboSpot symbolises them on its own.
           </p>
+          <label class="field"><span>New dataset</span>
+            <input type="text" id="strabo-dataset-name" placeholder="FieldDraw 2026-09-15" />
+          </label>
+          <label class="check">
+            <input type="checkbox" id="strabo-upload-tags" checked />
+            Write map units as project geologic-unit tags
+          </label>
+          <p class="hint footnote">
+            A polygon carries no unit name of its own in StraboSpot: the name and the colour come
+            from a project tag. Writing them updates the project itself — existing units keep their
+            own colour and description and only gain the new polygons.
+          </p>
+          <p class="hint footnote" id="strabo-upload-summary"></p>
           <button class="pill wide" id="strabo-upload" disabled>Nothing to upload</button>
         </div>
       </aside>
