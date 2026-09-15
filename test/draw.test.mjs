@@ -418,18 +418,44 @@ console.log('== girar con el botón derecho no abre el menú ==');
 {
   /*
    * En Navegar el arrastre con el botón derecho lo gira y lo bascula el propio
-   * MapLibre, pero al soltar llega igualmente un `contextmenu`: sin distinguir
-   * el arrastre del clic, cada giro terminaba abriendo el menú de propiedades.
+   * MapLibre. Medido en Chrome 141, el orden real del gesto es
+   *
+   *     pointerdown → contextmenu → pointermove ×N → pointerup
+   *
+   * o sea que el `contextmenu` llega ANTES del primer movimiento: ahí todavía
+   * no se puede saber si esto va a ser un clic o un giro. Por eso se decide al
+   * soltar, que es lo que esta prueba reproduce.
    */
   const h = harness({ drawing: false });
   h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 100, clientY: 100 });
+  h.ev('contextmenu', { clientX: 100, clientY: 100 });
+  ok('el contextmenu de Chrome no abre nada por sí solo', !h.kinds().includes('longPress'));
   h.ev('pointermove', { pointerType: 'mouse', buttons: 2, clientX: 200, clientY: 140 });
-  h.ev('contextmenu', { clientX: 200, clientY: 140 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 200, clientY: 140 });
   ok('no abre nada tras arrastrar', !h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+
   // Y el clic limpio sigue abriéndolo.
   h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 300, clientY: 300 });
   h.ev('contextmenu', { clientX: 300, clientY: 300 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 300, clientY: 300 });
   ok('un clic derecho limpio sí', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+  const call = h.log.find((l) => l[0] === 'longPress');
+  ok('con las coordenadas del clic', call[1][0] === 300 && call[1][1] === 300);
+}
+
+console.log('== un temblor de la mano no se traga el menú ==');
+{
+  /*
+   * El umbral del botón derecho es mucho más holgado que los 10 px del
+   * arrastre normal: un ratón sensible en una pantalla 4K recorre más de diez
+   * píxeles mientras se aprieta el botón, y con el listón bajo el menú se
+   * perdía sin decir nada. Girar la vista, en cambio, es un gesto largo.
+   */
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 400, clientY: 400 });
+  h.ev('pointermove', { pointerType: 'mouse', buttons: 2, clientX: 411, clientY: 410 }); // ~15 px
+  h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 411, clientY: 410 });
+  ok('15 px siguen siendo un clic', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
 }
 
 console.log('== el clic derecho con una herramienta activa NO pone un vértice ==');
@@ -458,6 +484,7 @@ console.log('== el clic derecho se resuelve UNA vez, llegue como llegue ==');
   const chrome = harness({ secondary: true });
   chrome.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 10, clientY: 10 });
   chrome.ev('contextmenu', { clientX: 10, clientY: 10 });
+  ok('el contextmenu por sí solo no dispara', !chrome.kinds().includes('secondary'));
   chrome.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 10, clientY: 10 });
   ok(
     'contextmenu antes del pointerup: una sola vez',
@@ -486,8 +513,11 @@ console.log('== el clic derecho se resuelve UNA vez, llegue como llegue ==');
 
 console.log('== girar con el botón derecho sigue sin abrir el menú ==');
 {
+  // El orden completo de Chrome, arrastre incluido, y el `contextmenu`
+  // rezagado de los navegadores que lo emiten al soltar.
   const h = harness({ secondary: true });
   h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 100, clientY: 100 });
+  h.ev('contextmenu', { clientX: 100, clientY: 100 });
   h.ev('pointermove', { pointerType: 'mouse', buttons: 2, clientX: 220, clientY: 160 });
   h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 220, clientY: 160 });
   h.ev('contextmenu', { clientX: 220, clientY: 160 });

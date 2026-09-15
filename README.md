@@ -30,7 +30,7 @@ al código. Ver **Publicar y usar sin señal**.
 for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
 ```
 
-1213 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1217 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -167,6 +167,34 @@ Al publicar una versión nueva hay que subir `VERSION` en `sw.js`: es lo que
 invalida la caché vieja y hace que las tablets se actualicen en la siguiente
 carga.
 
+#### Un solo icono para todo
+
+El icono de la pestaña, el del manifest, el de *apple-touch-icon* y el que se
+ve DENTRO de la app —arriba a la izquierda, junto al nombre— son el mismo
+dibujo: un lápiz trazando una línea sobre una tablet, que es literalmente lo
+que hace la app.
+
+Antes eran dos. Los archivos de `icons/` traían un contacto turquesa con una
+falla inversa, y la franja de la app llevaba su propio dibujo aparte: quien
+instalaba la app veía un icono en el lanzador y otro al abrirla, y la pestaña
+no se parecía a ninguno de los dos. Ahora manda el de la franja, que es el que
+uno asocia con la app porque lo tiene delante todo el rato.
+
+Vive en tres sitios, con las MISMAS coordenadas sobre una rejilla de 24×24:
+
+| Archivo | Para qué | Cómo |
+| --- | --- | --- |
+| `index.html` → `svg.brand-logo` | la franja de la app | a mano |
+| `icons/favicon.svg` | la pestaña del navegador | a mano, el mismo SVG |
+| `icons/icon-180/192/512.png` | instalación y pantalla de inicio | `node tools/make-icons.mjs` |
+
+El favicon va en vector y no como el PNG incrustado que había antes: a 16 px,
+que es donde de verdad se mira, el navegador lo rasteriza a ese tamaño en vez
+de reducir una imagen de 192. Los PNG salen del rasterizador propio de
+`tools/make-icons.mjs` —no hay dependencias: se pinta el buffer RGBA a mano y
+se empaqueta con el zlib de Node—, que trae las mismas coordenadas del SVG.
+Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
+
 ## Modelo de interacción
 
 | Acción | Gesto |
@@ -259,48 +287,82 @@ Con el dedo no hay `Shift`, así que en tablet la selección múltiple se arma
 desde `Ctrl+A` o desde el propio menú; el toque limpio sigue seleccionando uno
 y la pulsación sostenida sigue abriendo el menú.
 
-### El clic derecho no podía depender del evento `contextmenu`
+### El clic derecho se decide al SOLTAR, no en el evento `contextmenu`
 
-En PC el menú de propiedades salía unas veces sí y otras no. No era un
-problema de puntería: eran tres cosas distintas sumándose, y las tres tenían
-que ver con **cuándo** llega —o si llega— el evento `contextmenu`.
+En PC el menú de propiedades salía unas veces sí y otras no. La causa de
+fondo es que `contextmenu` no sirve para lo que se estaba usando. Medido en
+Chrome 141, el orden real de un arrastre con el botón derecho es:
 
-1. **Con una herramienta activa, el clic derecho ni siquiera llegaba a
-   plantearse.** `DrawController` se quedaba el `pointerdown` del botón derecho
-   igual que el del izquierdo, lo anulaba y arrancaba un gesto. Anular el
-   `pointerdown` suprime el `mousedown`, y Chrome cuelga el `contextmenu`
-   justo de ahí: el evento no se emitía nunca. Peor todavía, el gesto seguía
-   su curso y al soltar terminaba en `onVertex`, o sea que el clic derecho
-   **ponía un vértice**. Con una línea seleccionada y **Edit Nodes** en la
-   mano —justo el momento en que uno quiere el menú— el resultado era que no
-   pasaba nada visible.
-2. **La decisión se tomaba mirando la herramienta, no el dibujo.** Con
-   cualquiera que no fuera Navegar o Elegir, el clic derecho significaba
-   «cerrar el elemento» y ahí se acababa, hubiera o no algo que cerrar.
-3. **El cierre de paneles se comía el menú recién abierto.** El manejador de
-   `contextmenu` de `ui.js` cerraba todo lo flotante, y cuál de los dos ganaba
-   dependía del navegador: Chrome emite el `contextmenu` con el `mousedown`
-   (llega antes, el menú se abría después, bien), pero Firefox y Safari lo
-   emiten al soltar, o sea encima del menú que el `pointerup` acababa de
-   abrir, y lo cerraban.
+```
+pointerdown → contextmenu → pointermove ×N → pointerup
+```
+
+El `contextmenu` llega **pegado al `pointerdown`, antes del primer
+movimiento**. Cuando llega todavía no ha pasado nada, así que desde ahí es
+imposible saber si el gesto va a ser un clic —y toca abrir el menú— o un giro
+de cámara —y no toca nada—. Otros navegadores lo emiten al soltar, y ahí el
+problema es el contrario: llega después de que el `pointerup` ya haya hecho su
+trabajo. Cualquier cosa colgada de ese evento depende del navegador.
+
+Encima había otras dos averías propias:
+
+1. **Con una herramienta activa el clic derecho ni se planteaba abrir el
+   menú.** `onContextMenu` miraba la HERRAMIENTA: con cualquiera que no fuera
+   Navegar o Elegir, el botón derecho significaba «cerrar el elemento» y ahí
+   se acababa, hubiera o no algo que cerrar. Con una línea seleccionada y
+   **Edit Nodes** en la mano —justo cuando uno quiere el menú— no pasaba nada.
+2. **Y además ponía un vértice.** `DrawController` se quedaba el `pointerdown`
+   del botón derecho igual que el del izquierdo y arrancaba un gesto; el gesto
+   seguía su curso y al soltar terminaba en `onVertex()`.
 
 Lo que hay ahora:
 
 - El botón secundario se aparta del camino del dibujo en el `pointerdown` y se
   sigue aparte (`this.secondary`). No se anula el evento, que es lo que
   mantiene el giro y el basculado con el botón derecho —los hace MapLibre.
-- El clic se resuelve **en el primero de los dos avisos que llegue**,
-  `contextmenu` o `pointerup`, y `fireSecondary` garantiza que solo cuente una
-  vez. Así da igual el navegador, y da igual que el `contextmenu` no llegue.
-- Qué significa lo decide `mapView` mirando si hay un elemento **a medio
+- **La decisión se toma en el `pointerup`**, que es el único momento en que
+  consta si el puntero se quedó quieto o recorrió la pantalla. Llega siempre,
+  se suelte donde se suelte, porque ese manejador cuelga de la ventana y no
+  del mapa. `contextmenu` queda reducido a lo único que sabe hacer bien:
+  suprimir el menú nativo del navegador. Si llega sin un `pointerdown` detrás
+  —la tecla Menú, Shift+F10— se atiende en el acto, que para eso no hay
+  arrastre que esperar.
+- **El umbral de movimiento del botón derecho son 26 px**, no los 10 px del
+  arrastre normal. Al otro lado está girar la vista, que es un gesto largo y
+  deliberado; un clic, en cambio, se corre solo — un ratón sensible en una
+  pantalla 4K recorre más de diez píxeles mientras se aprieta el botón, y con
+  el listón bajo el menú se perdía sin decir nada.
+- Qué SIGNIFICA lo decide `mapView` mirando si hay un elemento **a medio
   trazar**, no qué herramienta está activa: con borrador lo cierra, como en
-  QGIS; sin borrador no hay nada que cerrar y abre el menú de lo que haya
-  debajo o de la selección.
-- Sobre el mapa, `ui.js` ya no cierra nada en el `contextmenu`: solo suprime el
-  menú nativo. El `pointerdown` que lo precede ya cerró lo que hubiera abierto.
+  QGIS; sin borrador no hay nada que cerrar y abre el menú.
+- Sobre el mapa, `ui.js` ya no cierra paneles en el `contextmenu`: solo
+  suprime el menú nativo. El `pointerdown` que lo precede ya cerró lo que
+  hubiera abierto, y en un navegador que emita el `contextmenu` al soltar
+  cerraría el menú que el `pointerup` acaba de abrir.
 
-Vale igual en 2D y en 3D: es el mismo mapa, el mismo controlador y el mismo
-menú, y el relieve solo cambia cómo se convierte el píxel a coordenadas.
+#### El radio de acierto: 16 px no bastan para una línea de dos
+
+Lo otro que hacía que el clic derecho pareciera ir a ratos no era el evento
+sino la puntería. Un contacto se dibuja con dos píxeles de ancho, y el radio
+de selección de siempre —16 px— está pensado para el clic izquierdo, donde
+fallar no cuesta nada: no pasa nada y se vuelve a hacer clic. En el clic
+derecho fallar significa que el menú no sale, o peor, que sale el de la
+selección anterior y parece que el programa hubiera entendido mal.
+
+El menú busca ahora en **dos pasadas**: primero con el radio fino, para que
+donde hay dos contactos juntos gane el que se está apuntando de verdad, y solo
+si esa no encuentra nada, con `MENU_PICK_PX` = 30 px. Vale para las tres capas
+—dibujo propio, spots de StraboSpot y capas importadas— y también para la
+pulsación sostenida con el dedo, que entra por la misma puerta y agradece
+todavía más el margen.
+
+Comprobado en un Chromium de verdad, con la app corriendo y una línea
+dibujada: el clic derecho encima abre el menú; a 24 px del trazo también, y
+seleccionando la línea; a 52 px no inventa nada; con **Edit Nodes** activa
+abre el menú y no añade ningún vértice; un temblor de 15 px sigue contando
+como clic; un arrastre de 175 px gira la vista sin abrir nada; y con un
+elemento a medio trazar lo cierra en vez de abrir el menú. Lo mismo con el
+relieve 3D puesto.
 
 ## Escala de trabajo
 
@@ -2078,9 +2140,11 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Confirmación topológica: fusión de vértices y nodado, con tolerancia en metros.
 - ✅ Modos de añadir y borrar vértices en la herramienta Edit Nodes, que se
   abre también desde el menú de propiedades y funciona con el relieve 3D puesto.
-- ✅ Clic derecho fiable en PC: abre el menú de propiedades de lo señalado o de
-  la selección en cualquier herramienta y en cualquier navegador, y solo cierra
-  el elemento cuando de verdad hay uno a medio trazar.
+- ✅ Clic derecho fiable en PC: se resuelve al soltar —no en el `contextmenu`,
+  que en Chrome llega antes del primer movimiento—, con radio de acierto
+  holgado, abre el menú en cualquier herramienta y solo cierra el elemento
+  cuando de verdad hay uno a medio trazar.
+- ✅ Un solo icono para la pestaña, la instalación y la franja de la app.
 - ✅ Guardar y abrir proyectos (`.fdproj.json`).
 - ✅ Autosave en localStorage y exportación a GeoJSON.
 - ✅ PWA instalable: dependencias en `vendor/`, service worker con precache del

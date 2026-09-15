@@ -17,12 +17,21 @@
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
 
     <!--
-      Icono de la pestaña: el mismo dibujo que icons/icon-180/192/512.png, el
-      del manifest y el de apple-touch-icon de arriba — antes favicon.svg era
-      un boceto aparte (un lápiz sobre una tablet) y la pestaña, la vista
-      previa de la URL y el icono de "añadir a inicio" no coincidían.
-      favicon.svg incrusta el PNG de 192 tal cual; se deja igual como
-      preferido para el navegador que lea SVG, y el PNG detrás para el que no.
+      UN SOLO ICONO PARA TODO: el de la pestaña, el del manifest, el de
+      apple-touch-icon y el que se ve DENTRO de la app en la franja de arriba
+      a la izquierda (.brand-logo, más abajo) son el mismo dibujo.
+
+      Antes eran dos. Los archivos de icons/ traían un contacto turquesa con
+      una falla inversa, y la franja de la app una tablet con un lápiz: quien
+      instalaba la app veía un icono en el lanzador y otro al abrirla, y la
+      pestaña no se parecía a ninguno de los dos. Ahora manda el de la franja,
+      que es el que la gente asocia con la app porque lo tiene delante todo el
+      rato.
+
+      favicon.svg es ese mismo SVG en vector —a 16 px el navegador lo
+      rasteriza a ese tamaño, en vez de reducir un PNG de 192— y los PNG salen
+      de tools/make-icons.mjs, que lleva las mismas coordenadas. Si se cambia
+      el dibujo hay que tocar los tres y correr `node tools/make-icons.mjs`.
     -->
     <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
@@ -329,10 +338,12 @@
            angostas o bajas, donde compite con la barra de herramientas y la
            fila de botones, y con la paleta abierta, que empieza justo donde
            ella. -->
-      <!-- El icono es propio de esta franja, no el de instalación (icons/icon-*.png,
-           el que ve el sistema operativo): un lápiz trazando una línea sobre
-           una tablet, que es literalmente lo que hace la app y no se confunde
-           con el logotipo de fábrica en un lanzador. -->
+      <!-- Este dibujo —un lápiz trazando una línea sobre una tablet, que es
+           literalmente lo que hace la app— es EL icono: el mismo que la
+           pestaña (icons/favicon.svg) y el mismo que el de instalación
+           (icons/icon-180/192/512.png, generados por tools/make-icons.mjs).
+           Las coordenadas están duplicadas en los tres sitios a propósito, y
+           por eso cambiar una obliga a cambiar las otras. -->
       <div class="brand" aria-hidden="false">
         <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true">
           <rect width="24" height="24" rx="5.5" fill="#0b0f14" />

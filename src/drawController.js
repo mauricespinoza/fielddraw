@@ -21,6 +21,18 @@ const FINGER_DOUBLE_TAP_DIST = 48; // px
 /** Pulsación sostenida sobre la selección: abre el menú de propiedades. */
 const LONG_PRESS_HOLD_MS = 1000;
 
+/*
+ * Cuánto puede correrse el botón derecho y seguir contando como clic.
+ *
+ * Mucho más que los 10 px del arrastre normal, y a propósito. Lo que hay al
+ * otro lado del umbral es girar la vista con el botón derecho, que es un gesto
+ * largo y deliberado: nadie gira un mapa moviendo veinte píxeles. Un clic, en
+ * cambio, se corre solo — un ratón sensible en una pantalla 4K recorre más de
+ * diez píxeles mientras se aprieta el botón, y con el listón bajo el menú se
+ * tragaba sin decir nada y parecía que el clic derecho fallara al azar.
+ */
+const SECONDARY_MOVE = 26; // px
+
 // Toques con varios dedos (deshacer / rehacer). Mismo motivo que arriba para
 // que los márgenes sean amplios.
 const MULTI_TAP_MAX_MS = 1000;
@@ -298,49 +310,45 @@ export class DrawController {
   }
 
   /**
-   * EL CLIC DERECHO NO PUEDE DEPENDER SOLO DE `contextmenu`.
+   * `contextmenu` NO ES DONDE SE DECIDE. SOLO SUPRIME EL MENÚ NATIVO.
    *
-   * Cuándo llega este evento —si es que llega— depende del navegador: Chrome
-   * lo emite con el `mousedown`, Firefox y Safari al soltar, y si alguien más
-   * arriba anuló el `mousedown` puede no llegar nunca. Encima, con una
-   * herramienta de dibujo activa este controlador se quedaba el `pointerdown`
-   * del botón derecho y lo anulaba, con lo que en Chrome el `contextmenu`
-   * dejaba de emitirse: de ahí que en PC el menú saliera unas veces sí y
-   * otras no, según la herramienta que estuviera en la mano.
+   * Medido en Chrome 141, el orden de un arrastre con el botón derecho es:
    *
-   * Ahora el clic secundario se sigue desde el `pointerdown` (ver
-   * `onPointerDown`) y se resuelve en el primero de los dos avisos que
-   * llegue, `contextmenu` o `pointerup`. `fireSecondary` se encarga de que
-   * solo cuente una vez.
+   *     pointerdown → contextmenu → pointermove ×N → pointerup
+   *
+   * El `contextmenu` llega pegado al `pointerdown`, ANTES del primer
+   * movimiento. Así que en Chrome este evento no puede distinguir un clic de
+   * un giro de cámara: cuando llega, todavía no ha pasado nada. Abrir el menú
+   * aquí significa abrirlo también cada vez que se empieza a girar la vista.
+   *
+   * Otros navegadores lo emiten al soltar, y si algún manejador de más arriba
+   * anula el `mousedown` puede no emitirse nunca. Depender de él, en
+   * cualquiera de sus formas, es lo que hacía que el clic derecho pareciera
+   * ir a ratos.
+   *
+   * Lo que sí es fiable llega siempre y llega tarde, que es justo lo que hace
+   * falta: el `pointerup`. Ahí ya se sabe si el puntero se quedó quieto —un
+   * clic— o si recorrió media pantalla —un giro—. Ver `onPointerUp`.
    */
   onContextMenu(e) {
     // Sobre el mapa el menú nativo del navegador nunca aparece: el botón
-    // derecho es nuestro, sea para cerrar el elemento o para abrir el menú de
-    // propiedades.
+    // derecho es de la aplicación.
     e.preventDefault();
 
-    const sec = this.secondary;
-    if (sec) {
-      /*
-       * Arrastrar con el botón derecho gira y bascula el mapa (lo hace
-       * MapLibre, que sí ve el evento). Al soltar llega igualmente un
-       * `contextmenu`, y sin esto cada giro terminaba abriendo el menú de
-       * propiedades de lo que hubiera quedado debajo.
-       */
-      if (sec.moved) return;
-      this.fireSecondary(sec);
-      return;
-    }
+    // Hay un clic en curso: lo resuelve `onPointerUp`, que es el único que
+    // puede saber si terminó siendo un clic o un arrastre.
+    if (this.secondary) return;
 
-    // Sin `pointerdown` que lo respalde: la tecla Menú o Shift+F10, o un
-    // navegador que no emparejó el puntero. Se atiende igual, con las
-    // coordenadas del propio evento.
-    if (this.lastDown && this.lastDown.moved) return;
+    /*
+     * Sin `pointerdown` detrás no hay clic que esperar: es la tecla Menú o
+     * Shift+F10, o un navegador que no emparejó el puntero. Eso se atiende en
+     * el acto, con las coordenadas del propio evento.
+     */
     this.fireSecondary({ x: this.toLocal(e)[0], y: this.toLocal(e)[1], fired: false });
   }
 
   /**
-   * Dispara la acción del botón secundario una sola vez por clic.
+   * Dispara la acción del botón secundario, una sola vez por clic.
    *
    * Quién decide qué significa es `onSecondary`, porque depende del estado
    * del dibujo y no del puntero: con un elemento a medio trazar lo cierra
@@ -421,13 +429,14 @@ export class DrawController {
     /*
      * EL BOTÓN SECUNDARIO NI DIBUJA NI SE CONSUME.
      *
-     * Antes caía en el reparto normal: con una herramienta activa, un clic
-     * derecho arrancaba un gesto, se anulaba el evento —lo que en Chrome
-     * impide que se emita el `contextmenu`, porque lo cuelga del `mousedown`
-     * que acabamos de suprimir— y al soltar el gesto terminaba en
-     * `onVertex`, o sea PONIENDO UN VÉRTICE. El menú, mientras tanto, no se
-     * abría. Aquí se aparta del camino del dibujo y se resuelve en
-     * `onContextMenu` o en `onPointerUp`, lo que llegue primero.
+     * Antes caía en el reparto normal, igual que el izquierdo: con una
+     * herramienta activa, un clic derecho arrancaba un gesto y al soltar
+     * terminaba en `onVertex`, o sea PONIENDO UN VÉRTICE. El menú, mientras
+     * tanto, no se abría, porque `onContextMenu` miraba la herramienta y no
+     * el dibujo.
+     *
+     * Aquí solo se anota dónde bajó; quién decide es `onPointerUp`, que es el
+     * único que sabe si esto terminó siendo un clic o un giro de cámara.
      *
      * No se anula el evento: dejarlo pasar es lo que mantiene el giro y el
      * basculado con el botón derecho, que los hace MapLibre.
@@ -584,12 +593,13 @@ export class DrawController {
       if (Math.hypot(q[0] - d.x, q[1] - d.y) > MOVE_THRESHOLD) d.moved = true;
     }
 
-    // Con el botón derecho pulsado esto es un giro, no un clic: se anota para
-    // que al soltar no salga un menú que nadie pidió.
+    // Con el botón derecho pulsado esto puede ser un giro y no un clic: se
+    // anota para que al soltar no salga un menú que nadie pidió. El umbral es
+    // el holgado (ver `SECONDARY_MOVE`).
     const sec = this.secondary;
     if (sec && !sec.moved && sec.pointerId === e.pointerId) {
       const q = this.toLocal(e);
-      if (Math.hypot(q[0] - sec.x, q[1] - sec.y) > MOVE_THRESHOLD) sec.moved = true;
+      if (Math.hypot(q[0] - sec.x, q[1] - sec.y) > SECONDARY_MOVE) sec.moved = true;
     }
 
     if (this.multi && !this.multi.moved && e.pointerType === 'touch') {
@@ -694,15 +704,21 @@ export class DrawController {
     this.touchStarts.delete(e.pointerId);
 
     /*
-     * Botón secundario. Se atiende aquí porque hay navegadores que emiten el
-     * `contextmenu` al soltar —después de este handler— y otros que no lo
-     * emiten en absoluto. `fireSecondary` no repite si ya se disparó, así
-     * que el aviso que llegue segundo no hace nada. El registro se conserva
-     * hasta el siguiente `pointerdown` justo para eso.
+     * Botón secundario: AQUÍ se decide, y no en `contextmenu` (ver allí).
+     *
+     * Es el único momento en que consta si el puntero se quedó quieto —un
+     * clic, y entonces el menú— o si recorrió la pantalla —un giro de cámara,
+     * y entonces nada—. Llega siempre, se suelte donde se suelte, porque este
+     * manejador cuelga de la ventana y no del mapa.
+     *
+     * `fireSecondary` no repite, así que un `contextmenu` rezagado —los
+     * navegadores que lo emiten al soltar lo mandan justo después de esto— no
+     * vuelve a abrir el menú.
      */
     const sec = this.secondary;
     if (sec && sec.pointerId === e.pointerId) {
       if (!sec.moved) this.fireSecondary(sec);
+      else sec.fired = true; // fue un giro: el `contextmenu` que venga detrás no cuenta
       return;
     }
 

@@ -1354,6 +1354,22 @@ export function createMapView({
    */
   const PICK_SEED_PX = 64;
 
+  /*
+   * Radio de la segunda pasada al buscar qué elemento describe el menú de
+   * propiedades.
+   *
+   * Un contacto se dibuja con dos píxeles de ancho, y apuntarle con el ratón a
+   * dos píxeles no es puntería: es suerte. El radio normal de selección (16 px)
+   * sirve para un clic, donde fallar no cuesta nada —no pasa nada y se vuelve a
+   * hacer clic—, pero en el clic derecho fallar significa que el menú no sale,
+   * o peor, que sale el de la selección anterior y parece que el programa
+   * hubiera entendido mal. Aquí conviene errar por generoso.
+   *
+   * Es también el radio de la pulsación sostenida con el dedo, que va por esta
+   * misma puerta y agradece todavía más el margen.
+   */
+  const MENU_PICK_PX = 30;
+
   /**
    * @param {number[]|{x:number,y:number}} p  píxel tocado
    * @param {number[]} [seed]  punto de partida en lng/lat, típicamente el
@@ -2011,8 +2027,15 @@ export function createMapView({
      * debajo NO está en la selección, manda lo que se está señalando — antes
      * se abría el menú de la selección anterior y parecía que el clic derecho
      * hubiera errado el elemento.
+     *
+     * Cada capa se busca en DOS pasadas y no en una sola holgada. La primera
+     * con el radio fino: donde hay dos contactos juntos, gana el que se está
+     * apuntando de verdad, y no el que quedó más cerca del centro de un
+     * círculo de treinta píxeles. Solo si esa no encuentra nada se abre el
+     * radio a `MENU_PICK_PX`, que es lo que hace que el clic derecho no falle
+     * por medio milímetro contra una línea de dos píxeles de ancho.
      */
-    const hit = pickAt(screen);
+    const hit = pickAt(screen) || pickAt(screen, MENU_PICK_PX);
     const seleccion = store.getState().selection;
     if (hit && !seleccion.includes(hit.properties.id)) {
       store.setSelection([hit.properties.id]);
@@ -2023,14 +2046,16 @@ export function createMapView({
       return;
     }
 
-    const spot = onStraboFeatureTap && straboHitAt(screen);
+    const spot =
+      onStraboFeatureTap && (straboHitAt(screen) || straboHitAt(screen, MENU_PICK_PX));
     if (spot) {
       highlightForeign(null);
       onStraboFeatureTap(spot, screen);
       return;
     }
 
-    const imported = onImportedFeatureTap && importedHitAt(screen);
+    const imported =
+      onImportedFeatureTap && (importedHitAt(screen) || importedHitAt(screen, MENU_PICK_PX));
     if (imported) {
       highlightForeign(imported.exact ? imported.feature.geometry : null);
       onImportedFeatureTap(imported, screen);
