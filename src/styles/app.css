@@ -152,13 +152,24 @@ body,
    * queda debajo como reserva para navegadores sin `dvh`.
    */
   max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 60px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-.toolbar::-webkit-scrollbar {
-  display: none;
+  /*
+   * LO QUE NO CABE PASA A UNA SEGUNDA COLUMNA. NO SE RECORTA.
+   *
+   * Esto era `overflow-y: auto` con la barra de desplazamiento escondida, y en
+   * una tablet APAISADA —que es como se sujeta en terreno— el resultado era
+   * que la barra medía 1194 px de contenido en 706 px de sitio: Escala, GPS,
+   * Hecho, Cancelar y Borrar quedaban debajo del borde, sin barra de
+   * desplazamiento que lo anunciara y sin nada en pantalla que dijera que la
+   * tira seguía. Tocar la herramienta Escala «no abría nada» sencillamente
+   * porque el botón no estaba donde se estaba tocando.
+   *
+   * Envolver en columnas lo arregla de raíz: la barra se ensancha lo justo
+   * para que TODAS las herramientas estén a la vista y a un toque, que es lo
+   * único que importa cuando se trabaja con guantes y a pleno sol. Un
+   * desplazamiento oculto no es una alternativa: no se descubre.
+   */
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
 .tool {

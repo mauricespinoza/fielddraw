@@ -546,23 +546,18 @@ export function createMapView({
      */
     map.on('click', (e) => {
       if (!['navigate', 'select'].includes(store.getState().tool)) return;
-      const screen = [e.point.x, e.point.y];
-
-      const hit = pickAt(screen, 12);
-      if (hit) {
-        const id = hit.properties.id;
-        const shift = e.originalEvent && e.originalEvent.shiftKey;
-        if (shift) store.toggleSelection(id);
-        else store.setSelection([id]);
-        return;
-      }
-
-      const spot = onStraboFeatureTap && straboHitAt(screen);
-      if (spot) {
-        onStraboFeatureTap(spot, screen);
-        return;
-      }
-      if (store.getState().selection.length) store.clearSelection();
+      /*
+       * El toque de un dedo o de un lápiz YA se atendió en `onFingerTap`, con
+       * los umbrales buenos y sin depender del navegador. El `click` que el
+       * navegador sintetiza detrás del toque llega a veces —cuando el dedo se
+       * movió poco— y a veces no; atenderlo también volvería a hacer el mismo
+       * trabajo, y en el caso de un spot de StraboSpot volvería a abrir el
+       * recuadro que el propio toque acaba de abrir.
+       */
+      if (performance.now() - taponPunteroAt < SYNTHETIC_CLICK_MS) return;
+      selectAt([e.point.x, e.point.y], {
+        additive: !!(e.originalEvent && e.originalEvent.shiftKey),
+      });
     });
 
     /*
@@ -1371,6 +1366,25 @@ export function createMapView({
   const MENU_PICK_PX = 30;
 
   /**
+   * Radio de un toque de DEDO al seleccionar. Más ancho que el del ratón: el
+   * cursor apunta a un píxel y la yema cubre cuarenta.
+   */
+  const FINGER_PICK_PX = 18;
+
+  /**
+   * Cuánto se ignora el `click` que el navegador sintetiza detrás de un toque.
+   *
+   * El toque ya se atendió sobre los eventos de puntero, que es donde se puede
+   * medir con los umbrales de un dedo; este es el margen para que el `click`
+   * tardío del navegador no repita el mismo trabajo. Medio segundo cubre de
+   * sobra el retraso de un `click` sintetizado, incluso con el mapa repintando.
+   */
+  const SYNTHETIC_CLICK_MS = 500;
+
+  /** Instante del último toque de dedo o lápiz ya atendido. Ver arriba. */
+  let taponPunteroAt = 0;
+
+  /**
    * @param {number[]|{x:number,y:number}} p  píxel tocado
    * @param {number[]} [seed]  punto de partida en lng/lat, típicamente el
    *   vértice anterior del mismo trazo. Ver abajo: es lo que evita la lectura
@@ -1928,6 +1942,38 @@ export function createMapView({
   }
 
   /**
+   * UN TOQUE SELECCIONA LO QUE HAY DEBAJO; SI NO HAY NADA, DESELECCIONA.
+   *
+   * Es el mismo camino para el clic del ratón y para el toque del dedo o del
+   * lápiz, y por eso vive aquí y no dentro del manejador de MapLibre: los dos
+   * tienen que decidir lo mismo, y lo único que cambia entre ellos es cuánta
+   * puntería se les exige (`tolerance`) y si el modificador de selección
+   * múltiple está pulsado, que un dedo no tiene.
+   *
+   * @returns {boolean} si el toque cayó sobre algo
+   */
+  function selectAt(screen, { tolerance = 12, additive = false } = {}) {
+    const hit = pickAt(screen, tolerance);
+    if (hit) {
+      const id = hit.properties.id;
+      if (additive) store.toggleSelection(id);
+      else store.setSelection([id]);
+      return true;
+    }
+
+    const spot = onStraboFeatureTap && straboHitAt(screen, tolerance);
+    if (spot) {
+      onStraboFeatureTap(spot, screen);
+      return true;
+    }
+
+    // Afuera: se suelta lo que estuviera marcado. Es la salida de la selección
+    // que siempre está disponible, y en tablet la única que no pide teclado.
+    if (store.getState().selection.length) store.clearSelection();
+    return false;
+  }
+
+  /**
    * Spot de StraboSpot bajo el toque. Se consulta un recuadro y no el píxel
    * exacto: los símbolos estructurales son chicos y en terreno se tocan con el
    * dedo, no con el ratón. El primer resultado es el de la capa dibujada más
@@ -2339,6 +2385,7 @@ export function createMapView({
     onFinish: () => store.finishDraft(),
 
     onFingerTap: (screen) => {
+      taponPunteroAt = performance.now();
       if (onMapTap) onMapTap();
       const st = store.getState();
 
@@ -2356,17 +2403,19 @@ export function createMapView({
         return;
       }
 
-      // Sin nada en construcción, un toque limpio de dedo selecciona. Vale en
-      // cualquier herramienta, no solo en Elegir: mientras el lápiz dibuja, el
-      // dedo es lo que se tiene a mano para señalar un elemento.
+      // Sin nada en construcción, un toque limpio de dedo selecciona, y un
+      // toque afuera deselecciona. Vale en cualquier herramienta, no solo en
+      // Elegir: mientras el lápiz dibuja, el dedo es lo que se tiene a mano
+      // para señalar un elemento.
       //
       // Uno a la vez, igual que el clic: el dedo no tiene Shift, así que en
       // tablet la selección múltiple se arma desde el menú de propiedades o
       // con `Ctrl+A`. Alternar por omisión hacía que el segundo toque dejara
       // dos elementos marcados sin haberlo pedido.
-      const hit = pickAt(screen, 18);
-      if (hit) store.setSelection([hit.properties.id]);
-      else if (st.selection.length) store.clearSelection();
+      //
+      // La tolerancia es la del dedo y no la del ratón: un contacto es una
+      // línea de dos píxeles de ancho y la yema cubre cuarenta.
+      selectAt(screen, { tolerance: FINGER_PICK_PX });
     },
 
     onHover: (p, pointerType) => {

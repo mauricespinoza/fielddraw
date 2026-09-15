@@ -192,13 +192,53 @@ console.log('== dos dedos => gesto de navegación, se aborta el trazo ==');
   ok('no emite ningún vértice', !h.kinds().includes('vertex'));
 }
 
-console.log('== herramienta inactiva => no consume nada ==');
+console.log('== herramienta inactiva => no dibuja, pero el toque se reporta ==');
 {
+  // En Navegar y en Elegir el lápiz y el dedo no dibujan, pero su toque tiene
+  // que llegar igual: es lo que selecciona un elemento y lo que deselecciona
+  // al caer afuera. No puede depender del `click` que sintetiza el navegador,
+  // que con tres píxeles de deriva ya no se emite.
   const h = harness({ drawing: false });
   h.ev('pointerdown', { clientX: 100, clientY: 100 });
   h.ev('pointerup', { clientX: 100, clientY: 100 });
   await sleep(400);
-  ok('sin eventos', h.log.length === 0, JSON.stringify(h.kinds()));
+  ok('no dibuja nada', !h.kinds().some((k) => ['vertex', 'strokeStart', 'strokeEnd'].includes(k)), JSON.stringify(h.kinds()));
+  const tap = h.log.find((l) => l[0] === 'fingerTap');
+  ok('reporta el toque', !!tap, JSON.stringify(h.kinds()));
+  ok('con sus coordenadas locales', !!tap && tap[1][0] === 100 && tap[1][1] === 100);
+}
+
+console.log('== herramienta inactiva: un toque corrido sigue siendo toque ==');
+{
+  // El umbral es el del dedo (14 px) y no el de MapLibre (3): un lápiz sobre
+  // vidrio se corre varios píxeles solo con apoyarlo.
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { clientX: 100, clientY: 100 });
+  h.ev('pointermove', { clientX: 108, clientY: 100, buttons: 1 });
+  h.ev('pointerup', { clientX: 108, clientY: 100 });
+  await sleep(50);
+  ok('ocho píxeles no lo invalidan', h.kinds().includes('fingerTap'), JSON.stringify(h.kinds()));
+}
+
+console.log('== herramienta inactiva: un arrastre NO es un toque ==');
+{
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { clientX: 100, clientY: 100 });
+  h.ev('pointermove', { clientX: 160, clientY: 140, buttons: 1 });
+  h.ev('pointerup', { clientX: 160, clientY: 140 });
+  await sleep(50);
+  ok('desplazar la vista no selecciona', !h.kinds().includes('fingerTap'), JSON.stringify(h.kinds()));
+}
+
+console.log('== herramienta inactiva: el ratón sigue por el click del navegador ==');
+{
+  // El ratón no entra por aquí a propósito: en escritorio el `click` llega
+  // siempre y ese camino está probado. Duplicarlo abriría dos veces lo mismo.
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', clientX: 100, clientY: 100 });
+  h.ev('pointerup', { pointerType: 'mouse', clientX: 100, clientY: 100 });
+  await sleep(50);
+  ok('el ratón no emite toque', !h.kinds().includes('fingerTap'), JSON.stringify(h.kinds()));
 }
 
 console.log('== dedo deshabilitado y sin Pencil => no dibuja ==');

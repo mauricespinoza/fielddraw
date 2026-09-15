@@ -553,13 +553,26 @@ export class DrawController {
         (e.pointerType === 'touch' && dragTool) ||
         (!this.penSeen && (e.pointerType === 'mouse' || this.cb.fingerDrawEnabled())));
     if (!consume) {
-      // El dedo no dibuja, pero un toque limpio suyo sí cierra el elemento o
-      // selecciona, y sostenido abre el menú de propiedades. No lo consumimos:
-      // el mapa debe seguir navegando con normalidad.
-      if (e.pointerType === 'touch') {
+      /*
+       * El dedo no dibuja, pero un toque limpio suyo sí cierra el elemento o
+       * selecciona, y sostenido abre el menú de propiedades. No lo consumimos:
+       * el mapa debe seguir navegando con normalidad.
+       *
+       * EL LÁPIZ ENTRA POR LA MISMA PUERTA QUE EL DEDO, y no por la del ratón.
+       * En Navegar y en Elegir el Pencil no dibuja, así que su toque terminaba
+       * dependiendo del `click` que sintetiza el navegador, y ese depende a su
+       * vez de que MapLibre no haya dado el gesto por arrastre: su umbral son
+       * TRES píxeles. Un lápiz sobre vidrio se corre tres píxeles solo con
+       * apoyarlo, y entonces no hay clic y no se selecciona nada. Medido aquí,
+       * con los umbrales del dedo, la misma puntería sí cuenta como toque.
+       *
+       * El ratón se queda donde estaba: ahí el `click` del navegador llega
+       * siempre y el comportamiento de escritorio está probado.
+       */
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
         this.rect = this.mapContainer.getBoundingClientRect();
         const q = this.toLocal(e);
-        // `solo` recuerda si el dedo estuvo acompañado en algún momento. Es
+        // `solo` recuerda si el puntero estuvo acompañado en algún momento. Es
         // más fiable que consultar el conjunto global de punteros al soltar:
         // un puntero huérfano de un gesto cancelado lo dejaría inservible.
         const obs = {
@@ -567,15 +580,17 @@ export class DrawController {
           y: q[1],
           t: performance.now(),
           moved: false,
-          // Un solo dedo: el lápiz apoyado al lado no invalida el toque.
-          solo: touches === 1,
+          // Un solo dedo: el lápiz apoyado al lado no invalida el toque. Y el
+          // lápiz, a su vez, solo cuenta si no hay ningún dedo en la pantalla,
+          // porque entonces lo que hay es un gesto de cámara.
+          solo: e.pointerType === 'touch' ? touches === 1 : touches === 0,
           longPressed: false,
         };
         this.observed.set(e.pointerId, obs);
         this.armFingerLongPress(e.pointerId, obs);
       } else {
-        // Ratón o lápiz en Navegar y en Elegir: el mapa se queda el evento
-        // —arrastrar desplaza—, pero sostener sin mover abre el menú.
+        // Ratón en Navegar y en Elegir: el mapa se queda el evento —arrastrar
+        // desplaza—, pero sostener sin mover abre el menú.
         this.armPrimaryLongPress(abajo);
       }
       return;
@@ -802,7 +817,26 @@ export class DrawController {
       // Si ya abrió el menú, el mismo dedo no debe además cerrar el elemento.
       const clean =
         obs.solo && !obs.moved && !obs.longPressed && performance.now() - obs.t < FINGER_TAP_MS;
-      if (clean && this.cb.isDrawing()) this.handleFingerTap(obs);
+      /*
+       * SIN CONDICIONAR A QUE SE ESTÉ DIBUJANDO. Esto llevaba un
+       * `&& this.cb.isDrawing()`, y ahí estaba el "en tablet no selecciona".
+       *
+       * En Navegar y en Elegir —las dos herramientas donde uno SE DEDICA a
+       * seleccionar— el toque no llegaba por aquí, sino por el `click` de
+       * MapLibre. Ese evento no es del programa: lo sintetiza el navegador a
+       * partir del toque, y solo si el dedo se movió menos que SU umbral de
+       * toque, que es de unos diez píxeles. Medido en Chromium con un dedo que
+       * se corre doce, no se emite `click` NINGUNO: ni MapLibre ni nosotros
+       * nos enteramos de que hubo un toque, y el contacto no se selecciona ni
+       * se deselecciona. Doce píxeles es un dedo normal en una tablet que se
+       * sujeta con la otra mano.
+       *
+       * Lo de aquí no depende del navegador: se mide sobre los eventos de
+       * puntero, con los umbrales que ya estaban pensados para un dedo (14 px
+       * y 900 ms, ver arriba). Por eso pasa a atender el toque en TODAS las
+       * herramientas y no solo mientras se dibuja.
+       */
+      if (clean) this.handleFingerTap(obs);
     }
 
     const g = this.gesture;
@@ -886,18 +920,29 @@ export class DrawController {
    * que es el único que sabe proyectar la geometría a pantalla.
    */
   handleFingerTap(obs) {
-    const now = performance.now();
-    const lt = this.lastFingerTap;
-    if (
-      lt &&
-      now - lt.t < FINGER_DOUBLE_TAP_MS &&
-      Math.hypot(lt.x - obs.x, lt.y - obs.y) < FINGER_DOUBLE_TAP_DIST
-    ) {
+    /*
+     * El doble toque cierra el elemento en construcción. Solo se arma con una
+     * herramienta de dibujo en la mano: en Navegar y en Elegir no hay nada que
+     * cerrar, y armarlo ahí convertiría el segundo de dos toques seguidos
+     * sobre el mismo contacto —reafirmar la selección, que es un gesto
+     * normal— en una llamada que no significa nada.
+     */
+    if (this.cb.isDrawing()) {
+      const now = performance.now();
+      const lt = this.lastFingerTap;
+      if (
+        lt &&
+        now - lt.t < FINGER_DOUBLE_TAP_MS &&
+        Math.hypot(lt.x - obs.x, lt.y - obs.y) < FINGER_DOUBLE_TAP_DIST
+      ) {
+        this.lastFingerTap = null;
+        this.cb.onFinish();
+        return;
+      }
+      this.lastFingerTap = { t: now, x: obs.x, y: obs.y };
+    } else {
       this.lastFingerTap = null;
-      this.cb.onFinish();
-      return;
     }
-    this.lastFingerTap = { t: now, x: obs.x, y: obs.y };
     this.cb.onFingerTap([obs.x, obs.y]);
   }
 
