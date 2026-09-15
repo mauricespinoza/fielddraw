@@ -1,17 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
   <!--
-    El mismo dibujo que la franja de la marca en index.html: un lápiz trazando
-    una línea sobre una tablet. A 16 px la tablet se lee como un rectángulo y
-    el lápiz como una diagonal, que es todo lo que una pestaña necesita para
-    distinguirse; por eso el trazo va más grueso que en la franja, donde hay
-    34 px para lucirlo.
+    El favicon tiene que ser el MISMO dibujo que icons/icon-192.png (y su
+    182/512): antes traía un boceto aparte —un lápiz sobre una tablet—, así
+    que la pestaña del navegador, la vista previa de la URL y el icono que
+    queda al añadir la app a la pantalla de inicio no coincidían. Se incrusta
+    aquí el PNG tal cual en vez de redibujarlo a mano para que sean, bit a
+    bit, el mismo icono.
   -->
-  <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
-  <!-- la tablet -->
-  <rect x="3.2" y="8.4" width="13.4" height="10.9" rx="1.7" fill="none" stroke="#2dd4bf" stroke-width="1.8" />
-  <!-- el contacto que se está dibujando en su pantalla -->
-  <path d="M5.5 16.2 8.7 12.7 11.1 15.1 13.7 11.4" fill="none" stroke="#ffb300" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-  <!-- el lápiz, con la mina tocando el extremo del trazo -->
-  <line x1="20.4" y1="2.4" x2="15.2" y2="9.9" stroke="#f87171" stroke-width="3" stroke-linecap="round" />
-  <path d="M15.2 9.9 12.9 12.1 14.3 9.1z" fill="#e6edf3" />
+  <image href="data:image/png;base64,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" width="192" height="192" />
 </svg>

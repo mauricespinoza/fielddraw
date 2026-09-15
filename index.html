@@ -17,9 +17,12 @@
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
 
     <!--
-      Icono de la pestaña. El SVG manda porque a 16 px un PNG de 192 se
-      reescala a puré; el PNG queda detrás para el navegador que no lea SVG y
-      para la lista de favoritos, donde el icono se pide más grande.
+      Icono de la pestaña: el mismo dibujo que icons/icon-180/192/512.png, el
+      del manifest y el de apple-touch-icon de arriba — antes favicon.svg era
+      un boceto aparte (un lápiz sobre una tablet) y la pestaña, la vista
+      previa de la URL y el icono de "añadir a inicio" no coincidían.
+      favicon.svg incrusta el PNG de 192 tal cual; se deja igual como
+      preferido para el navegador que lea SVG, y el PNG detrás para el que no.
     -->
     <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
