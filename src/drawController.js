@@ -121,6 +121,8 @@ export class DrawController {
     this.lastDown = null;
     /** Clic con el botón secundario en curso; ver `onContextMenu`. */
     this.secondary = null;
+    /** Temporizador del botón PRIMARIO sostenido; ver `armPrimaryLongPress`. */
+    this.primaryHoldTimer = null;
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
@@ -207,6 +209,7 @@ export class DrawController {
     this.pointers.clear();
     this.touchStarts.clear();
     this.secondary = null;
+    this.clearPrimaryHold();
     this.multi = null;
     this.clearObserved();
     if (this.gesture) this.abort();
@@ -239,6 +242,46 @@ export class DrawController {
       this.cb.onLongPress([obs.x, obs.y]);
     }, LONG_PRESS_HOLD_MS);
     this.observedTimers.set(pointerId, timer);
+  }
+
+  /**
+   * MANTENER PULSADO EL BOTÓN PRIMARIO TAMBIÉN ABRE EL MENÚ.
+   *
+   * Es la misma puerta que la pulsación sostenida del dedo, pero con el ratón
+   * o el lápiz, y existe como REDUNDANCIA del clic derecho: si un navegador,
+   * un trackpad o una configuración rara se comen el botón secundario, queda
+   * este camino, que no depende de ningún evento del sistema —solo de que el
+   * puntero siga abajo y quieto un segundo.
+   *
+   * No se arma en todas partes, para no pisar gestos que ya existen:
+   *
+   * - En **Nodos** el arrastre ya tiene su propio sostenido, del mismo
+   *   segundo, montado sobre el gesto (ver `onPointerDown`).
+   * - Con el **trazo libre por sostenido** el hold de 320 ms arranca antes; si
+   *   llega a arrancar, `beginFreehand` cancela este temporizador, porque a
+   *   partir de ahí lo que se está haciendo es dibujar.
+   *
+   * El dedo no entra: ya tiene `armFingerLongPress`, con sus propios umbrales.
+   */
+  armPrimaryLongPress(p) {
+    this.clearPrimaryHold();
+    if (!this.cb.onLongPress) return;
+    this.primaryHoldTimer = setTimeout(() => {
+      this.primaryHoldTimer = null;
+      // Se movió: era un arrastre —desplazar el mapa, trazar— y no una
+      // consulta. `lastDown` lo sabe porque se anota en cada `pointermove`.
+      if (!this.lastDown || this.lastDown.moved) return;
+      this.lastDown.longPressed = true;
+      if (this.gesture) this.gesture.longPressed = true;
+      this.cb.onLongPress(p);
+    }, LONG_PRESS_HOLD_MS);
+  }
+
+  clearPrimaryHold() {
+    if (this.primaryHoldTimer !== null) {
+      clearTimeout(this.primaryHoldTimer);
+      this.primaryHoldTimer = null;
+    }
   }
 
   clearFingerLongPress(pointerId) {
@@ -442,6 +485,7 @@ export class DrawController {
      * basculado con el botón derecho, que los hace MapLibre.
      */
     if (esSecundario(e)) {
+      this.clearPrimaryHold();
       this.secondary = { pointerId: e.pointerId, x: abajo[0], y: abajo[1], moved: false, fired: false };
       return;
     }
@@ -529,6 +573,10 @@ export class DrawController {
         };
         this.observed.set(e.pointerId, obs);
         this.armFingerLongPress(e.pointerId, obs);
+      } else {
+        // Ratón o lápiz en Navegar y en Elegir: el mapa se queda el evento
+        // —arrastrar desplaza—, pero sostener sin mover abre el menú.
+        this.armPrimaryLongPress(abajo);
       }
       return;
     }
@@ -573,6 +621,13 @@ export class DrawController {
       return;
     }
 
+    // Sostener abre el menú también con una herramienta de dibujo en la mano.
+    // En modo `hold` conviven: a los 320 ms arranca el trazo libre y
+    // `beginFreehand` cancela esto; si no llega a arrancar —porque el trazo
+    // libre está apagado, o porque ya se está dibujando algo— al segundo sale
+    // el menú.
+    this.armPrimaryLongPress(p);
+
     if (this.cb.freehandMode() === 'hold') {
       this.cb.onLongPressArm(p);
       this.longPressTimer = setTimeout(() => {
@@ -590,7 +645,11 @@ export class DrawController {
     const d = this.lastDown;
     if (d && !d.moved) {
       const q = this.toLocal(e);
-      if (Math.hypot(q[0] - d.x, q[1] - d.y) > MOVE_THRESHOLD) d.moved = true;
+      if (Math.hypot(q[0] - d.x, q[1] - d.y) > MOVE_THRESHOLD) {
+        d.moved = true;
+        // Se arrastró: esto es desplazar o trazar, no consultar.
+        this.clearPrimaryHold();
+      }
     }
 
     // Con el botón derecho pulsado esto puede ser un giro y no un clic: se
@@ -702,6 +761,7 @@ export class DrawController {
   onPointerUp(e) {
     this.pointers.delete(e.pointerId);
     this.touchStarts.delete(e.pointerId);
+    this.clearPrimaryHold();
 
     /*
      * Botón secundario: AQUÍ se decide, y no en `contextmenu` (ver allí).
@@ -794,6 +854,16 @@ export class DrawController {
       return;
     }
 
+    /*
+     * El sostenido ya abrió el menú de propiedades: soltar no debe ADEMÁS
+     * poner un vértice. Sin esto, consultar los atributos de un contacto sin
+     * soltar la herramienta Línea dejaba un vértice suelto donde se consultó.
+     */
+    if (g.longPressed) {
+      this.lastTap = null;
+      return;
+    }
+
     const now = performance.now();
     const lt = this.lastTap;
     if (
@@ -845,6 +915,7 @@ export class DrawController {
 
   onPointerCancel(e) {
     this.pointers.delete(e.pointerId);
+    this.clearPrimaryHold();
     if (this.secondary && this.secondary.pointerId === e.pointerId) this.secondary = null;
     this.observed.delete(e.pointerId);
     this.clearFingerLongPress(e.pointerId);
@@ -885,6 +956,9 @@ export class DrawController {
   beginFreehand() {
     const g = this.gesture;
     if (!g) return;
+    // A partir de aquí se está DIBUJANDO: el sostenido del botón primario ya
+    // no debe abrir el menú a mitad del trazo.
+    this.clearPrimaryHold();
     g.freehand = true;
     g.points = [[g.startX, g.startY]];
     this.cb.onLongPressArm(null);

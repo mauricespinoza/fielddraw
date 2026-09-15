@@ -949,14 +949,52 @@ export function openPropsMenu(screen) {
   positionPropsMenu(menu, screen);
 }
 
-/** Coloca el menú cerca del toque, sin salirse de la pantalla. */
+/**
+ * Coloca el menú junto al toque, sin salirse de la pantalla y —esto es lo
+ * importante— SIN TAPAR EL PUNTO QUE SE TOCÓ.
+ *
+ * Antes se centraba sobre el toque y se bajaba 18 px, pero con el menú
+ * completo (320×460 px) eso lo dejaba encima del cursor en cuanto no cabía
+ * hacia abajo y había que subirlo. Tapar el cursor tiene dos consecuencias
+ * feas: el siguiente clic, que uno suelta sin mirar, cae sobre un botón del
+ * menú; y en Windows —donde Chrome emite el `contextmenu` AL SOLTAR, o sea
+ * después de que el menú ya está puesto— el evento llegaba dirigido al menú
+ * en vez de al mapa, con las consecuencias que se cuentan en
+ * `wireClickOutside`.
+ *
+ * Se prueban las cuatro esquinas alrededor del cursor, empezando por abajo a
+ * la derecha, que es donde uno espera un menú contextual. Si ninguna cabe
+ * entera —una pantalla baja con el menú largo—, se pega arriba y se aparta a
+ * un lado, que es lo único que sigue dejando el cursor a la vista.
+ */
 function positionPropsMenu(menu, screen) {
   menu.classList.remove('hidden');
-  const rect = menu.getBoundingClientRect();
-  const x = Math.min(Math.max(12, screen[0] - rect.width / 2), window.innerWidth - rect.width - 12);
-  const y = Math.min(screen[1] + 18, window.innerHeight - rect.height - 12);
-  menu.style.left = `${x}px`;
-  menu.style.top = `${Math.max(12, y)}px`;
+  const { width: w, height: h } = menu.getBoundingClientRect();
+  const M = 12; // margen con el borde de la ventana
+  const D = 14; // separación con el cursor
+  const [px, py] = screen;
+  const maxX = window.innerWidth - w - M;
+  const maxY = window.innerHeight - h - M;
+
+  for (const [x, y] of [
+    [px + D, py + D],
+    [px - w - D, py + D],
+    [px + D, py - h - D],
+    [px - w - D, py - h - D],
+  ]) {
+    if (x >= M && y >= M && x <= maxX && y <= maxY) {
+      menu.style.left = `${x}px`;
+      menu.style.top = `${y}px`;
+      return;
+    }
+  }
+
+  // No cabe en ninguna esquina: se acota a la ventana y se manda al lado con
+  // más sitio, para que el cursor siga fuera del menú.
+  const y = Math.max(M, Math.min(py + D, maxY));
+  const x = px > window.innerWidth / 2 ? Math.max(M, px - w - D) : Math.min(maxX, px + D);
+  menu.style.left = `${Math.max(M, x)}px`;
+  menu.style.top = `${y}px`;
 }
 
 /**
@@ -1033,34 +1071,51 @@ function wireClickOutside() {
   );
 
   /*
-   * Clic secundario fuera del mapa: cierra los paneles, sin tocar el menú
-   * nativo del navegador.
+   * EL MENÚ NATIVO NO APARECE SOBRE LA APLICACIÓN. NI SOBRE EL MAPA NI SOBRE
+   * LO QUE LA APLICACIÓN ACABA DE PONER ENCIMA DEL MAPA.
    *
-   * SOBRE EL MAPA NO SE TOCA NADA, y esa excepción es la mitad de la razón de
-   * que el menú de propiedades saliera de manera errática en PC. El
-   * `pointerdown` de más arriba ya cerró lo que hubiera abierto; después
-   * DrawController abre el menú del elemento. Si el `contextmenu` cerrara
-   * otra vez, el resultado dependería del navegador: en Chrome llega ANTES
-   * del `pointerup` (y el menú se abre después, bien), pero en Firefox y
-   * Safari llega DESPUÉS, o sea encima del menú recién abierto, y lo
-   * cerraba. El botón derecho parecía no hacer nada.
+   * Esa segunda mitad es la que faltaba, y es la que hacía salir el
+   * «Guardar imagen como…» de Chrome al clic derecho sobre una línea o una
+   * medida. El motivo es una diferencia de plataforma:
+   *
+   * - En Linux y macOS, Chrome emite el `contextmenu` con el `mousedown`.
+   * - En Windows lo emite al SOLTAR, después del `pointerup`.
+   *
+   * Y en el `pointerup` es donde se abre el menú de propiedades, colocado
+   * junto al cursor. Así que en Windows, cuando llega el `contextmenu`, lo
+   * que hay bajo el puntero ya no es el mapa: es el propio menú, que NO
+   * cuelga de `map-host`. El manejador se iba por la rama de «esto es de
+   * fuera», cerraba el menú recién abierto y dejaba pasar el evento; el
+   * navegador, al construir su menú con el nuestro ya oculto, encontraba el
+   * lienzo debajo y ofrecía guardar la imagen.
+   *
+   * De paso se quita el `closeOverlays()`: cerrar aquí no hace falta —el
+   * `pointerdown` de más arriba ya cerró lo que hubiera abierto— y era justo
+   * lo que se llevaba por delante el menú del elemento.
+   *
+   * Los campos de texto se quedan con su menú de siempre: ahí el clic derecho
+   * es para copiar y pegar, y no hay nada nuestro que ofrecer en su lugar.
    */
   document.addEventListener(
     'contextmenu',
     (e) => {
-      const mapa = $('map-host');
-      if (mapa && mapa.contains(e.target)) {
-        // El menú nativo no aparece sobre el mapa: ahí el botón derecho es de
-        // la aplicación. Lo mismo hace DrawController, pero este listener
-        // corre antes y cubre los huecos que él no ve.
-        e.preventDefault();
-        return;
-      }
-      if (!anyOverlayOpen()) return;
-      closeOverlays();
+      if (enCampoDeTexto(e.target)) return;
+      // Todo lo demás de la página es la aplicación: el mapa, la barra, los
+      // paneles y los menús. En ninguno de ellos el menú del navegador
+      // aporta nada.
+      e.preventDefault();
     },
     { capture: true },
   );
+}
+
+/**
+ * ¿El clic cayó en algo donde escribir? Ahí el menú del navegador sigue
+ * siendo el bueno: copiar, pegar, deshacer y el corrector.
+ */
+function enCampoDeTexto(target) {
+  if (!target || !target.closest) return false;
+  return !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
 }
 
 /** ¿Hay algo flotando sobre el mapa ahora mismo? */

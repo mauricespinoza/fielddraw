@@ -30,7 +30,7 @@ al código. Ver **Publicar y usar sin señal**.
 for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
 ```
 
-1217 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1226 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -207,7 +207,7 @@ Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
 | Navegar | dos dedos (siempre), o herramienta **Navegar** |
 | Seleccionar | un toque con el dedo o un clic, **en cualquier herramienta**: uno a la vez |
 | Seleccionar varios | `Shift` + clic sobre cada uno (PC) |
-| Propiedades | mantener pulsado ~1 s, o **clic derecho**, en cualquier herramienta y en 2D o 3D |
+| Propiedades | **clic derecho**, o mantener pulsado ~1 s (dedo, ratón o lápiz), en cualquier herramienta y en 2D o 3D |
 | Atributos de una capa importada | mantener pulsado ~1 s donde no haya dibujo propio |
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
 | Deshacer | doble toque con **dos dedos** |
@@ -340,6 +340,63 @@ Lo que hay ahora:
   hubiera abierto, y en un navegador que emita el `contextmenu` al soltar
   cerraría el menú que el `pointerup` acaba de abrir.
 
+#### El «Guardar imagen como…» de Chrome, y por qué solo salía sobre los elementos
+
+Quedaba un resto del mismo problema, y era el más desconcertante: al hacer
+clic derecho sobre una línea o una medida —nunca sobre el mapa vacío— Chrome
+abría SU menú, el del lienzo, con «Guardar imagen como…». La causa es una
+diferencia de plataforma que no se ve desde Linux:
+
+- En **Linux y macOS**, Chrome emite el `contextmenu` con el `mousedown`.
+- En **Windows** lo emite al SOLTAR, después del `pointerup`.
+
+Y en el `pointerup` es donde se abre el menú de propiedades. Así que en
+Windows, cuando llegaba el `contextmenu`, lo que había bajo el puntero ya no
+era el mapa: era **el propio menú**, que no cuelga de `map-host`. El manejador
+de `ui.js` se iba por la rama de «esto viene de fuera del mapa», cerraba el
+menú recién abierto y dejaba pasar el evento; el navegador, al construir el
+suyo con el nuestro ya oculto, encontraba el lienzo debajo y ofrecía guardar
+la imagen. Sobre el mapa vacío no pasaba nada de esto, porque ahí no se abre
+ningún menú que se interponga.
+
+Dos cambios, y hacen falta los dos:
+
+1. **El menú nativo no aparece sobre la aplicación**, punto: ni sobre el mapa
+   ni sobre lo que la aplicación pone encima. Ya no se pregunta de qué parte
+   vino el evento. La única excepción son los campos de texto, donde el clic
+   derecho es para copiar y pegar y no hay nada nuestro que ofrecer. De paso
+   se quitó el `closeOverlays()` de ese manejador: cerrar ahí no hacía falta
+   —el `pointerdown` ya cierra lo que hubiera abierto— y era justo lo que se
+   llevaba por delante el menú del elemento.
+2. **El menú ya no se coloca encima del cursor.** Se centraba sobre el toque y
+   se bajaba 18 px, pero con el menú completo (320×460 px) eso lo dejaba sobre
+   el puntero en cuanto no cabía hacia abajo y había que subirlo. Ahora se
+   prueban las cuatro esquinas alrededor del cursor, empezando por abajo a la
+   derecha; si ninguna cabe entera, se pega arriba y se aparta al lado con más
+   sitio. Además de quitarle el suelo al problema anterior, evita que el
+   siguiente clic —que uno suelta sin mirar— caiga sobre un botón del menú.
+
+#### Mantener pulsado el botón primario también abre el menú
+
+Como **redundancia** del clic derecho: si un navegador, un trackpad o una
+configuración rara se lo comen, mantener el botón primario un segundo sobre
+un elemento abre el mismo menú. No depende de ningún evento del sistema, solo
+de que el puntero siga abajo y quieto. Es el gesto que el dedo ya tenía en
+tablet, ahora también con ratón y con lápiz.
+
+Se cede el paso donde ya había un gesto ocupando el sostenido:
+
+- Con el **trazo libre por sostenido** (`hold`, que es lo de fábrica) en
+  Línea y Polígono, a los 320 ms arranca el trazo y a partir de ahí se está
+  dibujando: el menú no aparece a mitad del trazo. Con el trazo libre en
+  `drag` o apagado, el sostenido sí abre el menú.
+- En **Edit Nodes** el sostenido ya existía, del mismo segundo, montado sobre
+  el arrastre de la manija.
+
+Soltar después de un sostenido que abrió el menú **no deja un vértice**: sin
+eso, consultar los atributos de un contacto sin salir de la herramienta Línea
+dejaba un vértice suelto donde se consultó.
+
 #### El radio de acierto: 16 px no bastan para una línea de dos
 
 Lo otro que hacía que el clic derecho pareciera ir a ratos no era el evento
@@ -356,13 +413,18 @@ si esa no encuentra nada, con `MENU_PICK_PX` = 30 px. Vale para las tres capas
 pulsación sostenida con el dedo, que entra por la misma puerta y agradece
 todavía más el margen.
 
-Comprobado en un Chromium de verdad, con la app corriendo y una línea
-dibujada: el clic derecho encima abre el menú; a 24 px del trazo también, y
-seleccionando la línea; a 52 px no inventa nada; con **Edit Nodes** activa
-abre el menú y no añade ningún vértice; un temblor de 15 px sigue contando
-como clic; un arrastre de 175 px gira la vista sin abrir nada; y con un
-elemento a medio trazar lo cierra en vez de abrir el menú. Lo mismo con el
+Comprobado en un Chromium de verdad, con la app corriendo, una línea dibujada
+y una medida puesta: el clic derecho encima abre el menú; a 24 px del trazo
+también, y seleccionando la línea; a 52 px no inventa nada; con **Edit Nodes**
+activa abre el menú y no añade ningún vértice; un temblor de 15 px sigue
+contando como clic; un arrastre de 175 px gira la vista sin abrir nada; y con
+un elemento a medio trazar lo cierra en vez de abrir el menú. Lo mismo con el
 relieve 3D puesto.
+
+Y reproduciendo el orden de eventos de Windows —`contextmenu` después del
+`pointerup`— sobre la línea y sobre la medida: el menú se abre, no tapa el
+cursor, el menú nativo queda suprimido y el nuestro sigue abierto. En un
+`<input>`, el del navegador sigue apareciendo.
 
 ## Escala de trabajo
 
@@ -2141,9 +2203,12 @@ Las cinco cosas tienen prueba de regresión.
 - ✅ Modos de añadir y borrar vértices en la herramienta Edit Nodes, que se
   abre también desde el menú de propiedades y funciona con el relieve 3D puesto.
 - ✅ Clic derecho fiable en PC: se resuelve al soltar —no en el `contextmenu`,
-  que en Chrome llega antes del primer movimiento—, con radio de acierto
-  holgado, abre el menú en cualquier herramienta y solo cierra el elemento
+  cuyo momento depende del sistema operativo—, con radio de acierto holgado,
+  sin dejar pasar el menú nativo del navegador y sin colocarse encima del
+  cursor; abre el menú en cualquier herramienta y solo cierra el elemento
   cuando de verdad hay uno a medio trazar.
+- ✅ Mantener pulsado el botón primario un segundo abre el mismo menú, como
+  redundancia del clic derecho, con ratón y con lápiz.
 - ✅ Un solo icono para la pestaña, la instalación y la franja de la app.
 - ✅ Guardar y abrir proyectos (`.fdproj.json`).
 - ✅ Autosave en localStorage y exportación a GeoJSON.

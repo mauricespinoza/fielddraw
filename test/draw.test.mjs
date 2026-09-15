@@ -524,6 +524,64 @@ console.log('== girar con el botón derecho sigue sin abrir el menú ==');
   ok('el arrastre no abre nada', !h.kinds().includes('secondary'), JSON.stringify(h.kinds()));
 }
 
+console.log('== mantener el botón PRIMARIO un segundo abre el menú ==');
+{
+  /*
+   * Redundancia del clic derecho: si un navegador, un trackpad o una
+   * configuración rara se comen el botón secundario, queda este camino, que
+   * no depende de ningún evento del sistema.
+   */
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, buttons: 1, clientX: 200, clientY: 150 });
+  await sleep(300);
+  ok('no salta antes de tiempo', !h.kinds().includes('longPress'));
+  await sleep(900);
+  ok('al segundo abre el menú', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+  const call = h.log.find((l) => l[0] === 'longPress');
+  ok('con las coordenadas de donde se apoyó', call[1][0] === 200 && call[1][1] === 150);
+}
+
+console.log('== arrastrar o soltar antes del segundo NO abre el menú ==');
+{
+  const arrastra = harness({ drawing: false });
+  arrastra.ev('pointerdown', { pointerType: 'mouse', button: 0, buttons: 1, clientX: 200, clientY: 150 });
+  await sleep(200);
+  arrastra.ev('pointermove', { pointerType: 'mouse', buttons: 1, clientX: 260, clientY: 150 });
+  await sleep(1000);
+  ok('arrastrar el mapa no abre el menú', !arrastra.kinds().includes('longPress'));
+
+  const suelta = harness({ drawing: false });
+  suelta.ev('pointerdown', { pointerType: 'mouse', button: 0, buttons: 1, clientX: 200, clientY: 150 });
+  await sleep(200);
+  suelta.ev('pointerup', { pointerType: 'mouse', button: 0, buttons: 0, clientX: 200, clientY: 150 });
+  await sleep(1000);
+  ok('un clic normal tampoco', !suelta.kinds().includes('longPress'));
+}
+
+console.log('== el trazo libre manda sobre el sostenido ==');
+{
+  // Con `hold`, a los 320 ms arranca el trazo libre; a partir de ahí se está
+  // dibujando y el menú no debe aparecer a mitad del trazo.
+  const h = harness({ mode: 'hold' });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, buttons: 1, clientX: 50, clientY: 50 });
+  await sleep(1200);
+  ok('arranca el trazo libre', h.kinds().includes('strokeStart'));
+  ok('y no abre el menú', !h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+}
+
+console.log('== sostener con una herramienta que no dibuja a mano alzada ==');
+{
+  // Espesor y rumbo/manteo devuelven `none`: ahí no hay trazo libre que se
+  // adelante, así que el sostenido es lo único que pasa.
+  const h = harness({ mode: 'none' });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 0, buttons: 1, clientX: 80, clientY: 90 });
+  await sleep(1200);
+  ok('abre el menú', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+  h.ev('pointerup', { pointerType: 'mouse', button: 0, buttons: 0, clientX: 80, clientY: 90 });
+  await sleep(20);
+  ok('y al soltar NO pone un vértice', !h.kinds().includes('vertex'), JSON.stringify(h.kinds()));
+}
+
 console.log('== en Navegar el ratón es del mapa ==');
 {
   // Shift+clic AÑADE a la selección: si el controlador se quedara el evento,
