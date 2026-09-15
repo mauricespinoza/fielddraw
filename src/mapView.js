@@ -1297,23 +1297,24 @@ export function createMapView({
     return q ? Math.hypot(q.x - px, q.y - py) : Infinity;
   }
 
-  const toLngLat = (p) => {
-    const ll = map.unproject(p);
-    const base = [ll.lng, ll.lat];
-    if (!terrainOn()) return base;
-
-    const px = Array.isArray(p) ? p[0] : p.x;
-    const py = Array.isArray(p) ? p[1] : p.y;
-    if (pickError(base, px, py) <= PICK_TOL_PX) return base;
-
-    let lng = base[0];
-    let lat = base[1];
+  /**
+   * Newton sobre `project`, partiendo de una semilla ya cercana.
+   *
+   * Solo usa `project`, que consulta la cota en el DEM que ya está en memoria:
+   * no toca la GPU ni espera a que termine de pintar. Devuelve el punto al que
+   * llegó Y su error en pantalla, porque el criterio para quedárselo es el
+   * mismo venga de donde venga la semilla — PICK_TOL_PX y nada más.
+   */
+  function refinePick(seed, px, py) {
+    let lng = seed[0];
+    let lat = seed[1];
     for (let i = 0; i < PICK_STEPS; i++) {
       const q = projectSafe(lng, lat);
       if (!q) break;
       const ex = px - q.x;
       const ey = py - q.y;
-      if (Math.hypot(ex, ey) <= PICK_TOL_PX) return [lng, lat];
+      const err = Math.hypot(ex, ey);
+      if (err <= PICK_TOL_PX) return { point: [lng, lat], error: err };
 
       const qa = projectSafe(lng + PICK_EPS, lat);
       const qb = projectSafe(lng, lat + PICK_EPS);
@@ -1337,19 +1338,73 @@ export function createMapView({
       // cielo—, no de que haga falta un paso más.
       if (lat > 89.9 || lat < -89.9 || lng > 360 || lng < -360) break;
     }
+    return { point: [lng, lat], error: pickError([lng, lat], px, py) };
+  }
+
+  /**
+   * Hasta qué separación en pantalla vale la semilla barata.
+   *
+   * `project` NO sabe de oclusión: devuelve dónde se pintaría un punto aunque
+   * esté detrás de una loma, así que dos puntos muy distintos del terreno
+   * pueden caer en el mismo píxel y Newton no distingue cuál de los dos es el
+   * que se ve. Partiendo de un punto que ya está a unas decenas de píxeles esa
+   * ambigüedad no existe: la raíz que encuentra es la vecina, que sobre un
+   * trazo continuo es además la que se quiere. Más lejos se deja de adivinar y
+   * se paga el rayo contra la malla, que sí resuelve la oclusión.
+   */
+  const PICK_SEED_PX = 64;
+
+  /**
+   * @param {number[]|{x:number,y:number}} p  píxel tocado
+   * @param {number[]} [seed]  punto de partida en lng/lat, típicamente el
+   *   vértice anterior del mismo trazo. Ver abajo: es lo que evita la lectura
+   *   sincrónica de la GPU en el camino caliente del dibujo en 3D.
+   */
+  const toLngLat = (p, seed) => {
+    const px = Array.isArray(p) ? p[0] : p.x;
+    const py = Array.isArray(p) ? p[1] : p.y;
+
+    if (!terrainOn()) {
+      const plano = map.unproject(p);
+      return [plano.lng, plano.lat];
+    }
+
+    /*
+     * LA VÍA BARATA, Y POR QUÉ EXISTE
+     *
+     * `unproject` con relieve resuelve el rayo leyendo el framebuffer de
+     * coordenadas con `gl.readPixels`, lo que obliga a la GPU a terminar todo
+     * lo pendiente antes de contestar. Medido aquí, con el relieve puesto:
+     * 4,7 SEGUNDOS por llamada, contra 0,5 ms de `project`. Un trazo de
+     * sesenta puntos son sesenta lecturas, y de ahí los más de cinco minutos
+     * que tardaba en aparecer una línea dibujada en 3D.
+     *
+     * Con el punto anterior del trazo como semilla, la conversión se resuelve
+     * entera con `project` —aritmética sobre el DEM que ya está en memoria— y
+     * no toca la GPU. El listón para quedársela es el de siempre: que el
+     * punto se repinte sobre el píxel que se tocó.
+     */
+    if (seed && pickError(seed, px, py) <= PICK_SEED_PX) {
+      const cerca = refinePick(seed, px, py);
+      if (cerca.error <= PICK_TOL_PX) return cerca.point;
+    }
+
+    const ll = map.unproject(p);
+    const base = [ll.lng, ll.lat];
+    const errBase = pickError(base, px, py);
+    if (errBase <= PICK_TOL_PX) return base;
 
     /*
      * No se alcanzó la puntería, pero el refinado puede seguir siendo mejor
      * que la semilla: se queda el que menos se desvía, y solo se avisa si ni
      * siquiera ese está cerca.
      */
-    const errRefinado = pickError([lng, lat], px, py);
-    if (errRefinado <= PICK_TOL_PX) return [lng, lat];
+    const refinado = refinePick(base, px, py);
+    if (refinado.error <= PICK_TOL_PX) return refinado.point;
 
-    const errBase = pickError(base, px, py);
-    const mejor = errRefinado < errBase ? [lng, lat] : base;
+    const mejor = refinado.error < errBase ? refinado.point : base;
 
-    if (Math.min(errRefinado, errBase) > PICK_WARN_PX && !avisadoRelieve) {
+    if (Math.min(refinado.error, errBase) > PICK_WARN_PX && !avisadoRelieve) {
       avisadoRelieve = true;
       onEditMessage(
         'This device cannot work out which point of the relief you are pointing at, so vertices placed in 3D may land well off the spot you touched. Turn 3D off to digitise; what you have already drawn is unaffected.',
@@ -2404,6 +2459,11 @@ export function createMapView({
   // mismo gancho, y quién arranca antes depende de cuándo cargue el estilo.
   window.__fielddraw = Object.assign(window.__fielddraw || {}, {
     map,
+    // De pantalla al terreno. Se expone porque es lo que hay que mirar cuando
+    // en un dispositivo concreto los vértices caen corridos en 3D —el aviso de
+    // `toLngLat` habla justo de eso— y ahí no suele haber devtools a mano:
+    // desde la consola se comparan las dos vías, con semilla y sin ella.
+    toLngLat,
     store,
     controller,
     snapIndex,

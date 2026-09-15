@@ -39,6 +39,27 @@ console.log('== cada punto se convierte UNA vez ==');
   ok('y convertido', out[3][0] === 0.03);
 }
 
+console.log('== cada punto se convierte con el anterior de semilla ==');
+{
+  /*
+   * La semilla es lo que le permite a `toLngLat` resolver el punto con
+   * `project` —aritmética sobre el DEM que ya está en memoria— en vez de con
+   * `unproject`, que con el relieve puesto lee el framebuffer de la GPU.
+   * Medido en el navegador: 4,7 s por `unproject` contra 0,5 ms por
+   * `project`, o sea más de cinco minutos para que apareciera un trazo de
+   * sesenta puntos. Sin semilla no hay vía barata, así que esto se prueba.
+   */
+  const semillas = [];
+  const buf = createStrokeBuffer((p, seed) => {
+    semillas.push(seed);
+    return [p[0] / 1000, p[1] / 1000];
+  });
+  buf.push([[0, 0], [10, 0], [20, 0]]);
+  ok('el primero no tiene de dónde partir', semillas[0] === undefined, JSON.stringify(semillas[0]));
+  ok('el segundo parte del primero', JSON.stringify(semillas[1]) === '[0,0]', JSON.stringify(semillas[1]));
+  ok('el tercero parte del segundo', JSON.stringify(semillas[2]) === '[0.01,0]', JSON.stringify(semillas[2]));
+}
+
 console.log('== el trazo largo no crece en trabajo por frame ==');
 {
   // Antes esto costaba 1+2+3+...+60 = 1830 conversiones; ahora cuesta 60.
@@ -120,6 +141,23 @@ console.log('== cerrar el trazo reutiliza lo convertido ==');
   const coords = buf.coordsFor([[7, 7], [10, 0]]);
   ok('el extremo enganchado se convierte', e.count() === antes + 1, `-> ${e.count() - antes}`);
   ok('y sale bien', coords[0][0] === 0.007);
+}
+{
+  // Y ese extremo tampoco tiene por qué pagar la GPU: el enganche lo mueve
+  // unos píxeles, así que el punto ya convertido de al lado le sirve.
+  const semillas = [];
+  const buf = createStrokeBuffer((p, seed) => {
+    semillas.push(seed);
+    return [p[0] / 1000, p[1] / 1000];
+  });
+  buf.push([[0, 0], [10, 0]]);
+  semillas.length = 0;
+  buf.coordsFor([[7, 7], [10, 0]]);
+  ok(
+    'el extremo enganchado también lleva semilla',
+    semillas.length === 1 && JSON.stringify(semillas[0]) === '[0,0]',
+    JSON.stringify(semillas),
+  );
 }
 
 console.log('== reset ==');

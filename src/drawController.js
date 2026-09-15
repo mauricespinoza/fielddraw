@@ -37,7 +37,14 @@ const SWALLOWED = [
   'mouseup',
   'click',
   'dblclick',
+  // `mouseover` y `mouseout` no los usa nadie aquí, pero cuestan lo mismo que
+  // un `mousemove` con el relieve puesto: ver `swallow`.
+  'mouseover',
+  'mouseout',
 ];
+
+/** Los que le cuestan a MapLibre una lectura de GPU y a nosotros no dan nada. */
+const HOVER_EVENTS = new Set(['mousemove', 'mouseover', 'mouseout']);
 
 /**
  * Traduce eventos de puntero a acciones de digitalización.
@@ -324,11 +331,19 @@ export class DrawController {
      * con relieve contra 0,47 s en plano, con un repintado completo por cada
      * movimiento. Cortándolos aquí, el coste desaparece.
      *
+     * VAN TAMBIÉN `mouseover` Y `mouseout`, y no solo `mousemove`. El coste no
+     * está en el movimiento: está en que MapLibre construya un
+     * `MapMouseEvent`, y lo construye igual para los tres. Medido dibujando un
+     * trazo en 3D, entrar y salir del lienzo disparaba tres de esos por gesto
+     * a 2,6-8,0 SEGUNDOS cada uno —más que todo el resto del dibujo junto—
+     * mientras que `mousemove` ya venía atajado. Ninguno de los tres lo
+     * escucha nadie en esta app.
+     *
      * Solo con relieve: en plano no hay nada que ahorrar y sí un
      * comportamiento probado que no conviene tocar.
      */
     if (
-      e.type === 'mousemove' &&
+      HOVER_EVENTS.has(e.type) &&
       this.cb.isDrawing() &&
       this.cb.suppressHover &&
       this.cb.suppressHover()
