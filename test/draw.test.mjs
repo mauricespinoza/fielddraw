@@ -420,20 +420,19 @@ console.log('== en Navegar el ratón es del mapa ==');
   ok('no secuestra Shift+arrastrar', !h.kinds().includes('camera'), JSON.stringify(h.kinds()));
 }
 
-console.log('== Shift+arrastrar mueve la cámara, no dibuja ==');
+console.log('== Shift ya no mueve la cámara: es el modificador de selección ==');
 {
+  /*
+   * Shift+arrastrar giraba y basculaba. Dejó de hacerlo cuando Shift pasó a
+   * ser el modificador de selección múltiple: un modificador no puede
+   * significar dos cosas, y de las dos la selección se usa cien veces por
+   * sesión. Girar sin soltar la herramienta sigue estando en `Shift`+flechas.
+   */
   const h = harness();
   h.ev('pointerdown', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 100, clientY: 100 });
   h.ev('pointermove', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 140, clientY: 80 });
   h.ev('pointerup', { pointerType: 'mouse', button: 0, shiftKey: true, clientX: 140, clientY: 80 });
-  const cam = h.log.filter((l) => l[0] === 'camera');
-  ok('emite el arrastre de cámara', cam.length === 1, JSON.stringify(h.kinds()));
-  ok('como giro y basculado', cam[0][1] === 'orbit');
-  ok('con el desplazamiento en píxeles', cam[0][2] === 40 && cam[0][3] === -20);
-  // Lo que importa: la vista se movió y el dibujo quedó intacto.
-  ok('no pone ningún vértice', !h.kinds().includes('vertex'), JSON.stringify(h.kinds()));
-  ok('ni empieza un trazo', !h.kinds().includes('strokeStart'));
-  ok('ni cierra el elemento', !h.kinds().includes('finish'));
+  ok('no emite arrastre de cámara', !h.kinds().includes('camera'), JSON.stringify(h.kinds()));
 }
 
 console.log('== botón central: desplaza como en QGIS ==');

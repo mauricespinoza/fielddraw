@@ -144,9 +144,9 @@ carga.
 | Deshacer vértice | Retroceso, o botón **Deshacer** |
 | Cancelar elemento | Esc, o botón **Descartar** |
 | Navegar | dos dedos (siempre), o herramienta **Navegar** |
-| Seleccionar | un toque con el dedo, **en cualquier herramienta** |
-| Seleccionar varios | **Elegir** + arrastrar: lazo rectangular, entra lo que quede encerrado |
-| Propiedades | mantener pulsado ~1 s, en cualquier herramienta |
+| Seleccionar | un toque con el dedo o un clic, **en cualquier herramienta**: uno a la vez |
+| Seleccionar varios | `Shift` + clic sobre cada uno (PC) |
+| Propiedades | mantener pulsado ~1 s, o **clic derecho**, en cualquier herramienta |
 | Atributos de una capa importada | mantener pulsado ~1 s donde no haya dibujo propio |
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
 | Deshacer | doble toque con **dos dedos** |
@@ -162,6 +162,7 @@ carga.
 | Quitar un área interior | **Hole**: dibujar el contorno de lo que sobra dentro del polígono |
 | Editar una capa importada | botón **✎** de esa capa, en el panel de Capas |
 | Espesor estratigráfico | seleccionar un dip, **Measure thickness from here**, y tocar la otra superficie |
+| Quitar el dibujo del espesor | cerrar su aviso: la línea punteada y el punto auxiliar se van con él |
 | Traza de un plano sobre el terreno | seleccionar un dip, **Retrieve trace from DEM intersection**, y decir cuántos km a cada lado |
 | Perfil estructural | trazar un perfil y pulsar **Structural section** (con dips elegidos con el lazo, si se quieren solo esos) |
 | Perfil topográfico | **Perfil** y trazar la línea; o seleccionar una línea y usar el menú de propiedades |
@@ -195,10 +196,34 @@ explican fallos que parecen aleatorios:
   en la pantalla se descartara por parecer un gesto a dos manos: el dedo no
   seleccionaba, no cerraba y no abría el menú, justo en la situación en la que
   más se usa.
-- En **Elegir** y **Nodos** el dedo sí se consume, aunque haya Pencil: sin eso
-  no hay forma de arrastrar el lazo ni de agarrar una manija con el dedo. El
-  precio es que en esas dos herramientas el paneo con un dedo no está
-  disponible; se navega con dos, como en el resto de la app.
+- En **Nodos** el dedo sí se consume, aunque haya Pencil: sin eso no hay forma
+  de agarrar una manija con el dedo. El precio es que ahí el paneo con un dedo
+  no está disponible; se navega con dos, como en el resto de la app. **Elegir**
+  ya no consume nada (ver abajo).
+
+### Elegir no dibuja: señala
+
+**Elegir** dejó de quedarse el puntero. Antes lo consumía para arrastrar un
+lazo rectangular, y eso traía tres consecuencias que no se ven hasta que se usa
+con ratón: arrastrar no desplazaba el mapa, el clic derecho no abría el menú
+—el controlador lo interpretaba como «cerrar el elemento», y en Elegir no hay
+ninguno— y cada clic **alternaba** la selección, de modo que señalar el segundo
+contacto dejaba los dos marcados sin haberlo pedido.
+
+Ahora:
+
+- **Un clic selecciona uno**, y reemplaza lo que hubiera.
+- **`Shift` + clic** alterna, que es como selecciona cualquier escritorio. Con
+  varios marcados, el clic derecho abre el menú de propiedades de **todos**: es
+  como se le cambia la certeza, la unidad o el tipo a media docena de una vez.
+- **Arrastrar desplaza el mapa**, igual que en Navegar.
+- **Clic derecho** abre el menú de lo que haya debajo. Si lo de debajo no está
+  en la selección, manda lo señalado; si sí está, el menú es de la selección
+  entera.
+
+Con el dedo no hay `Shift`, así que en tablet la selección múltiple se arma
+desde `Ctrl+A` o desde el propio menú; el toque limpio sigue seleccionando uno
+y la pulsación sostenida sigue abriendo el menú.
 
 ## Escala de trabajo
 
@@ -374,7 +399,8 @@ grosería.
 | `G` | Centrar en mi posición |
 | `M` · `Y` | Unir · Topología |
 | `↑ ↓ ← →` | Mover la vista, sin soltar la herramienta |
-| `Shift` + `↑ ↓ ← →` | Girar y bascular (también `Shift` + arrastrar con el ratón) |
+| `Shift` + `↑ ↓ ← →` | Girar y bascular |
+| `Shift` + clic | Añadir o quitar de la selección |
 | `+` · `−` · `0` | Acercar · alejar · volver al norte y a la planta |
 | `↵` · `⌫` | Cerrar el elemento · deshacer el último vértice |
 | `Esc` | En cascada: cierra panel → descarta el elemento → vacía la selección → vuelve a Navegar |
@@ -749,6 +775,66 @@ dibujo se drapea solo sobre el relieve. La exageración vertical se ajusta en el
 panel de Capas, donde también está el **sombreado** (hillshade), apagado por
 omisión.
 
+### Por qué el 3D iba lento, y qué se hizo
+
+Encender el relieve dejaba la app casi inutilizable, y la causa no era dibujar
+el terreno: era que **cada movimiento del ratón obligaba a MapLibre a rendear
+la escena entera y a leer la GPU de forma sincrónica**.
+
+Con `setTerrain` puesto, saber a qué punto del suelo apunta un píxel deja de
+ser aritmética: hay que resolver contra qué triángulo de la malla choca el rayo.
+MapLibre lo hace pintando la escena a un framebuffer auxiliar y leyéndolo con
+`readPixels` — una lectura que vacía la tubería de render y bloquea el hilo
+hasta que la tarjeta contesta. Cualquier cosa que pregunte «qué hay aquí»
+dispara eso.
+
+Medido en el escritorio, moviendo el ratón cuarenta veces:
+
+| 40 movimientos del ratón, herramienta Línea | plano | 3D, antes | 3D, después |
+|---|---|---|---|
+| Lecturas sincrónicas de GPU | 0 | **1481** | **1** |
+| Tiempo | 0,7 s | **6,6 s** | 2,6 s |
+
+(Las lecturas son un recuento exacto y reproducible; los tiempos vienen de un
+Chromium sin GPU, donde el relieve se rasteriza por software y el número
+absoluto no dice mucho. Lo que se puede afirmar es la proporción y, sobre todo,
+que las lecturas pasaron de treinta y siete por movimiento a una.)
+
+De dónde salían las 1481 —unas 37 por movimiento— y qué se cambió:
+
+- **Un `mouseenter`/`mouseleave` por capa pulsable**, nueve en total, solo para
+  poner el cursor de mano. Es la forma que enseña la documentación de MapLibre,
+  y lo que no dice es que cada par obliga a consultar lo renderizado **por
+  separado** en cada movimiento. Ahora es **un solo `mousemove`** con una
+  consulta, limitada a 20 Hz — y **ninguna** con el relieve puesto, donde aun
+  una sola cuesta: quitando esa consulta, los mismos movimientos bajaron de
+  14,6 s a 0,66 s. El cursor de mano es una cortesía; el mapa respondiendo, no.
+- **El `mousemove` de hover llegaba a MapLibre incluso con una herramienta de
+  dibujo activa**, donde no le sirve de nada: el `mousedown` siguiente lo va a
+  consumir el controlador. Cada uno construía un `MapMouseEvent`, que calcula
+  `lngLat` de inmediato, que es exactamente la lectura cara. Ahora se cortan en
+  el propio controlador, y solo con relieve — en plano no hay nada que ahorrar.
+
+Y dos cosas que se pedían de más, con relieve o sin él:
+
+- **Las teselas del DEM se bajaban y decodificaban dos veces**: el relieve
+  apuntaba a la URL de AWS y las curvas de nivel al protocolo de
+  `maplibre-contour`, dos cachés independientes sobre el mismo archivo. Ahora
+  las dos beben del protocolo compartido: se baja y se decodifica una vez.
+- **El DEM se pedía hasta z15**, dos niveles por debajo del tamaño real del
+  dato. A z13 cada píxel terrarium ya son ~19 m sobre un dato de ~30: z14 y z15
+  no añaden un metro de detalle y multiplican por cuatro y por dieciséis las
+  teselas. Topado en z13, que además es el número con el que ya se configuraba
+  el generador de curvas — y esa coincidencia es lo que permite compartir la
+  caché. Las curvas estaban topadas en 15 por el mismo descuido: a z14 y z15 el
+  generador recorría cuatro y dieciséis veces la misma tesela para dibujar
+  exactamente las mismas curvas.
+
+Lo que queda es inherente: con la cámara inclinada el horizonte entra en el
+encuadre, y eso multiplica por tres las teselas de todo —modelo, base y
+curvas—. Medido: 16 teselas de DEM en planta contra 45 con el relieve puesto,
+sin mover la vista.
+
 ### Digitalizar sobre el relieve
 
 Con el relieve puesto se puede trazar **Línea** y **Polígono**, avisando de que
@@ -816,7 +902,6 @@ herramienta activa:
 
 | Gesto | Acción |
 |---|---|
-| `Shift` + arrastrar | Girar y bascular (los mismos grados por píxel que usa MapLibre) |
 | Botón central + arrastrar | Desplazar, como en QGIS |
 | Rueda | Acercar y alejar |
 | `↑ ↓ ← →` | Desplazar |
@@ -1144,6 +1229,75 @@ Mapbox/Bing con API key.
 Las curvas de nivel se generan **en el cliente** con `maplibre-contour` a
 partir de teselas terrain-RGB de AWS (dominio público). Eso permite elegir el
 intervalo y funcionar offline, en vez de depender de un servicio de curvas.
+
+## Importar: qué entra y por dónde
+
+El botón **Import** abre un cuadro que dice los formatos admitidos, en vez de
+soltar el selector de archivos y dejar que uno lo averigüe. Van en dos grupos
+porque hay algo que la app **no puede adivinar mirando el archivo**: un juego
+de teselas PNG es idéntico sea un mapa base o un modelo de elevación, así que
+cuál de los dos botones se pulsa **es** la respuesta.
+
+| | Formatos |
+|---|---|
+| Dibujo y mapas | `.gpkg` · `.pmtiles` · `.mbtiles` |
+| Modelo de elevación | `.pmtiles` · `.mbtiles`, con teselas **Terrain-RGB** |
+
+### Qué formato de DEM conviene traer a terreno
+
+**PMTiles con teselas Terrain-RGB**, y la respuesta no es de gusto sino de lo
+que un navegador puede hacer sin ayuda:
+
+- Es **un solo archivo** y se lee **por rangos**: se baja el pedazo que se está
+  mirando y nada más. Un GeoTIFF —aunque sea COG— hay que abrirlo entero antes
+  de poder leer una cota; en una tablet eso es la diferencia entre funcionar y
+  quedarse sin memoria.
+- Viene **piramidado**, que es justo lo que piden tanto el muestreo como el
+  relieve: cada zoom con su nivel ya remuestreado.
+- Sus teselas son **PNG Terrain-RGB**, el mismo empaquetado de metros que la
+  app ya decodifica para el modelo de AWS. Ni un decodificador nuevo ni una
+  dependencia más, que en un proyecto sin `node_modules` no es un detalle.
+- Y la app **ya lo abre**: es el formato con el que se llevan los mapas base.
+
+`.mbtiles` sirve igual salvo por una cosa que importa en tablet: es SQLite y se
+carga entero en memoria. Para una zona de trabajo pequeña da lo mismo; para una
+región, no.
+
+Un GeoTIFF se convierte con GDAL, que ya está en cualquier instalación de QGIS:
+
+```bash
+gdalwarp -t_srs EPSG:3857 -r bilinear dem.tif dem3857.tif
+gdal_translate -of PNG ...        # o, más directo:
+rio rgbify -b -10000 -i 0.1 dem3857.tif dem-rgb.mbtiles   # rio-rgbify
+pmtiles convert dem-rgb.mbtiles dem-rgb.pmtiles
+```
+
+Una vez cargado pasa a ser el **origen de cotas** de los perfiles, los ajustes
+de plano, los espesores y las trazas proyectadas, y aparece como tercera opción
+en **Ajustes → Elevation source**. Se comprueba al abrirlo: se lee una cota en
+el centro de su cobertura y, si el número no es una cota plausible, se rechaza
+en vez de cargarlo — un mapa base decodificado como Terrain-RGB daría manteos
+calculados sobre el color de una imagen satelital.
+
+**El relieve 3D y las curvas de nivel siguen usando el modelo de AWS.** Es una
+limitación conocida, no un olvido: cambiarles la fuente en caliente obliga a
+recomponer el estilo entero, y lo que decide la calidad de un número medido es
+el muestreo, no el dibujo.
+
+### De qué modelo salió cada número
+
+Después de ajustar un plano —por tres puntos o sobre una traza— y después de
+proyectar una traza, sale un cuadro que dice **con qué modelo se calculó y qué
+resolución tiene**, y recomienda traer uno más fino. Antes esa resolución solo
+aparecía como una línea suelta en el menú de propiedades, después, y si alguien
+iba a buscarla.
+
+Está ahí porque es el límite del resultado y no un detalle de fondo: un manteo
+ajustado sobre una base más corta que dos celdas es ruido, y en una traza
+proyectada cada metro de error vertical la mueve de lado ese metro dividido por
+la tangente del manteo. Se puede callar para siempre —quien ya lo sabe no
+necesita leerlo en cada medida—, pero sale por omisión, porque quien no lo sabe
+está citando un número sin su letra pequeña.
 
 ## Mapas offline: MBTiles y PMTiles
 
@@ -1709,14 +1863,13 @@ símbolos estructurales son chicos y en terreno se tocan con el dedo.
 
 El toque entra por dos puertas, porque una sola no alcanzaba:
 
-- En **Navegar**, por el evento `click` nativo de MapLibre.
-- En **Elegir**, desde el propio final del gesto: esa herramienta arrastra el
-  lazo, así que `DrawController` consume el puntero y el `click` de MapLibre
-  no llega nunca. Sin esto, tocar un spot con la herramienta con la que uno
-  naturalmente lo intenta no hacía absolutamente nada. Si el toque cae sobre un
-  elemento del dibujo propio, ese manda; el spot solo se consulta cuando el
-  toque quedó en vacío, y entonces la selección se limpia igual que con
-  cualquier otro toque en vacío: un spot importado se lee, no se selecciona.
+- En **Navegar** y en **Elegir**, por el evento `click` nativo de MapLibre: las
+  dos dejan el puntero al mapa, así que el evento llega intacto. Si el toque
+  cae sobre un elemento del dibujo propio, ese manda; el spot solo se consulta
+  cuando el toque quedó en vacío, y entonces la selección se limpia igual que
+  con cualquier otro toque en vacío: un spot importado se lee, no se selecciona.
+- Con el **dedo**, además, por el final del gesto observado, que es lo que
+  permite que el toque funcione mientras el Pencil dibuja.
 
 **Filtrar por tipo.** El panel construye, para cada categoría con datos
 (Estructuras por `Type`, Observación por `Process`, Líneas/Polígonos por

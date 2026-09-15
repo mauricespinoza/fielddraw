@@ -231,9 +231,15 @@ export class DrawController {
   /**
    * ¿Este `pointerdown` es para la cámara y no para el dibujo?
    *
-   * Shift+arrastrar gira y bascula —los mismos grados por píxel que usa
-   * MapLibre con el botón derecho— y el botón central desplaza, como en QGIS.
-   * El botón derecho no entra: ya cierra el elemento y abre el menú.
+   * El botón central desplaza, como en QGIS. El derecho no entra: ya cierra el
+   * elemento y abre el menú.
+   *
+   * **Shift+arrastrar ya no gira ni bascula.** Giraba, con los mismos grados
+   * por píxel que MapLibre, hasta que Shift pasó a ser el modificador de
+   * selección múltiple: no puede significar dos cosas a la vez, y de las dos
+   * la selección es la que se usa cien veces por sesión. Para mover la cámara
+   * sin soltar la herramienta quedan `Shift`+flechas —girar y bascular— y las
+   * flechas solas para desplazar, que además no dependen del ratón.
    *
    * Solo ratón y lápiz. El dedo no lo necesita: sus gestos de navegación
    * siguen llegando al mapa intactos, que es de donde salen el paneo, el zoom
@@ -242,14 +248,13 @@ export class DrawController {
   cameraModeFor(e) {
     if (!this.cb.onCameraDrag || e.pointerType === 'touch') return null;
     /*
-     * Solo con una herramienta activa. En Navegar el ratón ya manda sobre el
-     * mapa entero —arrastrar desplaza, el botón derecho gira y bascula— y
-     * Shift+clic AÑADE a la selección: quedarnos el evento ahí rompería eso a
-     * cambio de nada.
+     * Solo con una herramienta activa. En Navegar y en Elegir el ratón ya
+     * manda sobre el mapa entero —arrastrar desplaza, el botón derecho gira y
+     * bascula— y Shift+clic añade a la selección: quedarnos el evento ahí
+     * rompería eso a cambio de nada.
      */
     if (!this.cb.isDrawing()) return null;
     if (e.button === 1 || e.buttons === 4) return 'pan';
-    if (e.shiftKey && e.button === 0) return 'orbit';
     return null;
   }
 
@@ -297,9 +302,39 @@ export class DrawController {
   }
 
   swallow(e) {
-    if (!this.consuming) return;
-    e.stopPropagation();
-    if (e.cancelable) e.preventDefault();
+    if (this.consuming) {
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      return;
+    }
+
+    /*
+     * EL HOVER NO LE SIRVE A MAPLIBRE, Y CON RELIEVE LE CUESTA UNA ESCENA
+     *
+     * Con una herramienta de dibujo activa, el `mousemove` sin botón pulsado
+     * no tiene nada que hacer en MapLibre: el siguiente `mousedown` lo vamos a
+     * consumir nosotros, así que ni desplaza ni selecciona. Dejarlo pasar es
+     * gratis en plano y carísimo con el relieve 3D puesto: MapLibre construye
+     * un `MapMouseEvent` por cada uno, y ese objeto calcula `lngLat` de
+     * inmediato, lo que con terreno significa renderizar la escena entera a un
+     * framebuffer auxiliar y leerlo con `readPixels` —una parada sincrónica de
+     * la GPU— para averiguar contra qué triángulo choca el píxel.
+     *
+     * Medido, treinta movimientos del ratón con la herramienta Línea: 14,7 s
+     * con relieve contra 0,47 s en plano, con un repintado completo por cada
+     * movimiento. Cortándolos aquí, el coste desaparece.
+     *
+     * Solo con relieve: en plano no hay nada que ahorrar y sí un
+     * comportamiento probado que no conviene tocar.
+     */
+    if (
+      e.type === 'mousemove' &&
+      this.cb.isDrawing() &&
+      this.cb.suppressHover &&
+      this.cb.suppressHover()
+    ) {
+      e.stopPropagation();
+    }
   }
 
   onPointerDown(e) {

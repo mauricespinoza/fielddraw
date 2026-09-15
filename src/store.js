@@ -179,6 +179,13 @@ let state = {
    * exige clave y red, así que en terreno no sirve.
    */
   profileSource: 'terrarium',
+  /**
+   * Modelo de elevación propio, traído como teselas Terrain-RGB: el
+   * descriptor que devuelve `openTileFile`. Mientras esté puesto, se puede
+   * elegir como origen de cotas y pasa a ser el mejor que hay — un LiDAR de
+   * la zona de trabajo son metros donde AWS da treinta.
+   */
+  demSet: null,
   /** Modelo pedido a OpenTopography cuando esa es la fuente. */
   opentopoDem: 'COP30',
   /** Clave de OpenTopography. Vive en el dispositivo, nunca en el proyecto. */
@@ -1044,6 +1051,14 @@ export function updateMeasurement(patch) {
 /* ---------- perfil topográfico ---------- */
 
 export const setProfileSource = (profileSource) => set({ profileSource });
+
+/**
+ * Adopta un DEM propio y lo deja elegido: quien acaba de importarlo lo quiere
+ * usar, y obligar a ir a Ajustes a decirlo otra vez sería un paso de más.
+ */
+export function setDemSet(demSet) {
+  set({ demSet, profileSource: demSet ? 'imported' : 'terrarium' });
+}
 export const setOpenTopoDem = (opentopoDem) => set({ opentopoDem });
 export const setOpenTopoKey = (opentopoKey) => set({ opentopoKey });
 export const setProfileSamples = (profileSamples) =>

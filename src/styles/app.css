@@ -87,15 +87,6 @@ body,
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.7));
 }
 
-.lasso {
-  position: absolute;
-  pointer-events: none;
-  z-index: 6;
-  border: 1.5px dashed var(--accent);
-  background: rgba(45, 212, 191, 0.12);
-  border-radius: 2px;
-}
-
 .snap-marker.vertex {
   width: 15px;
   height: 15px;

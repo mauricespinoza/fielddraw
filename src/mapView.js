@@ -2,7 +2,7 @@ import maplibregl from 'maplibre-gl';
 import mlcontour from 'maplibre-contour';
 
 import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
-import { DEM_MAX_ZOOM, haversine } from './dem.js';
+import { haversine } from './dem.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
 import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './scale.js';
@@ -199,6 +199,20 @@ function applyLayerStack(map, layers) {
   }
 }
 
+/**
+ * Zoom máximo al que se pide el DEM.
+ *
+ * Trece, y no quince, porque a z13 en latitudes medias cada píxel terrarium ya
+ * son ~19 m: por debajo del tamaño REAL del dato, que ronda los 30. Pedir z14
+ * o z15 no añade un metro de detalle —interpola— y sí multiplica por cuatro y
+ * por dieciséis las teselas que hay que bajar, decodificar y mallar.
+ *
+ * Es el mismo número con el que se configura el generador de curvas, y esa
+ * coincidencia no es estética: es lo que permite que las dos cosas compartan
+ * una sola caché de teselas (ver `ensureDemSource`).
+ */
+const DEM_RENDER_MAXZOOM = 13;
+
 let demSource = null;
 function ensureDemSource() {
   if (demSource) return demSource;
@@ -207,7 +221,7 @@ function ensureDemSource() {
   demSource = new DemSource({
     url: TERRARIUM_URL,
     encoding: 'terrarium',
-    maxzoom: 13,
+    maxzoom: DEM_RENDER_MAXZOOM,
     worker: true,
   });
   demSource.setupMaplibre(maplibregl);
@@ -229,7 +243,6 @@ export function createMapView({
   const hoverEl = document.getElementById('pen-hover');
   const ringEl = document.getElementById('longpress-ring');
   const snapEl = document.getElementById('snap-marker');
-  const lassoEl = document.getElementById('lasso');
 
   let ready = false;
   let preview = [];
@@ -267,6 +280,15 @@ export function createMapView({
    * fuente de verdad, y esto la deja serlo también aquí.
    */
   map.keyboard.disable();
+
+  /*
+   * La caja de zoom de MapLibre —Shift+arrastrar— también se va, y por la
+   * misma razón que el giro con Shift: ese modificador es ahora el de
+   * selección múltiple. Sin esto, Shift+clic para añadir un contacto a la
+   * selección arrancaba un recuadro de zoom en cuanto el ratón se movía un
+   * píxel, y el mapa terminaba en otra escala.
+   */
+  map.boxZoom.disable();
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
@@ -343,13 +365,33 @@ export function createMapView({
      * tesela mientras nadie la use: con el sombreado apagado y sin relieve,
      * esto no cuesta nada de red. Es lo que permite encender cualquiera de los
      * dos sin recomponer el estilo.
+     *
+     * LAS TESELAS SE PIDEN UNA VEZ, NO DOS
+     *
+     * Va por el protocolo compartido de `maplibre-contour` y no por la URL de
+     * AWS directamente. Apuntando a la URL, el relieve y las curvas de nivel
+     * terminaban con DOS cachés independientes sobre exactamente el mismo
+     * archivo: cada tesela del modelo se bajaba dos veces y se decodificaba
+     * dos veces —PNG a Float32, que no es barato— una para mallar el terreno y
+     * otra para trazar las curvas. Con el protocolo compartido se baja y se
+     * decodifica una sola vez y las dos beben de ahí.
+     *
+     * Medido en el escritorio, con el relieve recién encendido y sin mover la
+     * vista: 58 peticiones al modelo con las dos cachés.
      */
+    let demTiles = [TERRARIUM_URL];
+    try {
+      demTiles = [ensureDemSource().sharedDemProtocolUrl];
+    } catch {
+      // Sin la librería de curvas no hay protocolo compartido, pero el relieve
+      // tiene que seguir funcionando: se cae a la URL de siempre.
+    }
     map.addSource(TERRAIN_SOURCE, {
       type: 'raster-dem',
-      tiles: [TERRARIUM_URL],
+      tiles: demTiles,
       encoding: 'terrarium',
       tileSize: 256,
-      maxzoom: DEM_MAX_ZOOM,
+      maxzoom: DEM_RENDER_MAXZOOM,
       attribution: 'Elevation: AWS Terrain Tiles (public domain)',
     });
     map.addLayer({
@@ -388,7 +430,14 @@ export function createMapView({
             contourLayer: 'contours',
           }),
         ],
-        maxzoom: 15,
+        /*
+         * El mismo tope que el modelo, que es de donde salen. Estaba en 15, y
+         * eso hacía que a z14 y z15 el generador recorriera CUATRO y DIECISÉIS
+         * veces la misma tesela de z13 para dibujar exactamente las mismas
+         * curvas. Topándolo aquí, MapLibre reescala la tesela vectorial ya
+         * generada: se ve igual y no cuesta nada.
+         */
+        maxzoom: DEM_RENDER_MAXZOOM,
       });
       map.addLayer({
         id: 'contour-lines',
@@ -480,21 +529,23 @@ export function createMapView({
     // así que este listener nunca compite con esas herramientas — recibe el
     // evento nativo de MapLibre solo cuando pasó libre.
     /*
-     * Clic en modo Navegar. Selecciona lo propio y, si no hay nada propio bajo
-     * el puntero, muestra los atributos de un spot importado.
+     * Clic en Navegar y en Elegir. Selecciona lo propio y, si no hay nada
+     * propio bajo el puntero, muestra los atributos de un spot importado.
      *
-     * Que Navegar seleccione importa sobre todo desde un PC. En tablet el dedo
-     * ya selecciona en cualquier herramienta, pero ese camino pasa por
-     * `onFingerTap`, que solo existe para punteros `touch` no consumidos: con
-     * ratón nunca se dispara. Sin esto, desde escritorio había que entrar a
-     * **Elegir** para señalar cualquier cosa — incluido el paso previo a
-     * continuar una línea, que es donde más se nota.
+     * Las dos herramientas comparten camino porque las dos dejan el puntero al
+     * mapa: ninguna lo consume, así que el `click` de MapLibre llega intacto y
+     * el arrastre desplaza la vista. Antes Elegir se quedaba el puntero para
+     * dibujar un lazo rectangular, y por eso ahí ni el clic de MapLibre ni el
+     * paneo con el botón primario existían.
      *
-     * Con Shift se añade a la selección en vez de reemplazarla, como en
-     * cualquier escritorio.
+     * **Uno a la vez.** Un clic REEMPLAZA la selección; con **Shift** la
+     * alterna, que es como selecciona cualquier escritorio. Antes alternaba
+     * siempre, y el resultado era que seleccionar el segundo contacto dejaba
+     * los dos marcados sin que nadie lo hubiera pedido: para cambiarle el tipo
+     * a uno había que acordarse de deseleccionar el anterior.
      */
     map.on('click', (e) => {
-      if (store.getState().tool !== 'navigate') return;
+      if (!['navigate', 'select'].includes(store.getState().tool)) return;
       const screen = [e.point.x, e.point.y];
 
       const hit = pickAt(screen, 12);
@@ -514,23 +565,79 @@ export function createMapView({
       if (store.getState().selection.length) store.clearSelection();
     });
 
-    // Cursor de mano al pasar por encima, como cualquier elemento con el que se
-    // puede interactuar: es la única pista de que ahí hay algo que tocar.
+    /*
+     * Cursor de mano al pasar por encima, como cualquier elemento con el que se
+     * puede interactuar: es la única pista de que ahí hay algo que tocar.
+     *
+     * UN SOLO `mousemove`, Y NO UN `mouseenter` POR CAPA
+     *
+     * Esto estaba escrito como un `mouseenter`/`mouseleave` por cada capa
+     * pulsable —nueve entre el dibujo, los símbolos y StraboSpot—, que es la
+     * forma que enseña la documentación de MapLibre. El detalle que no cuenta
+     * es que cada uno de esos pares obliga a MapLibre a consultar lo
+     * renderizado POR SEPARADO en cada movimiento del ratón para saber si el
+     * puntero entró o salió de esa capa.
+     *
+     * En plano eso es barato. **Con el relieve 3D puesto no lo es**: cada
+     * consulta tiene que resolver a qué punto del terreno apunta el píxel, y
+     * eso en MapLibre es una lectura SINCRÓNICA de la GPU —`readPixels`—, que
+     * vacía la tubería de render y bloquea el hilo hasta que la tarjeta
+     * contesta.
+     *
+     * Medido con el relieve puesto, moviendo el ratón cuarenta veces:
+     * 1481 lecturas de GPU, unas 37 por movimiento, y 6,6 s para lo que en
+     * plano tardaba 0,8. Era la causa principal de que "el 3D va lentísimo",
+     * y no el dibujado del relieve en sí.
+     *
+     * Con un solo manejador se hace UNA consulta por movimiento, limitada
+     * además a ~20 Hz y saltada entera mientras se dibuja —ahí el cursor es
+     * una cruz y la respuesta no se usa para nada.
+     */
     const CLICKABLE_LAYER_IDS = [
       ...(onStraboFeatureTap ? STRABO_INTERACTIVE_LAYER_IDS : []),
       'geology-fill',
       ...GEOLOGY_LINE_LAYER_IDS,
       'structure-symbols',
     ];
-    for (const id of CLICKABLE_LAYER_IDS) {
-      if (!map.getLayer(id)) continue;
-      map.on('mouseenter', id, () => {
-        if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', id, () => {
-        if (store.getState().tool === 'navigate') map.getCanvas().style.cursor = '';
-      });
-    }
+    let hoverAt = 0;
+    let hoverCursor = '';
+    map.on('mousemove', (e) => {
+      const tool = store.getState().tool;
+      if (!['navigate', 'select'].includes(tool)) {
+        hoverCursor = '';
+        return;
+      }
+      /*
+       * Y con el relieve puesto no se consulta en absoluto.
+       *
+       * Medido: aun haciendo UNA sola consulta por movimiento, en 3D
+       * `queryRenderedFeatures` cuesta lo que cuesta resolver contra qué
+       * triángulo del terreno choca el píxel. Quitando el manejador entero, los
+       * mismos cuarenta movimientos bajan de 14,6 s a 0,66 s — un factor
+       * VEINTE. El cursor de mano es una cortesía; el mapa respondiendo, no.
+       */
+      if (terrainOn()) {
+        if (hoverCursor) {
+          hoverCursor = '';
+          map.getCanvas().style.cursor = '';
+        }
+        return;
+      }
+      const now = performance.now();
+      if (now - hoverAt < 50) return;
+      hoverAt = now;
+
+      const capas = CLICKABLE_LAYER_IDS.filter((id) => map.getLayer(id));
+      if (capas.length === 0) return;
+      const hit = map.queryRenderedFeatures(e.point, { layers: capas }).length > 0;
+      const quiero = hit ? 'pointer' : '';
+      // Escribir `style.cursor` con el mismo valor fuerza un recálculo de
+      // estilo en cada movimiento; se toca solo cuando de verdad cambia.
+      if (quiero !== hoverCursor) {
+        hoverCursor = quiero;
+        map.getCanvas().style.cursor = quiero;
+      }
+    });
 
     /*
      * Resalte de lo que se está consultando en una capa importada.
@@ -1523,7 +1630,9 @@ export function createMapView({
   function applyScaleLock() {
     if (!ready) return;
     const fijada = store.getState().scaleLock;
-    const gestos = [map.scrollZoom, map.touchZoomRotate, map.boxZoom];
+    // La caja de zoom no entra: está apagada siempre (ver arriba), y meterla
+    // aquí la resucitaría al quitar el candado.
+    const gestos = [map.scrollZoom, map.touchZoomRotate];
     for (const g of gestos) {
       if (!g) continue;
       if (fijada) g.disable();
@@ -1708,45 +1817,7 @@ export function createMapView({
     store.setFeatures(moveVertices(drag.base, drag.targets, lngLat));
   }
 
-  /* ---------- selección por toque y lazo rectangular ---------- */
-
-  let lasso = null;
-
-  function beginLasso(screen) {
-    lasso = { start: screen };
-  }
-
-  function moveLasso(screen) {
-    if (!lasso) return;
-    const [x0, y0] = lasso.start;
-    lassoEl.hidden = false;
-    lassoEl.style.left = `${Math.min(x0, screen[0])}px`;
-    lassoEl.style.top = `${Math.min(y0, screen[1])}px`;
-    lassoEl.style.width = `${Math.abs(screen[0] - x0)}px`;
-    lassoEl.style.height = `${Math.abs(screen[1] - y0)}px`;
-  }
-
-  /** Elementos completamente encerrados por el rectángulo. */
-  function featuresInBox(box) {
-    const out = [];
-    for (const f of store.getState().features) {
-      const rings = ringsOf(f.geometry);
-      if (rings.length === 0) continue;
-      let inside = true;
-      for (const r of rings) {
-        for (const c of r.coords) {
-          const q = map.project(c);
-          if (q.x < box[0] || q.x > box[2] || q.y < box[1] || q.y > box[3]) {
-            inside = false;
-            break;
-          }
-        }
-        if (!inside) break;
-      }
-      if (inside) out.push(f.properties.id);
-    }
-    return out;
-  }
+  /* ---------- selección ---------- */
 
   function pickAt(screen, tolerance = 16) {
     return pickFeature(store.getState().features, screen, projectLngLat, tolerance);
@@ -1826,44 +1897,6 @@ export function createMapView({
     );
   }
 
-  function endLasso(screen, info) {
-    lassoEl.hidden = true;
-    const l = lasso;
-    lasso = null;
-    if (!l) return;
-
-    if (info.longPressed) {
-      openPropsFor(screen);
-      return;
-    }
-
-    if (!info.moved) {
-      const hit = pickAt(screen);
-      if (hit) {
-        store.toggleSelection(hit.properties.id);
-        return;
-      }
-      // Elegir consume el puntero, así que el `click` de MapLibre —que es por
-      // donde se abren los atributos en Navegar— aquí no llega nunca. Sin
-      // esto, tocar un spot importado con la herramienta con la que uno
-      // naturalmente lo intenta no hacía absolutamente nada.
-      // Se limpia igual que con cualquier otro toque en vacío: el spot no es
-      // un elemento del dibujo y no entra en la selección, solo se lee.
-      store.clearSelection();
-      const spot = onStraboFeatureTap && straboHitAt(screen);
-      if (spot) onStraboFeatureTap(spot, screen);
-      return;
-    }
-
-    const box = [
-      Math.min(l.start[0], screen[0]),
-      Math.min(l.start[1], screen[1]),
-      Math.max(l.start[0], screen[0]),
-      Math.max(l.start[1], screen[1]),
-    ];
-    store.setSelection(featuresInBox(box));
-  }
-
   /**
    * Pulsación sostenida: enseña lo que hay debajo del dedo.
    *
@@ -1883,9 +1916,18 @@ export function createMapView({
    * cuál de los tres polígonos contiguos habla el recuadro.
    */
   function openPropsFor(screen) {
-    if (store.getState().selection.length === 0) {
-      const hit = pickAt(screen);
-      if (hit) store.toggleSelection(hit.properties.id);
+    /*
+     * Qué elemento describe el menú. Con varios seleccionados y el clic
+     * derecho sobre UNO de ellos, el menú es de todos: es como se le cambia la
+     * certeza a media docena de contactos de una vez. Pero si lo que hay
+     * debajo NO está en la selección, manda lo que se está señalando — antes
+     * se abría el menú de la selección anterior y parecía que el clic derecho
+     * hubiera errado el elemento.
+     */
+    const hit = pickAt(screen);
+    const seleccion = store.getState().selection;
+    if (hit && !seleccion.includes(hit.properties.id)) {
+      store.setSelection([hit.properties.id]);
     }
     if (store.getState().selection.length > 0) {
       highlightForeign(null);
@@ -1984,7 +2026,13 @@ export function createMapView({
   };
 
   const controller = new DrawController(host, container, {
-    isDrawing: () => store.getState().tool !== 'navigate',
+    /*
+     * Para el controlador, «dibujar» es quedarse el puntero. Elegir no lo
+     * hace: en Elegir el arrastre con el botón primario TIENE que llegar al
+     * mapa para que desplace, igual que en Navegar, y el clic derecho tiene
+     * que abrir el menú en vez de cerrar un elemento que no existe.
+     */
+    isDrawing: () => !['navigate', 'select'].includes(store.getState().tool),
     fingerDrawEnabled: () => store.getState().fingerDraw,
     // Seleccionar es solo tocar: el trazo libre ahí no tendría sentido. Y en
     // rumbo/manteo solo lo admite el ajuste a una traza — con brújula o con
@@ -1996,16 +2044,21 @@ export function createMapView({
       if (st.tool === 'measure' && st.measureMethod !== 'plane-fit') return 'none';
       return st.freehandMode;
     },
-    // Vértices arrastra manijas; Elegir arrastra el lazo rectangular. Los dos
-    // necesitan el mismo modo de puntero, así que se despachan por herramienta.
-    dragMode: () => ['vertices', 'select'].includes(store.getState().tool),
+    /*
+     * Con el relieve puesto, el `mousemove` de hover no llega a MapLibre
+     * mientras hay una herramienta activa: no lo necesita y le cuesta una
+     * escena entera. Ver `swallow` en drawController.js.
+     */
+    suppressHover: () => store.getState().terrain3d,
+    // Solo Nodos arrastra: agarra una manija y la mueve. En Elegir el
+    // arrastre es del mapa.
+    dragMode: () => store.getState().tool === 'vertices',
     onDragStart: (p) => {
       if (onMapTap) onMapTap();
-      return store.getState().tool === 'select' ? beginLasso(p) : beginVertexDrag(p);
+      return beginVertexDrag(p);
     },
-    onDragMove: (p) => (store.getState().tool === 'select' ? moveLasso(p) : moveVertexDrag(p)),
-    onDragEnd: (p, info) =>
-      store.getState().tool === 'select' ? endLasso(p, info) : endVertexDrag(p, info),
+    onDragMove: (p) => moveVertexDrag(p),
+    onDragEnd: (p, info) => endVertexDrag(p, info),
     // Mantener pulsado abre el menú de propiedades en cualquier herramienta:
     // es el gesto para tocar los atributos de lo que ya está dibujado sin
     // tener que cambiar a Elegir y volver.
@@ -2014,7 +2067,8 @@ export function createMapView({
       openPropsFor(p);
     },
 
-    // Shift+arrastrar gira y bascula; el botón central desplaza.
+    // El botón central desplaza. (Shift+arrastrar giraba y basculaba; ahora
+    // Shift es el modificador de selección múltiple.)
     onCameraDrag: (mode, dx, dy) => {
       /*
        * Mover la vista NO cierra los paneles, al revés que tocar el mapa: se
@@ -2155,8 +2209,13 @@ export function createMapView({
       // Sin nada en construcción, un toque limpio de dedo selecciona. Vale en
       // cualquier herramienta, no solo en Elegir: mientras el lápiz dibuja, el
       // dedo es lo que se tiene a mano para señalar un elemento.
+      //
+      // Uno a la vez, igual que el clic: el dedo no tiene Shift, así que en
+      // tablet la selección múltiple se arma desde el menú de propiedades o
+      // con `Ctrl+A`. Alternar por omisión hacía que el segundo toque dejara
+      // dos elementos marcados sin haberlo pedido.
       const hit = pickAt(screen, 18);
-      if (hit) store.toggleSelection(hit.properties.id);
+      if (hit) store.setSelection([hit.properties.id]);
       else if (st.selection.length) store.clearSelection();
     },
 
@@ -2309,7 +2368,6 @@ export function createMapView({
         showSnapMarker(null);
         traceAnchor = null;
       }
-      if (!drawing) lassoEl.hidden = true;
     }
   });
 

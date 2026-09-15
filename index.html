@@ -17,6 +17,14 @@
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
 
     <!--
+      Icono de la pestaña. El SVG manda porque a 16 px un PNG de 192 se
+      reescala a puré; el PNG queda detrás para el navegador que no lea SVG y
+      para la lista de favoritos, donde el icono se pide más grande.
+    -->
+    <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+
+    <!--
       Sin bundler: ESM nativo + import map. Todo sale de vendor/, nada de CDN.
 
       Es el requisito del modo offline: un bundle de esm.sh o de jsdelivr no es
@@ -48,7 +56,6 @@
         <div class="pen-hover" id="pen-hover" hidden></div>
         <div class="longpress-ring" id="longpress-ring" hidden></div>
         <div class="snap-marker" id="snap-marker" hidden></div>
-        <div class="lasso" id="lasso" hidden></div>
       </div>
 
       <div class="toolbar" id="toolbar">
@@ -353,6 +360,7 @@
         <button class="pill" id="btn-export" disabled>Export</button>
         <button class="pill" id="btn-shortcuts" title="Keyboard shortcuts (?)">⌨</button>
         <input type="file" id="file-gpkg" accept=".gpkg,.geopackage,.mbtiles,.pmtiles" hidden />
+        <input type="file" id="file-dem" accept=".pmtiles,.mbtiles" hidden />
         <input type="file" id="file-project" accept=".json,.fdproj,.geojson" hidden />
       </div>
 
@@ -471,6 +479,71 @@
           a ruler against the bar and type what it really measures. The bar is as wide as this
           panel allows, so a millimetre misread is well under one percent.
         </p>
+      </div>
+
+      <!--
+        Qué se puede traer de fuera. Antes el botón **Import** abría el
+        selector de archivos a pelo, y el único sitio donde estaban escritos
+        los formatos admitidos era el atributo `accept` del `<input>`, que no
+        lo lee nadie. Aquí se dicen, y además se separa lo que la app no puede
+        adivinar mirando el archivo: un PNG de teselas es idéntico sea un mapa
+        base o un modelo de elevación.
+      -->
+      <div class="dropdown hidden" id="import-menu">
+        <header>
+          <h2>Import</h2>
+          <button class="icon-btn" id="btn-close-import" aria-label="Close">✕</button>
+        </header>
+
+        <span class="palette-label">Drawing and maps</span>
+        <p class="hint">
+          <strong>.gpkg</strong> — GeoPackage: geometries, attributes and the QGIS symbology of
+          each table.<br />
+          <strong>.pmtiles</strong> · <strong>.mbtiles</strong> — offline map tiles, raster or
+          vector, as a basemap.
+        </p>
+        <button class="pill wide" id="import-map">Choose a file…</button>
+
+        <hr class="sep" />
+
+        <span class="palette-label">Elevation model</span>
+        <p class="hint">
+          <strong>.pmtiles</strong> with <strong>Terrain-RGB</strong> tiles, the lightest way to
+          carry a DEM into the field: one file, read by ranges, already pyramided, and its tiles
+          are decoded by the same code as the AWS model. <strong>.mbtiles</strong> works too, but
+          it is SQLite and loads whole into memory.
+        </p>
+        <button class="pill wide" id="import-dem">Choose an elevation model…</button>
+        <p class="hint footnote">
+          A tile file says nothing about whether it holds an image or metres, so which button you
+          press is the answer. Once loaded it becomes the elevation source for profiles, plane
+          fits, thickness and projected traces. The 3D relief and the contour lines keep using the
+          AWS model.
+        </p>
+        <p class="hint footnote" id="import-dem-current"></p>
+      </div>
+
+      <!--
+        Con qué modelo de elevación se acaba de calcular algo, y qué vale ese
+        número por culpa de él. Sale después de ajustar un plano o de proyectar
+        una traza: son las dos cuentas cuyo resultado depende por completo de
+        la resolución del DEM, y hasta ahora esa resolución solo aparecía como
+        una línea suelta en el menú de propiedades, después, y si alguien iba a
+        buscarla.
+      -->
+      <div class="dropdown hidden" id="dem-notice">
+        <header>
+          <h2>Elevation model in use</h2>
+          <button class="icon-btn" id="btn-close-dem-notice" aria-label="Close">✕</button>
+        </header>
+        <p class="hint" id="dem-notice-source"></p>
+        <p class="hint" id="dem-notice-effect"></p>
+        <div id="dem-notice-advice"></div>
+        <button class="pill wide" id="dem-notice-import">Import a finer DEM…</button>
+        <label class="check">
+          <input type="checkbox" id="dem-notice-mute" />
+          Do not show this again on this device
+        </label>
       </div>
 
       <!-- Traza de afloramiento proyectada desde una medida de rumbo y manteo.
@@ -809,6 +882,14 @@
           <span class="sub">
             Better and more recent data, but it needs a free API key and a live connection — it
             does <strong>not</strong> work in the field.
+          </span>
+          <label id="dem-imported-row" hidden>
+            <input type="radio" name="demsrc" id="dem-imported" />
+            <span id="dem-imported-label">Imported model</span>
+          </label>
+          <span class="sub" id="dem-imported-sub" hidden>
+            Your own DEM, brought in from <strong>Import</strong> as Terrain-RGB tiles. Works with
+            no signal and is normally the finest of the three.
           </span>
         </fieldset>
 

@@ -191,6 +191,10 @@ async function openPmtiles(file, id) {
     id,
     label: name,
     protocol: 'pmtiles',
+    // El archivo abierto, para poder leer una tesela suelta sin pasar por el
+    // protocolo de MapLibre: es lo que necesita el muestreo de cotas cuando el
+    // DEM viene de aquí y no de la red. Ver `readTileBytes`.
+    archive,
     url: `pmtiles://${archive.source.getKey()}/{z}/{x}/{y}`,
     tileKind,
     format: tileKind === 'vector' ? 'pbf' : 'raster',
@@ -212,6 +216,21 @@ export async function openTileFile(file, id) {
   if (name.endsWith('.pmtiles')) return openPmtiles(file, id);
   if (name.endsWith('.mbtiles')) return openMbtiles(file, id);
   throw new Error('Formato no reconocido: se esperaba .mbtiles o .pmtiles');
+}
+
+/**
+ * Los bytes crudos de una tesela, sin pasar por MapLibre.
+ *
+ * MapLibre lee estos archivos por su protocolo, que solo sabe contestarle a
+ * él. Para muestrear cotas —un perfil, un ajuste de plano— hace falta pedir
+ * una tesela concreta desde código normal, y eso es esto.
+ */
+export async function readTileBytes(descriptor, z, x, y) {
+  if (descriptor.protocol === 'mbtiles') return readMbtilesTile(descriptor.id, z, x, y);
+  if (!descriptor.archive) throw new Error('El archivo PMTiles ya no está abierto');
+  const r = await descriptor.archive.getZxy(z, x, y);
+  if (!r || !r.data) return new Uint8Array(0);
+  return r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
 }
 
 export function disposeTileSet(descriptor) {

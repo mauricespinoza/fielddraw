@@ -53,6 +53,7 @@ import {
   OPENTOPO_SIGNUP,
   OpenTopoSampler,
   TERRARIUM_NOMINAL_M,
+  TileDemSampler,
 } from './dem.js';
 import {
   formatDistance,
@@ -70,7 +71,7 @@ import {
   saveOpenTopoKey,
 } from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
-import { MBTILES_WARN_BYTES, openTileFile } from './tiles.js';
+import { MBTILES_WARN_BYTES, openTileFile, readTileBytes } from './tiles.js';
 import {
   applyCut,
   applyLinesToPolygon,
@@ -958,6 +959,8 @@ const POPOVERS = [
   'shortcuts',
   'trace-menu',
   'trace-type-menu',
+  'import-menu',
+  'dem-notice',
 ];
 
 /**
@@ -1498,8 +1501,29 @@ const BANNER_FADE_MS = 600;
 let bannerFadeTimer = null;
 let bannerHideTimer = null;
 
-export function showBanner(text, variant = 'warn') {
+/**
+ * Lo que hay que deshacer cuando el aviso de ahora desaparezca.
+ *
+ * Existe por el espesor estratigráfico: mientras su resultado está en pantalla
+ * el mapa dibuja la línea punteada entre las dos superficies y el punto
+ * auxiliar desde el que se midió, y eso solo tiene sentido mientras se está
+ * leyendo el número. Cerrado el aviso, es basura sobre el dibujo.
+ */
+let bannerCleanup = null;
+
+function runBannerCleanup() {
+  const fn = bannerCleanup;
+  bannerCleanup = null;
+  if (fn) fn();
+}
+
+export function showBanner(text, variant = 'warn', { onDismiss = null } = {}) {
   const el = $('banner');
+  // Un aviso nuevo se lleva por delante al anterior, así que lo que aquel
+  // dejara pendiente de limpiar se limpia ahora y no cuando caduque su reloj.
+  runBannerCleanup();
+  bannerCleanup = onDismiss;
+
   $('banner-text').textContent = text;
   el.classList.remove('hidden', 'fade-out');
   el.classList.toggle('info', variant === 'info');
@@ -1510,7 +1534,10 @@ export function showBanner(text, variant = 'warn') {
   clearTimeout(bannerHideTimer);
   bannerFadeTimer = setTimeout(() => {
     el.classList.add('fade-out');
-    bannerHideTimer = setTimeout(() => el.classList.add('hidden'), BANNER_FADE_MS);
+    bannerHideTimer = setTimeout(() => {
+      el.classList.add('hidden');
+      runBannerCleanup();
+    }, BANNER_FADE_MS);
   }, BANNER_TIMEOUT_MS);
 }
 
@@ -2017,6 +2044,11 @@ let profileBusy = false;
 let terrariumSampler = null;
 
 function samplerFor(state) {
+  // El DEM propio manda cuando está elegido: es el único que puede tener
+  // metros donde los demás tienen decenas.
+  if (state.profileSource === 'imported' && state.demSet) {
+    return demSamplerFor(state.demSet);
+  }
   if (state.profileSource === 'opentopo') {
     // Este sí se crea nuevo cada vez: cachea UN recorte, y el recorte depende
     // de la traza que se acaba de dibujar.
@@ -2336,6 +2368,8 @@ async function runPlane(pending) {
     const resumen = `${formatStrikeDip(r.strike, r.dip)} (dip ${quadrant(r.dipAzimuth)}) ±${round1(r.dipSd)}° over a ${Math.round(r.baseline)} m base.`;
     if (r.warnings.length) showBanner(`${resumen} ${r.warnings.join(' ')}`);
     else showBanner(`${resumen} Tap it to see the full quality figures.`, 'info');
+    // De qué modelo salió el número, que es lo que decide cuánto vale.
+    showDemNotice(pending.method === 'three-point' ? 'That three-point plane' : 'That fitted plane');
   } catch (err) {
     showBanner(err.message);
     store.clearPendingPlane();
@@ -2412,9 +2446,17 @@ async function runThickness(pending) {
       demSource: st.profileSource,
     });
 
+    /*
+     * El dibujo auxiliar —la línea punteada entre las dos superficies y el
+     * punto desde el que se midió— vive lo que vive el aviso. Es lo que
+     * explica el número mientras se lee; en cuanto el aviso se va, sin nada
+     * que lo nombre, queda como un trazo suelto sobre la carta que además no
+     * se puede seleccionar ni borrar como los demás.
+     */
     const resumen = `True thickness ${formatMetres(r.thickness)} ±${formatMetres(r.sd)} · ${Math.round(r.separation)} m apart, ${Math.round(r.obliquity)}° off the bedding normal.`;
-    if (r.warnings.length) showBanner(`${resumen} ${r.warnings.join(' ')}`);
-    else showBanner(resumen, 'info');
+    const limpiar = { onDismiss: () => store.clearThickness() };
+    if (r.warnings.length) showBanner(`${resumen} ${r.warnings.join(' ')}`, 'warn', limpiar);
+    else showBanner(resumen, 'info', limpiar);
   } catch (err) {
     showBanner(err.message);
     store.clearPendingThickness();
@@ -2422,6 +2464,145 @@ async function runThickness(pending) {
     setBusy(null);
     thicknessBusy = false;
   }
+}
+
+/* ---------- de qué modelo de elevación salen los números ---------- */
+
+const DEM_NOTICE_MUTE_KEY = 'fielddraw.demNotice.muted';
+
+function demNoticeMuted() {
+  try {
+    return localStorage.getItem(DEM_NOTICE_MUTE_KEY) === '1';
+  } catch {
+    // Safari en privado lanza al leer; el aviso simplemente se enseña.
+    return false;
+  }
+}
+
+/**
+ * Formatos de elevación que se pueden traer de fuera, de mejor a peor.
+ *
+ * **PMTiles con teselas Terrain-RGB es el formato**, y la respuesta no es de
+ * gusto sino de lo que un navegador puede hacer sin ayuda:
+ *
+ * - Es **un solo archivo** y se lee por **rangos HTTP**: se baja el pedazo que
+ *   se está mirando y nada más. Un GeoTIFF de una hoja entera hay que cargarlo
+ *   completo en memoria antes de poder leer una cota — en una tablet eso es la
+ *   diferencia entre funcionar y quedarse sin RAM.
+ * - Viene **piramidado**: cada zoom tiene su propio nivel ya remuestreado, que
+ *   es justo lo que necesitan tanto el relieve como las curvas de nivel.
+ * - Sus teselas son **PNG Terrain-RGB**, el mismo empaquetado que ya decodifica
+ *   la app para el DEM de AWS. No hace falta ni un decodificador nuevo ni una
+ *   dependencia más, que en un proyecto sin `node_modules` no es un detalle.
+ * - Y la app **ya lo abre**: es el formato con el que se llevan los mapas base
+ *   a terreno.
+ *
+ * MBTiles sirve igual de bien salvo por una cosa que importa en tablet: es
+ * SQLite y se carga entero en memoria. Para un DEM de una zona de trabajo
+ * pequeña da lo mismo; para una región, no.
+ */
+const DEM_IMPORT_FORMATS = [
+  {
+    ext: '.pmtiles',
+    label: 'PMTiles con teselas Terrain-RGB',
+    note: 'un archivo, leído por rangos: es el que conviene',
+  },
+  {
+    ext: '.mbtiles',
+    label: 'MBTiles con teselas Terrain-RGB',
+    note: 'igual de bueno, pero se carga entero en memoria',
+  },
+];
+
+/**
+ * Qué modelo está en uso ahora mismo y qué resolución tiene.
+ * @returns {{label: string, nominal: number, offline: boolean}}
+ */
+function demInUse(st) {
+  if (st.profileSource === 'imported' && st.demSet) {
+    const s = demSamplerFor(st.demSet);
+    return { label: `${s.label} (imported)`, nominal: Math.round(s.nominal), offline: true };
+  }
+  if (st.profileSource === 'opentopo') {
+    const dem = OPENTOPO_DEM_BY_ID.get(st.opentopoDem);
+    return {
+      label: dem ? `${dem.label} (OpenTopography)` : 'OpenTopography',
+      nominal: dem ? dem.nominal : 30,
+      offline: false,
+    };
+  }
+  return { label: 'AWS Terrain Tiles', nominal: TERRARIUM_NOMINAL_M, offline: true };
+}
+
+/**
+ * Avisa de con qué modelo se acaba de calcular, y de qué vale por eso.
+ *
+ * Se enseña después de ajustar un plano y después de proyectar una traza: son
+ * las dos cuentas en las que la resolución del DEM NO es un detalle de fondo
+ * sino el límite del resultado. Un manteo sacado de una base de cien metros
+ * sobre celdas de treinta arrastra varios grados de error, y una traza a un
+ * kilómetro los amplifica todo lo que haga falta.
+ *
+ * Se puede callar para siempre, porque quien ya lo sabe no necesita leerlo en
+ * cada medida; pero se enseña por omisión, porque quien no lo sabe está
+ * citando un número sin su letra pequeña.
+ */
+function showDemNotice(contexto) {
+  if (demNoticeMuted()) return;
+  const st = store.getState();
+  const dem = demInUse(st);
+
+  $('dem-notice-source').textContent =
+    `${contexto} used ${dem.label}, about ${dem.nominal} m per cell${dem.offline ? ' — the same tiles that draw the contour lines, so it works with no signal' : ''}.`;
+  $('dem-notice-effect').textContent =
+    `A ${dem.nominal} m cell is the floor on what any of this can resolve: a dip fitted over a base shorter than two cells is noise, and every metre of vertical error moves a projected trace sideways by that metre divided by the tangent of the dip.`;
+
+  const advice = $('dem-notice-advice');
+  advice.replaceChildren();
+  const h = document.createElement('span');
+  h.className = 'palette-label';
+  h.textContent = 'A finer model, if you have one';
+  advice.appendChild(h);
+
+  const lista = document.createElement('div');
+  lista.className = 'hint';
+  lista.textContent =
+    'A LiDAR or photogrammetric DEM of the survey area — 1 to 5 m — changes what these numbers are worth. Bring it in as Terrain-RGB tiles:';
+  advice.appendChild(lista);
+
+  for (const f of DEM_IMPORT_FORMATS) {
+    const fila = document.createElement('div');
+    fila.className = 'attrs-row';
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = f.ext;
+    const v = document.createElement('span');
+    v.className = 'v';
+    v.textContent = f.note;
+    fila.append(k, v);
+    advice.appendChild(fila);
+  }
+
+  $('dem-notice-mute').checked = false;
+  openPanel('dem-notice');
+}
+
+function wireDemNotice() {
+  $('btn-close-dem-notice').addEventListener('click', () =>
+    $('dem-notice').classList.add('hidden'),
+  );
+  $('dem-notice-import').addEventListener('click', () => {
+    $('dem-notice').classList.add('hidden');
+    $('file-gpkg').click();
+  });
+  $('dem-notice-mute').addEventListener('change', (e) => {
+    try {
+      if (e.target.checked) localStorage.setItem(DEM_NOTICE_MUTE_KEY, '1');
+      else localStorage.removeItem(DEM_NOTICE_MUTE_KEY);
+    } catch {
+      /* sin almacenamiento el aviso seguirá saliendo, que es el lado seguro */
+    }
+  });
 }
 
 /* ---------- traza de un plano sobre el terreno ---------- */
@@ -2537,6 +2718,7 @@ async function runPlaneTrace() {
     openTraceTypeMenu();
     if (mapBridge) mapBridge.fitToCoords(r.coords, paddingParaPanel('trace-type-menu'));
     if (r.warnings.length) showBanner(r.warnings.join(' '));
+    demNoticePendiente = 'That projected trace';
   } catch (err) {
     showBanner(err.message);
   } finally {
@@ -2707,6 +2889,7 @@ function addTraceAsLine() {
     },
   });
   $('trace-type-menu').classList.add('hidden');
+  flushDemNotice();
   if (f) {
     const tipo = LINE_TYPE_BY_ID.get(f.properties.type);
     showBanner(
@@ -2719,6 +2902,22 @@ function addTraceAsLine() {
 function discardTrace() {
   store.clearPlaneTrace();
   $('trace-type-menu').classList.add('hidden');
+  flushDemNotice();
+}
+
+/**
+ * El aviso del modelo, aplazado hasta que el cuadro de la traza se cierre.
+ *
+ * Los dos son desplegables y se taparían uno al otro. El de «¿qué es esta
+ * línea?» va primero porque es el que hay que contestar; el del modelo llega
+ * después, cuando ya hay algo que juzgar.
+ */
+let demNoticePendiente = null;
+
+function flushDemNotice() {
+  const ctx = demNoticePendiente;
+  demNoticePendiente = null;
+  if (ctx) showDemNotice(ctx);
 }
 
 function wireTraceMenus() {
@@ -2957,6 +3156,73 @@ async function runMerge() {
   }
 }
 
+/** Qué DEM propio hay cargado, si hay alguno. */
+function renderImportMenu() {
+  const { demSet } = store.getState();
+  $('import-dem-current').textContent = demSet
+    ? `Loaded: ${demSet.label} · z${demSet.minzoom}–${demSet.maxzoom}, about ${Math.round(demSamplerFor(demSet).nominal)} m per cell.`
+    : 'No elevation model imported: the AWS tiles (~30 m) are in use.';
+}
+
+/**
+ * Abre un DEM propio y lo deja como origen de cotas.
+ *
+ * Se comprueba leyendo una tesela de verdad y mirando si los números que salen
+ * son cotas plausibles. Un PNG de mapa base decodificado como Terrain-RGB da
+ * valores disparatados —decenas de miles de metros, o el fondo del mar en una
+ * cumbre—, y cargarlo en silencio dejaría todos los manteos de la sesión
+ * calculados sobre el color de una imagen satelital.
+ */
+async function doImportDem(file) {
+  setBusy(`Opening ${file.name}…`);
+  try {
+    const id = `dem-${Date.now().toString(36)}`;
+    const descriptor = await openTileFile(file, id);
+    if (descriptor.tileKind !== 'raster') {
+      showBanner('An elevation model has to be raster tiles; that file holds vector tiles.');
+      return;
+    }
+
+    const sampler = demSamplerFor(descriptor);
+    const centro = descriptor.bounds
+      ? [
+          (descriptor.bounds[0] + descriptor.bounds[2]) / 2,
+          (descriptor.bounds[1] + descriptor.bounds[3]) / 2,
+        ]
+      : null;
+    const z = centro ? await sampler.elevationAt(centro[0], centro[1]) : null;
+    if (!Number.isFinite(z) || z < -500 || z > 9000) {
+      showBanner(
+        centro
+          ? `That file does not decode as Terrain-RGB: the middle of its coverage reads ${z === null ? 'no data' : `${Math.round(z)} m`}. Is it a basemap rather than an elevation model?`
+          : 'That file declares no bounds, so it cannot be checked as an elevation model.',
+      );
+      return;
+    }
+
+    store.setDemSet(descriptor);
+    showBanner(
+      `${descriptor.label}: elevation model at about ${Math.round(sampler.nominal)} m per cell (z${descriptor.maxzoom}). Profiles, plane fits and traces now read from it.`,
+      'info',
+    );
+  } catch (err) {
+    showBanner(`Could not open the elevation model: ${err.message}`);
+  } finally {
+    setBusy(null);
+  }
+}
+
+/** Un muestreador por descriptor; decodificar teselas se cachea dentro. */
+const demSamplers = new WeakMap();
+function demSamplerFor(descriptor) {
+  let s = demSamplers.get(descriptor);
+  if (!s) {
+    s = new TileDemSampler(descriptor, readTileBytes);
+    demSamplers.set(descriptor, s);
+  }
+  return s;
+}
+
 async function doImportGeoPackage(file) {
   setBusy(`Reading ${file.name}…`);
   try {
@@ -3112,8 +3378,8 @@ function renderStatus() {
     }
   } else if (s.tool === 'select') {
     $('status-text').textContent = s.selection.length
-      ? `${s.selection.length} selected · tap another to add it, or outside to clear`
-      : 'Tap a feature to select it';
+      ? `${s.selection.length} selected · Shift+click adds · right-click opens the menu · drag pans`
+      : 'Click a feature to select it · Shift+click selects several · drag pans the map';
   } else if (s.tool === 'vertices') {
     const base =
       s.vertexMode === 'add'
@@ -3234,7 +3500,22 @@ function syncSettingsUI() {
   }
   $(s.freehandMode === 'drag' ? 'fh-drag' : 'fh-hold').checked = true;
   $(s.cutSource === 'feature' ? 'cut-feature' : 'cut-draw').checked = true;
-  $(s.profileSource === 'opentopo' ? 'dem-opentopo' : 'dem-terrarium').checked = true;
+  // La tercera opción solo existe si hay un DEM propio cargado: ofrecerla
+  // vacía sería un botón que no hace nada.
+  const propio = !!s.demSet;
+  $('dem-imported-row').hidden = !propio;
+  $('dem-imported-sub').hidden = !propio;
+  if (propio) {
+    const sam = demSamplerFor(s.demSet);
+    $('dem-imported-label').textContent = `${sam.label} (~${Math.round(sam.nominal)} m)`;
+  }
+  const elegida =
+    s.profileSource === 'imported' && propio
+      ? 'dem-imported'
+      : s.profileSource === 'opentopo'
+        ? 'dem-opentopo'
+        : 'dem-terrarium';
+  $(elegida).checked = true;
 }
 
 export function initUI() {
@@ -3346,7 +3627,19 @@ export function initUI() {
   $('btn-export-geojson').addEventListener('click', () =>
     downloadGeoJSON(store.getState().features),
   );
-  $('btn-import').addEventListener('click', () => $('file-gpkg').click());
+  $('btn-import').addEventListener('click', () => {
+    renderImportMenu();
+    togglePanel('import-menu');
+  });
+  $('btn-close-import').addEventListener('click', () => $('import-menu').classList.add('hidden'));
+  $('import-map').addEventListener('click', () => {
+    $('import-menu').classList.add('hidden');
+    $('file-gpkg').click();
+  });
+  $('import-dem').addEventListener('click', () => {
+    $('import-menu').classList.add('hidden');
+    $('file-dem').click();
+  });
   $('file-gpkg').addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = ''; // permite reimportar el mismo archivo
@@ -3355,6 +3648,11 @@ export function initUI() {
     if (name.endsWith('.mbtiles') || name.endsWith('.pmtiles')) doOpenTiles(file);
     else doImportGeoPackage(file);
   });
+  $('file-dem').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) doImportDem(file);
+  });
   $('banner-close').addEventListener('click', () => {
     // Cerrar a mano también apaga los relojes: sin esto, el desvanecimiento
     // programado le quitaba la clase `hidden` que la persona acababa de poner.
@@ -3362,6 +3660,7 @@ export function initUI() {
     clearTimeout(bannerHideTimer);
     $('banner').classList.remove('fade-out');
     $('banner').classList.add('hidden');
+    runBannerCleanup();
   });
 
   $('fh-hold').addEventListener('change', () => store.setFreehandMode('hold'));
@@ -3407,6 +3706,7 @@ export function initUI() {
   $('opentopo-signup').textContent = OPENTOPO_SIGNUP;
 
   $('dem-terrarium').addEventListener('change', () => store.setProfileSource('terrarium'));
+  $('dem-imported').addEventListener('change', () => store.setProfileSource('imported'));
   $('dem-opentopo').addEventListener('change', () => {
     store.setProfileSource('opentopo');
     if (!store.getState().opentopoKey.trim()) {
@@ -3441,6 +3741,7 @@ export function initUI() {
   wireStructureControls();
   syncStructureControls();
   wireTraceMenus();
+  wireDemNotice();
 
   // Mismo gancho de depuración que monta mapView: la traza se abre desde el
   // menú de propiedades de una medida, y eso desde una prueba de navegador

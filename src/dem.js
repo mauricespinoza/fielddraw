@@ -593,3 +593,111 @@ export class OpenTopoSampler {
     });
   }
 }
+
+/**
+ * Cotas leídas de un DEM propio, traído a terreno como teselas Terrain-RGB.
+ *
+ * POR QUÉ ESTE FORMATO Y NO UN GEOTIFF
+ *
+ * Un GeoTIFF —aunque sea COG— hay que abrirlo entero antes de poder leer una
+ * cota, y descomprimirlo pide un decodificador que este proyecto no tiene y no
+ * quiere (ver README: nada de `node_modules`). Un juego de teselas Terrain-RGB
+ * empaquetado en **PMTiles** resuelve las tres cosas a la vez: se lee por
+ * rangos —solo el pedazo que se está mirando—, viene piramidado, y sus teselas
+ * son PNG con el mismo empaquetado de metros que ya decodifica `DemSampler`
+ * para el modelo de AWS. Cero dependencias nuevas.
+ *
+ * La diferencia con `DemSampler` es de dónde salen los bytes: allí de la red
+ * con un `<img>`, aquí del archivo local a través de `tiles.js`. Decodificar
+ * es idéntico, así que se comparte `decodeElevation`.
+ */
+export class TileDemSampler {
+  /**
+   * @param {object} descriptor  el que devuelve `openTileFile`
+   * @param {(d: object, z: number, x: number, y: number) => Promise<Uint8Array>} readTile
+   * @param {object} [opts]
+   */
+  constructor(descriptor, readTile, { encoding = 'terrarium', tileSize = 256 } = {}) {
+    this.descriptor = descriptor;
+    this.readTile = readTile;
+    this.encoding = encoding;
+    this.tileSize = tileSize;
+    /*
+     * Se muestrea al zoom MÁXIMO del archivo, que es donde está el dato sin
+     * remuestrear. Es justo lo contrario de lo que conviene para dibujar el
+     * relieve —ahí se pide el zoom de la vista— porque aquí no se pinta nada:
+     * se lee un número y se quiere el mejor que haya.
+     */
+    this.zoom = Number.isFinite(descriptor.maxzoom) ? descriptor.maxzoom : 14;
+    /** clave "z/x/y" -> Promise<Float32Array|null> */
+    this.tiles = new Map();
+  }
+
+  /** Metros por celda: el tamaño real del dato que trae este archivo. */
+  get nominal() {
+    const lat = this.descriptor.bounds
+      ? (this.descriptor.bounds[1] + this.descriptor.bounds[3]) / 2
+      : 0;
+    return metresPerPixel(this.zoom, lat);
+  }
+
+  get label() {
+    return this.descriptor.label || 'Imported DEM';
+  }
+
+  loadTile(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    const guardada = this.tiles.get(key);
+    if (guardada) return guardada;
+
+    const promesa = (async () => {
+      try {
+        const bytes = await this.readTile(this.descriptor, z, x, y);
+        if (!bytes || bytes.length === 0) return null;
+        const bitmap = await createImageBitmap(new Blob([bytes]));
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(bitmap, 0, 0);
+        const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+        bitmap.close();
+        const out = new Float32Array(bitmap.width * bitmap.height);
+        for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+          out[j] =
+            this.encoding === 'mapbox'
+              ? -10000 + (data[i] * 65536 + data[i + 1] * 256 + data[i + 2]) * 0.1
+              : decodeElevation(data[i], data[i + 1], data[i + 2]);
+        }
+        // El tamaño real manda sobre el supuesto: hay teselas de 512.
+        this.tileSize = bitmap.width;
+        return out;
+      } catch {
+        // Un hueco de cobertura no es un error que deba tumbar el perfil.
+        return null;
+      }
+    })();
+
+    this.tiles.set(key, promesa);
+    return promesa;
+  }
+
+  async elevationAt(lng, lat) {
+    const { x, y, px, py } = lngLatToTilePixel(lng, lat, this.zoom, this.tileSize);
+    const tile = await this.loadTile(this.zoom, x, y);
+    if (!tile) return null;
+    const v = tile[py * this.tileSize + px];
+    return Number.isFinite(v) && v > -12000 ? v : null;
+  }
+
+  async profile(coords, samples = 200) {
+    const latMedia = coords.length ? coords[Math.floor(coords.length / 2)][1] : 0;
+    return buildProfile(coords, samples, (lng, lat) => this.elevationAt(lng, lat), {
+      source: 'imported',
+      label: `${this.label} · imported`,
+      step: metresPerPixel(this.zoom, latMedia),
+      nominal: this.nominal,
+      offline: true,
+    });
+  }
+}
