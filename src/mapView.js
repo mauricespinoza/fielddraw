@@ -2038,9 +2038,22 @@ export function createMapView({
     // rumbo/manteo solo lo admite el ajuste a una traza — con brújula o con
     // tres puntos, un trazo libre pondría cientos de puntos donde se esperan
     // uno o tres.
+    //
+    // El espesor es igual de tajante: es un solo toque sobre la otra
+    // superficie. Sin esta excepción, el modo por defecto —mantener pulsado
+    // arranca un trazo libre a los 320 ms— se cuela también aquí: un clic
+    // sostenido un instante de más (no hace falta moverse; el temporizador de
+    // `hold` no exige arrastre) convierte ese toque en el arranque de un
+    // trazo libre, y como un trazo de un solo punto no llega a publicarse
+    // (`onStrokeEnd` pide al menos dos), el segundo punto del espesor NUNCA
+    // se registra: `thicknessFrom` queda puesto, la herramienta se queda en
+    // «thickness» para siempre, y con ella el ancla punteada en el mapa y el
+    // mapa entero capturado por el controlador de dibujo en vez de por
+    // Elegir. Eso es justo lo que se veía como «el punteado no se quita» y
+    // «Elegir se queda pegada» después de medir un espesor.
     freehandMode: () => {
       const st = store.getState();
-      if (st.tool === 'select') return 'none';
+      if (st.tool === 'select' || st.tool === 'thickness') return 'none';
       if (st.tool === 'measure' && st.measureMethod !== 'plane-fit') return 'none';
       return st.freehandMode;
     },

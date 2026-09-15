@@ -105,6 +105,25 @@ console.log('== arrastrar antes del hold => NO trazo libre ==');
   ok('cae de vuelta a vértice', h.kinds().includes('vertex'));
 }
 
+console.log('== espesor: sostener el toque no debe robarlo como trazo libre ==');
+{
+  // mapView le dice a freehandMode() que devuelva 'none' en la herramienta de
+  // espesor, igual que en Elegir: es un solo toque sobre la otra superficie,
+  // y con el 'hold' de por defecto sostenerlo un instante de más lo convertía
+  // en el arranque de un trazo libre. Como ese trazo nunca llegaba a los dos
+  // puntos que pide `onStrokeEnd`, el toque se perdía entero: nunca llegaba
+  // el `onVertex` que cierra la medida, la herramienta se quedaba pegada en
+  // «thickness» y el punteado del ancla no se volvía a quitar.
+  const h = harness({ mode: 'none' });
+  h.ev('pointerdown', { clientX: 50, clientY: 50 });
+  await sleep(400); // de sobra para el hold de 320 ms, que aquí no debe dispararse
+  ok('no activa trazo libre', !h.kinds().includes('strokeStart'));
+  ok('no arma el anillo de long-press', !h.kinds().includes('arm'));
+  h.ev('pointerup', { clientX: 50, clientY: 50 });
+  await sleep(10);
+  ok('el toque cierra como vértice', h.kinds().includes('vertex'));
+}
+
 console.log('== modo arrastre => trazo libre inmediato ==');
 {
   const h = harness({ mode: 'drag' });

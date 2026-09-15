@@ -610,7 +610,10 @@ export function addVertex(p) {
 }
 
 export function appendStroke(pts) {
-  if (state.tool === 'navigate' || state.tool === 'select' || pts.length === 0) return;
+  // El espesor es de un solo toque; si un trazo libre llega a colarse (ver el
+  // comentario de `freehandMode` en mapView.js), se descarta aquí también en
+  // vez de dejarlo abrir un borrador de línea que nadie pidió.
+  if (state.tool === 'navigate' || state.tool === 'select' || state.tool === 'thickness' || pts.length === 0) return;
   const draft = state.draft || { kind: geomKindForTool(state.tool), coords: [] };
   set({ draft: { ...draft, coords: [...draft.coords, ...pts] } });
 }
