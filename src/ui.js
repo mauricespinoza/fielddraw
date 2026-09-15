@@ -2716,7 +2716,11 @@ async function runPlaneTrace() {
      * es lo único que hay que mirar para contestar la pregunta.
      */
     openTraceTypeMenu();
-    if (mapBridge) mapBridge.fitToCoords(r.coords, paddingParaPanel('trace-type-menu'));
+    // Solo se toca el zoom si la traza se sale de lo que ya se ve: tocarla
+    // salió a acercarla, se sabe dónde está mirando el usuario, y alejar la
+    // vista de golpe cada vez —incluso cuando la traza entera ya cabía— era
+    // el salto que sobraba.
+    if (mapBridge) mapBridge.fitToCoordsIfOffscreen(r.coords, paddingParaPanel('trace-type-menu'));
     if (r.warnings.length) showBanner(r.warnings.join(' '));
     demNoticePendiente = 'That projected trace';
   } catch (err) {

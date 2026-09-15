@@ -1188,6 +1188,19 @@ export function createMapView({
     }
   }
 
+  /** Caja que envuelve una lista de coordenadas [lng,lat], o null si ninguna vale. */
+  function coordBounds(coords) {
+    const bounds = new maplibregl.LngLatBounds();
+    let any = false;
+    for (const c of coords) {
+      if (Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+        bounds.extend(c);
+        any = true;
+      }
+    }
+    return any ? bounds : null;
+  }
+
   function fitToGeoJSON(fc, padding = 60) {
     const bounds = new maplibregl.LngLatBounds();
     let any = false;
@@ -2437,6 +2450,27 @@ export function createMapView({
         },
         padding,
       );
+    },
+    /**
+     * Igual que `fitToCoords`, pero no mueve la vista si la polilínea ya cabe
+     * entera en lo que se ve.
+     *
+     * La traza que sale de un corte del DEM se dibuja donde ya se estaba
+     * mirando —el usuario tocó una medida ahí mismo—, así que la mayoría de
+     * las veces cabe sola. Encuadrar siempre, sin preguntar, alejaba la vista
+     * de golpe aunque la traza entera ya estuviera a la vista: un salto que no
+     * hacía falta. Aquí solo se toca el zoom cuando de verdad se sale de
+     * pantalla, y ahí sí se ajusta a su largo total y no más.
+     */
+    fitToCoordsIfOffscreen(coords, padding) {
+      if (!Array.isArray(coords) || coords.length === 0) return;
+      const bounds = coordBounds(coords);
+      if (!bounds) return;
+      const visible = map.getBounds();
+      if (visible.contains(bounds.getNorthEast()) && visible.contains(bounds.getSouthWest())) {
+        return;
+      }
+      map.fitBounds(bounds, { padding, maxZoom: 16, duration: 700 });
     },
     destroy() {
       controller.destroy();
