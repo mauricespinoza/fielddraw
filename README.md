@@ -30,7 +30,7 @@ al código. Ver **Publicar y usar sin señal**.
 for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
 ```
 
-1204 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1213 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -179,15 +179,16 @@ carga.
 | Navegar | dos dedos (siempre), o herramienta **Navegar** |
 | Seleccionar | un toque con el dedo o un clic, **en cualquier herramienta**: uno a la vez |
 | Seleccionar varios | `Shift` + clic sobre cada uno (PC) |
-| Propiedades | mantener pulsado ~1 s, o **clic derecho**, en cualquier herramienta |
+| Propiedades | mantener pulsado ~1 s, o **clic derecho**, en cualquier herramienta y en 2D o 3D |
 | Atributos de una capa importada | mantener pulsado ~1 s donde no haya dibujo propio |
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
 | Deshacer | doble toque con **dos dedos** |
 | Rehacer | doble toque con **tres dedos** |
 | Continuar una línea | seleccionarla y pulsar `L` o **Línea**; o **Continue line** en el menú de propiedades |
-| Mover un vértice | herramienta **Nodos**, modo *Mover*, y arrastrar la manija |
-| Insertar un vértice | **Nodos** → *Añadir*, y tocar el borde; o arrastrar un punto medio |
-| Borrar un vértice | **Nodos** → *Borrar*, y tocar la manija; o doble toque en modo *Mover* |
+| Editar nodos | seleccionar y pulsar **Edit nodes** en el menú de propiedades; o la herramienta **Edit Nodes** (`N`) |
+| Mover un vértice | **Edit Nodes**, modo *Mover*, y arrastrar la manija |
+| Insertar un vértice | **Edit Nodes** → *Añadir*, y tocar el borde; o arrastrar un punto medio |
+| Borrar un vértice | **Edit Nodes** → *Borrar*, y tocar la manija; o doble toque en modo *Mover* |
 | Cortar | seleccionar, luego **Cortar**: dibujar la línea, o tocar otro elemento |
 | Unir | seleccionar dos o más y pulsar **Unir** |
 | Compartir vértices | **Topología** (sobre la selección, o sobre todo el dibujo) |
@@ -229,7 +230,7 @@ explican fallos que parecen aleatorios:
   en la pantalla se descartara por parecer un gesto a dos manos: el dedo no
   seleccionaba, no cerraba y no abría el menú, justo en la situación en la que
   más se usa.
-- En **Nodos** el dedo sí se consume, aunque haya Pencil: sin eso no hay forma
+- En **Edit Nodes** el dedo sí se consume, aunque haya Pencil: sin eso no hay forma
   de agarrar una manija con el dedo. El precio es que ahí el paneo con un dedo
   no está disponible; se navega con dos, como en el resto de la app. **Elegir**
   ya no consume nada (ver abajo).
@@ -257,6 +258,49 @@ Ahora:
 Con el dedo no hay `Shift`, así que en tablet la selección múltiple se arma
 desde `Ctrl+A` o desde el propio menú; el toque limpio sigue seleccionando uno
 y la pulsación sostenida sigue abriendo el menú.
+
+### El clic derecho no podía depender del evento `contextmenu`
+
+En PC el menú de propiedades salía unas veces sí y otras no. No era un
+problema de puntería: eran tres cosas distintas sumándose, y las tres tenían
+que ver con **cuándo** llega —o si llega— el evento `contextmenu`.
+
+1. **Con una herramienta activa, el clic derecho ni siquiera llegaba a
+   plantearse.** `DrawController` se quedaba el `pointerdown` del botón derecho
+   igual que el del izquierdo, lo anulaba y arrancaba un gesto. Anular el
+   `pointerdown` suprime el `mousedown`, y Chrome cuelga el `contextmenu`
+   justo de ahí: el evento no se emitía nunca. Peor todavía, el gesto seguía
+   su curso y al soltar terminaba en `onVertex`, o sea que el clic derecho
+   **ponía un vértice**. Con una línea seleccionada y **Edit Nodes** en la
+   mano —justo el momento en que uno quiere el menú— el resultado era que no
+   pasaba nada visible.
+2. **La decisión se tomaba mirando la herramienta, no el dibujo.** Con
+   cualquiera que no fuera Navegar o Elegir, el clic derecho significaba
+   «cerrar el elemento» y ahí se acababa, hubiera o no algo que cerrar.
+3. **El cierre de paneles se comía el menú recién abierto.** El manejador de
+   `contextmenu` de `ui.js` cerraba todo lo flotante, y cuál de los dos ganaba
+   dependía del navegador: Chrome emite el `contextmenu` con el `mousedown`
+   (llega antes, el menú se abría después, bien), pero Firefox y Safari lo
+   emiten al soltar, o sea encima del menú que el `pointerup` acababa de
+   abrir, y lo cerraban.
+
+Lo que hay ahora:
+
+- El botón secundario se aparta del camino del dibujo en el `pointerdown` y se
+  sigue aparte (`this.secondary`). No se anula el evento, que es lo que
+  mantiene el giro y el basculado con el botón derecho —los hace MapLibre.
+- El clic se resuelve **en el primero de los dos avisos que llegue**,
+  `contextmenu` o `pointerup`, y `fireSecondary` garantiza que solo cuente una
+  vez. Así da igual el navegador, y da igual que el `contextmenu` no llegue.
+- Qué significa lo decide `mapView` mirando si hay un elemento **a medio
+  trazar**, no qué herramienta está activa: con borrador lo cierra, como en
+  QGIS; sin borrador no hay nada que cerrar y abre el menú de lo que haya
+  debajo o de la selección.
+- Sobre el mapa, `ui.js` ya no cierra nada en el `contextmenu`: solo suprime el
+  menú nativo. El `pointerdown` que lo precede ya cerró lo que hubiera abierto.
+
+Vale igual en 2D y en 3D: es el mismo mapa, el mismo controlador y el mismo
+menú, y el relieve solo cambia cómo se convierte el píxel a coordenadas.
 
 ## Escala de trabajo
 
@@ -421,7 +465,7 @@ grosería.
 | `L` | Línea — con una línea seleccionada, la **continúa** |
 | `P` | Polígono |
 | `O` | Hole — restar un área a un polígono |
-| `N` | Nodos (vértices) |
+| `N` | Edit Nodes — arrastrar los vértices de un elemento |
 | `X` | Cortar |
 | `R` | Reshape |
 | `D` | Rumbo y manteo |
@@ -870,17 +914,31 @@ sin mover la vista.
 
 ### Digitalizar sobre el relieve
 
-Con el relieve puesto se puede trazar **Línea** y **Polígono**, avisando de que
-la calidad no es la misma. El resto de herramientas —Nodos, Cortar, Reshape,
-Hole, perfil, rumbo y manteo— sigue deshabilitado, y no por prudencia genérica:
-todas ellas dependen de tocar con exactitud un punto o una geometría que ya
-existe, y sobre terreno inclinado el punto que se toca y el punto del terreno no
-coinciden como en planta. Un contacto trazado a ojo sobre la ladera tolera ese
-error —y se corrige después en planta con Nodos—; un vértice que tiene que caer
-sobre otro, no. Encender el 3D con una de las bloqueadas activa devuelve a
-**Navegar** y descarta lo que hubiera a medias; con Línea o Polígono en la mano
-no se toca nada, porque cambiar de vista no debe tirar un contacto a medio
-trazar.
+Con el relieve puesto se puede trazar **Línea** y **Polígono** y corregir con
+**Edit Nodes**, avisando de que la calidad no es la misma. El resto
+—Cortar, Reshape, Hole, perfil, rumbo y manteo— sigue deshabilitado, y no por
+prudencia genérica: todas ellas dependen de tocar con exactitud un punto que se
+va a convertir en un dato, y sobre terreno inclinado el punto que se toca y el
+punto del terreno no coinciden como en planta. Encender el 3D con una de las
+bloqueadas activa devuelve a **Navegar** y descarta lo que hubiera a medias; con
+las tres permitidas en la mano no se toca nada, porque cambiar de vista no debe
+tirar un contacto a medio trazar.
+
+**Edit Nodes** entró a la lista de permitidas después que las otras dos, y por
+un motivo concreto: mirando la ladera en 3D es justo cuando se ve que un
+contacto quedó corrido, y tener que apagar el relieve, buscar el vértice en
+planta y volver a encenderlo era el camino largo para algo que se estaba
+señalando con el cursor. Además aquí el error de proyección se ve: la manija se
+agarra donde se la ve dibujada, porque `map.project()` la coloca sobre el
+terreno.
+
+Arrastrar una manija sobre el relieve costaba lo que costaba dibujar antes de
+la semilla: `moveVertexDrag` convertía el píxel con `unproject()` en CADA
+fotograma del gesto —4,7 s por llamada, medido— y eso lo habría hecho
+inservible. Ahora le pasa a `toLngLat()` dónde estaba el vértice en el
+fotograma anterior, y la conversión se resuelve con `project()` sobre el DEM
+que ya está en memoria. Lo mismo hace el modo *Añadir* con el vértice del que
+arranca el segmento apuntado (`findInsertion` lo devuelve como `seed`).
 
 #### El vértice se comprueba contra donde se repinta
 
@@ -1357,8 +1415,8 @@ del nombre de cada capa fuente.
 
 ## Edición de vértices y edición topológica
 
-La herramienta **Nodos** muestra una manija por vértice y una más pequeña en
-cada punto medio, y tiene tres modos, elegibles en la paleta:
+La herramienta **Edit Nodes** muestra una manija por vértice y una más pequeña
+en cada punto medio, y tiene tres modos, elegibles en la paleta:
 
 - **Mover**: arrastrar una manija mueve el vértice; arrastrar un punto medio
   inserta uno nuevo y lo lleva consigo; un doble toque sobre una manija la borra.
@@ -1483,13 +1541,13 @@ y usando el menú de propiedades.
 
 Mantener pulsado ~1 s sobre la selección abre un menú flotante con:
 
-- **Editar nodos**, que salta a la herramienta de vértices ya acotada a lo
-  seleccionado.
+- **Edit Nodes**, lo primero de todo: un botón ancho que entra en modo *Mover*
+  con las manijas de lo seleccionado ya visibles, y debajo los tres modos
+  sueltos para ir directo a añadir o a borrar un vértice. Solo aparece si hay
+  líneas o polígonos: una medida de rumbo y manteo es un punto y no tiene nodos.
 - **Certeza**: observado, inferido o cubierto.
 - **Unidad**, cuando hay polígonos en la selección.
 - **Opacidad** por elemento, que se compone con la de la capa.
-- **Vértices**: los tres modos de la herramienta Nodos, ya acotados a lo
-  seleccionado, para ir directo a añadir o a borrar un vértice.
 - **Invertir símbolo**, cuando hay fallas con ornamento en la selección.
 - **A polígono**, cuando hay líneas en la selección: las cierra y las convierte
   en una unidad (ver *De línea a polígono*).
@@ -2018,7 +2076,11 @@ Las cinco cosas tienen prueba de regresión.
   de eje, con color, tamaño, espaciado y posición editables, y flip por
   elemento (reflejo especular respecto de la traza) en las fallas.
 - ✅ Confirmación topológica: fusión de vértices y nodado, con tolerancia en metros.
-- ✅ Modos de añadir y borrar vértices en la herramienta Nodos.
+- ✅ Modos de añadir y borrar vértices en la herramienta Edit Nodes, que se
+  abre también desde el menú de propiedades y funciona con el relieve 3D puesto.
+- ✅ Clic derecho fiable en PC: abre el menú de propiedades de lo señalado o de
+  la selección en cualquier herramienta y en cualquier navegador, y solo cierra
+  el elemento cuando de verdad hay uno a medio trazar.
 - ✅ Guardar y abrir proyectos (`.fdproj.json`).
 - ✅ Autosave en localStorage y exportación a GeoJSON.
 - ✅ PWA instalable: dependencias en `vendor/`, service worker con precache del

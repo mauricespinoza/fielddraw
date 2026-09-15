@@ -186,7 +186,7 @@ function numberField(label, value, { min, max, step }, onInput) {
 
 /* ---------- paleta de tipos ---------- */
 
-/** Modos de la herramienta Nodos, con su glifo y su ayuda. */
+/** Modos de la herramienta Edit Nodes, con su glifo y su ayuda. */
 const VERTEX_MODES = [
   { id: 'move', label: 'Move', glyph: '✥', help: 'Drag a handle; a midpoint inserts one' },
   { id: 'add', label: 'Add', glyph: '＋', help: 'Tap the edge to insert a vertex' },
@@ -207,7 +207,7 @@ function buildPalette() {
     group.className = 'palette-group';
     const gl = document.createElement('span');
     gl.className = 'palette-label';
-    gl.textContent = 'Vertices';
+    gl.textContent = 'Edit Nodes';
     group.appendChild(gl);
     for (const m of VERTEX_MODES) {
       group.appendChild(
@@ -695,27 +695,53 @@ export function openPropsMenu(screen) {
     return;
   }
 
-  // Editar nodos: el atajo natural desde aquí, ya que la selección ya acota
-  // sobre qué geometrías se muestran las manijas. Los tres modos entran por la
-  // misma puerta, para poder ir directo a añadir o a borrar un vértice.
-  const acciones = section(body, 'Vertices');
-  const nodosRow = document.createElement('div');
-  nodosRow.className = 'palette-row';
-  for (const m of VERTEX_MODES) {
-    nodosRow.appendChild(
-      chip({
-        label: m.label,
-        title: m.help,
-        glyph: m.glyph,
-        onClick: () => {
-          store.setVertexMode(m.id);
-          store.setTool('vertices');
-          closePropsMenu();
-        },
-      }),
-    );
+  /*
+   * EDIT NODES. Es la primera sección del menú a propósito: con el elemento
+   * ya señalado, corregir por dónde pasa es lo que más se viene a hacer aquí,
+   * y llegar por la barra obliga a acertarle otra vez a la geometría.
+   *
+   * Solo con líneas o polígonos en la selección: una medida de rumbo y manteo
+   * es un punto, y no tiene nodos que mover. El botón ancho entra en modo
+   * Mover, que es el caso de siempre; los tres chips van directo al modo que
+   * se quiera, para poder añadir o borrar sin pasar por Mover.
+   */
+  const conNodos = [...lines, ...polys];
+  if (conNodos.length > 0) {
+    const acciones = section(body, 'Edit Nodes');
+    const abrirNodos = document.createElement('button');
+    abrirNodos.className = 'pill wide';
+    abrirNodos.textContent =
+      conNodos.length === 1
+        ? 'Edit nodes'
+        : `Edit nodes (${conNodos.length} features)`;
+    abrirNodos.title =
+      'Show the vertex handles of the selection and drag them — a midpoint inserts a vertex, a double tap deletes one';
+    abrirNodos.addEventListener('click', () => {
+      store.setVertexMode('move');
+      // Con el relieve 3D puesto esto también entra: ver `DRAWING_TOOLS_3D_OK`.
+      store.setTool('vertices');
+      closePropsMenu();
+    });
+    acciones.appendChild(abrirNodos);
+
+    const nodosRow = document.createElement('div');
+    nodosRow.className = 'palette-row';
+    for (const m of VERTEX_MODES) {
+      nodosRow.appendChild(
+        chip({
+          label: m.label,
+          title: m.help,
+          glyph: m.glyph,
+          onClick: () => {
+            store.setVertexMode(m.id);
+            store.setTool('vertices');
+            closePropsMenu();
+          },
+        }),
+      );
+    }
+    acciones.appendChild(nodosRow);
   }
-  acciones.appendChild(nodosRow);
 
   // Flip del ornamento: solo en las fallas, cuyo símbolo es asimétrico. Las
   // flechas de un pliegue son simétricas respecto del eje, así que reflejarlas
@@ -1007,18 +1033,31 @@ function wireClickOutside() {
   );
 
   /*
-   * Clic secundario: cierra siempre, esté donde esté. Sobre el mapa el menú
-   * contextual ya lo suprime DrawController —el clic derecho cierra el
-   * elemento en curso, como en QGIS—, así que aquí solo se añade el cierre de
-   * paneles, sin tocar el menú nativo fuera del mapa.
+   * Clic secundario fuera del mapa: cierra los paneles, sin tocar el menú
+   * nativo del navegador.
+   *
+   * SOBRE EL MAPA NO SE TOCA NADA, y esa excepción es la mitad de la razón de
+   * que el menú de propiedades saliera de manera errática en PC. El
+   * `pointerdown` de más arriba ya cerró lo que hubiera abierto; después
+   * DrawController abre el menú del elemento. Si el `contextmenu` cerrara
+   * otra vez, el resultado dependería del navegador: en Chrome llega ANTES
+   * del `pointerup` (y el menú se abre después, bien), pero en Firefox y
+   * Safari llega DESPUÉS, o sea encima del menú recién abierto, y lo
+   * cerraba. El botón derecho parecía no hacer nada.
    */
   document.addEventListener(
     'contextmenu',
     (e) => {
+      const mapa = $('map-host');
+      if (mapa && mapa.contains(e.target)) {
+        // El menú nativo no aparece sobre el mapa: ahí el botón derecho es de
+        // la aplicación. Lo mismo hace DrawController, pero este listener
+        // corre antes y cubre los huecos que él no ve.
+        e.preventDefault();
+        return;
+      }
       if (!anyOverlayOpen()) return;
       closeOverlays();
-      const mapa = $('map-host');
-      if (mapa && mapa.contains(e.target)) e.preventDefault();
     },
     { capture: true },
   );
@@ -3256,17 +3295,11 @@ async function doImportGeoPackage(file) {
 
 /**
  * Botones que crean o mueven geometría, y que el relieve 3D deshabilita.
- * Línea y Polígono quedan fuera: esos dos sí se ofrecen con el relieve
- * puesto, avisando de la pérdida de precisión en vez de bloquearlos.
+ * Línea, Polígono y Edit Nodes quedan fuera: esos tres sí se ofrecen con el
+ * relieve puesto, avisando de la pérdida de precisión en vez de bloquearlos.
+ * Ver `DRAWING_TOOLS_3D_OK` en store.js.
  */
-const GEOMETRY_TOOL_BUTTONS = [
-  't-hole',
-  't-measure',
-  't-vertices',
-  't-cut',
-  't-reshape',
-  't-profile',
-];
+const GEOMETRY_TOOL_BUTTONS = ['t-hole', 't-measure', 't-cut', 't-reshape', 't-profile'];
 
 const TERRAIN_BLOCKED_TITLE =
   'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
@@ -3391,9 +3424,13 @@ function renderStatus() {
         : s.vertexMode === 'delete'
           ? 'Delete mode · tap a vertex to remove it'
           : 'Drag a vertex to move it · a midpoint to insert · double tap to delete';
+    // El clic derecho se anuncia aquí igual que en Elegir: es la puerta al
+    // menú de propiedades sin soltar la herramienta, y sin decirlo no se
+    // descubre.
+    const conMenu = `${base} · right-click opens the menu`;
     $('status-text').textContent = s.topoEdit
-      ? `${base} · topological editing on: magenta ones move together`
-      : base;
+      ? `${conMenu} · topological editing on: magenta ones move together`
+      : conMenu;
   } else if (s.tool === 'thickness') {
     $('status-text').textContent = s.thicknessFrom
       ? `Tap the other surface of the unit · thickness measured normal to ${formatStrikeDip(s.thicknessFrom.strike, s.thicknessFrom.dip)}`

@@ -1833,6 +1833,9 @@ export function createMapView({
       // El historial guarda el estado ANTERIOR a la inserción.
       history: store.getState().features,
       inserted: true,
+      // Dónde está el vértice ahora mismo: es la semilla del arrastre en 3D.
+      // Ver `moveVertexDrag`.
+      at: lngLat,
     };
     snapExclude = new Set([target.featureId]);
     store.setFeatures(inserted);
@@ -1855,7 +1858,7 @@ export function createMapView({
         return;
       }
       const ins = findInsertion(editableFeatures(), projectLngLat, screen, 26);
-      if (ins) insertAndDrag(ins, toLngLat(ins.screen));
+      if (ins) insertAndDrag(ins, toLngLat(ins.screen, ins.seed));
       else onEditMessage('Tap the edge of a feature to add a vertex.', 'warn');
       return;
     }
@@ -1867,7 +1870,12 @@ export function createMapView({
       // topología esté apagada: si no, el vértice del vecino que ocupa el
       // mismo punto lo volvería a atraer y sería imposible separarlos.
       snapExclude = new Set(group.map((h) => h.featureId));
-      drag = { targets: targetsFor(handle), base: st.features, history: st.features };
+      drag = {
+        targets: targetsFor(handle),
+        base: st.features,
+        history: st.features,
+        at: handle.lngLat,
+      };
       collectSnapSources();
       return;
     }
@@ -1877,11 +1885,23 @@ export function createMapView({
     if (mid) insertAndDrag(mid, mid.lngLat);
   }
 
+  /**
+   * Arrastre de una manija, cuadro a cuadro.
+   *
+   * `drag.at` —dónde estaba el vértice en el fotograma anterior— se le pasa a
+   * `toLngLat` como semilla, y eso es lo que hace que editar nodos sobre el
+   * relieve 3D sea usable: sin ella cada movimiento resuelve el rayo con
+   * `unproject`, que obliga a leer el framebuffer de la GPU (medido, 4,7 s
+   * por llamada con relieve). Con la semilla la conversión se hace con
+   * aritmética sobre el DEM que ya está en memoria. En 2D no cambia nada: ahí
+   * `toLngLat` ni mira la semilla.
+   */
   function moveVertexDrag(screen) {
     if (!drag) return;
     const snap = snapAt(screen);
     showSnapMarker(snap);
-    const lngLat = toLngLat(snap ? snap.point : screen);
+    const lngLat = toLngLat(snap ? snap.point : screen, drag.at);
+    drag.at = lngLat;
     store.setFeatures(moveVertices(drag.base, drag.targets, lngLat));
   }
 
@@ -2144,6 +2164,30 @@ export function createMapView({
     // es el gesto para tocar los atributos de lo que ya está dibujado sin
     // tener que cambiar a Elegir y volver.
     onLongPress: (p) => {
+      if (onMapTap) onMapTap();
+      openPropsFor(p);
+    },
+
+    /*
+     * CLIC DERECHO: CERRAR LO QUE SE ESTÁ DIBUJANDO O, SI NO HAY NADA
+     * ABIERTO, ABRIR EL MENÚ.
+     *
+     * Antes la decisión la tomaba el controlador mirando la HERRAMIENTA: con
+     * cualquiera que no fuera Navegar o Elegir, el clic derecho cerraba el
+     * elemento y ahí se acababa. Con una línea seleccionada y Edit Nodes en
+     * la mano —justo cuando uno quiere el menú— no pasaba nada en absoluto.
+     *
+     * Lo que manda no es la herramienta sino si hay un elemento a medio
+     * trazar: con borrador, el clic derecho lo cierra, igual que en QGIS; sin
+     * borrador no hay nada que cerrar y el menú es lo único que tiene
+     * sentido. Vale en 2D y en 3D: es el mismo mapa y el mismo controlador.
+     */
+    onSecondary: (p) => {
+      const st = store.getState();
+      if (st.draft && st.draft.coords.length > 0) {
+        store.finishDraft();
+        return;
+      }
       if (onMapTap) onMapTap();
       openPropsFor(p);
     },

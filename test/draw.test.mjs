@@ -48,6 +48,10 @@ function harness(opts = {}) {
     cb.onDragEnd = (p, info) => log.push(['dragEnd', p, info]);
   }
   if (opts.longPress !== false) cb.onLongPress = (p) => log.push(['longPress', p]);
+  // El clic secundario, cuando quien monta el controlador quiere decidir él
+  // qué significa (es lo que hace mapView). Sin esto se mantiene el reparto
+  // antiguo, que es lo que comprueban las pruebas de más arriba.
+  if (opts.secondary) cb.onSecondary = (p) => log.push(['secondary', p]);
   // La "ventana" donde el controlador escucha el fin de un gesto. Se reproduce
   // aquí porque en el navegador `pointerup` NO llega por el host: llega por la
   // ventana, y esa diferencia es justo la que evita que un gesto terminado
@@ -426,6 +430,68 @@ console.log('== girar con el botón derecho no abre el menú ==');
   h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 300, clientY: 300 });
   h.ev('contextmenu', { clientX: 300, clientY: 300 });
   ok('un clic derecho limpio sí', h.kinds().includes('longPress'), JSON.stringify(h.kinds()));
+}
+
+console.log('== el clic derecho con una herramienta activa NO pone un vértice ==');
+{
+  /*
+   * Era el fallo de fondo de "en PC el menú no sale": con una herramienta en
+   * la mano, el `pointerdown` del botón derecho caía en el reparto normal, se
+   * anulaba —lo que en Chrome impide que se emita el `contextmenu`— y al
+   * soltar el gesto terminaba en `onVertex`. O sea que el clic derecho ponía
+   * un vértice y no abría nada.
+   */
+  const h = harness({ secondary: true });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 120, clientY: 90 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 120, clientY: 90 });
+  await sleep(10);
+  ok('no pone un vértice', !h.kinds().includes('vertex'), JSON.stringify(h.kinds()));
+  ok('avisa del clic secundario', h.kinds().includes('secondary'), JSON.stringify(h.kinds()));
+  const call = h.log.find((l) => l[0] === 'secondary');
+  ok('con las coordenadas del clic', call[1][0] === 120 && call[1][1] === 90);
+}
+
+console.log('== el clic derecho se resuelve UNA vez, llegue como llegue ==');
+{
+  // Chrome emite el `contextmenu` con el `mousedown` y Firefox al soltar. Se
+  // atienden los dos órdenes, y en ninguno se dispara dos veces.
+  const chrome = harness({ secondary: true });
+  chrome.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 10, clientY: 10 });
+  chrome.ev('contextmenu', { clientX: 10, clientY: 10 });
+  chrome.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 10, clientY: 10 });
+  ok(
+    'contextmenu antes del pointerup: una sola vez',
+    chrome.kinds().filter((k) => k === 'secondary').length === 1,
+    JSON.stringify(chrome.kinds()),
+  );
+
+  const firefox = harness({ secondary: true });
+  firefox.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 10, clientY: 10 });
+  firefox.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 10, clientY: 10 });
+  firefox.ev('contextmenu', { clientX: 10, clientY: 10 });
+  ok(
+    'contextmenu después del pointerup: una sola vez',
+    firefox.kinds().filter((k) => k === 'secondary').length === 1,
+    JSON.stringify(firefox.kinds()),
+  );
+
+  // Y si el navegador no llega a emitir el `contextmenu`, el `pointerup` solo
+  // basta: es lo que hace que el menú salga siempre y no unas veces sí y
+  // otras no.
+  const sinMenu = harness({ secondary: true });
+  sinMenu.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 33, clientY: 44 });
+  sinMenu.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 33, clientY: 44 });
+  ok('sin contextmenu también se atiende', sinMenu.kinds().includes('secondary'));
+}
+
+console.log('== girar con el botón derecho sigue sin abrir el menú ==');
+{
+  const h = harness({ secondary: true });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 2, buttons: 2, clientX: 100, clientY: 100 });
+  h.ev('pointermove', { pointerType: 'mouse', buttons: 2, clientX: 220, clientY: 160 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 2, buttons: 0, clientX: 220, clientY: 160 });
+  h.ev('contextmenu', { clientX: 220, clientY: 160 });
+  ok('el arrastre no abre nada', !h.kinds().includes('secondary'), JSON.stringify(h.kinds()));
 }
 
 console.log('== en Navegar el ratón es del mapa ==');

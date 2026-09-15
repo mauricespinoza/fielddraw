@@ -216,6 +216,11 @@ export function findInsertion(features, project, screen, tolerance) {
           ring: ri,
           index: i + 1,
           screen: r.point,
+          // Vértice del que arranca el segmento apuntado. Quien llame lo usa
+          // como semilla al convertir el píxel a lng/lat sobre relieve 3D:
+          // está a un segmento de distancia, que es lo que hace falta para
+          // resolverlo sin leer el framebuffer de la GPU.
+          seed: ring[i],
         };
       }
     });

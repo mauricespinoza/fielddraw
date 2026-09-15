@@ -31,7 +31,7 @@ export const SHORTCUTS = [
   { id: 'tool-line', keys: ['l'], label: 'Line — with one line selected, continues it', group: 'Tools' },
   { id: 'tool-polygon', keys: ['p'], label: 'Polygon', group: 'Tools' },
   { id: 'tool-hole', keys: ['o'], label: 'Hole — subtract an area from a polygon', group: 'Tools' },
-  { id: 'tool-vertices', keys: ['n'], label: 'Vertices (nodes)', group: 'Tools' },
+  { id: 'tool-vertices', keys: ['n'], label: 'Edit Nodes — drag the vertices of a feature', group: 'Tools' },
   { id: 'tool-cut', keys: ['x'], label: 'Split', group: 'Tools' },
   { id: 'tool-reshape', keys: ['r'], label: 'Reshape', group: 'Tools' },
   { id: 'tool-measure', keys: ['d'], label: 'Strike and dip', group: 'Tools' },

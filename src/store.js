@@ -87,7 +87,7 @@ let state = {
   topoEdit: true,
   /** Tolerancia de la confirmación topológica, en metros de terreno. */
   topoTolerance: 5,
-  /** Herramienta Nodos: 'move' | 'add' | 'delete'. */
+  /** Herramienta Edit Nodes: 'move' | 'add' | 'delete'. */
   vertexMode: 'move',
   /** Cortar dibujando una línea, o usando un elemento que ya existe. */
   cutSource: 'draw',
@@ -354,14 +354,21 @@ export const DRAWING_TOOLS = [
 ];
 
 /**
- * De las anteriores, las dos únicas que sí se ofrecen con el relieve puesto:
- * trazar un contacto o levantar un polígono mirando el terreno inclinado
- * sirve para ubicarse, aunque el vértice caiga corrido. Las demás dependen de
- * tocar con exactitud una geometría o un punto ya existente —nodos, cortar,
- * topología, perfil, rumbo/manteo— y ahí ese margen de error sí arruina el
- * resultado. La interfaz avisa de la pérdida de precisión al activarlas.
+ * De las anteriores, las que sí se ofrecen con el relieve puesto: trazar un
+ * contacto, levantar un polígono o corregir un nodo mirando el terreno
+ * inclinado sirve para ubicarse, aunque el vértice caiga corrido. Las demás
+ * —cortar, topología, perfil, rumbo/manteo— dependen de tocar con exactitud
+ * un punto que se va a convertir en un dato (la cota de una medida, el
+ * trazado de un corte) y ahí ese margen de error sí arruina el resultado. La
+ * interfaz avisa de la pérdida de precisión al activarlas.
+ *
+ * Edit Nodes entró después que las otras dos, y por un motivo concreto: mirando la
+ * ladera en 3D es cuando se ve que un contacto quedó corrido, y tener que
+ * apagar el relieve, buscar el vértice en planta y volver a encenderlo era el
+ * camino largo para algo que se estaba señalando con el cursor. Además aquí
+ * el error de proyección se ve: la manija se agarra donde se ve dibujada.
  */
-export const DRAWING_TOOLS_3D_OK = ['line', 'polygon'];
+export const DRAWING_TOOLS_3D_OK = ['line', 'polygon', 'vertices'];
 
 export function getState() {
   return state;
