@@ -80,6 +80,39 @@ contexto seguro —HTTPS o `localhost`—, así que servida por IP en la red loc
 deja instalarlo sobre http. No es un fallo de la app; es la plataforma. Publicada
 en un hosting con HTTPS, el offline se activa solo.
 
+### Publicar una versión nueva
+
+`sw.js` cachea el HTML en **red primero** —siempre pide la última— pero los
+módulos y el CSS en **caché primero**, con un refresco de fondo que solo se
+nota en la carga SIGUIENTE. Eso significa que el shell nuevo puede llegar a
+ejecutarse con los módulos VIEJOS durante toda una sesión, y en una PWA de
+pantalla de inicio esa sesión puede durar semanas.
+
+Lo único que fuerza a un navegador a siquiera comprobar si hay una versión
+nueva es que **los bytes de `sw.js` cambien**: el registro compara el script
+byte a byte, y si es idéntico al que ya tiene instalado, ni se molesta en
+volver a pedir la lista de archivos. Por eso `sw.js` empieza con
+
+```js
+const VERSION = 'v13';
+```
+
+y **subir ese número es obligatorio en cada publicación que toque algo bajo
+`src/` o `index.html`** — no opcional, no "si acaso": es lo único que le dice
+al navegador que hay algo que traer. Publicar sin subirlo dejó una sesión
+entera corriendo `mapView.js` y `ui.js` de dos versiones atrás contra un
+`index.html` nuevo, con el resultado previsible de una app que en apariencia
+"no hace nada": el HTML ya no tenía el elemento que el JS viejo buscaba.
+
+Al añadir un archivo a `src/` también hay que sumarlo a la lista `SHELL` de
+`sw.js`, o ese archivo nunca queda precacheado y falla en cuanto no hay señal.
+
+Subida la versión, quien ya tenía la app abierta la recibe solo: `sw.js` toma
+el control con `skipWaiting` + `clients.claim`, y `app.js` escucha
+`controllerchange` y recarga la página una vez —comprobando que YA hubiera un
+controlador antes de registrar, para no recargar de más en la primera visita,
+donde no hace ninguna falta—.
+
 ### Dependencias en `vendor/`
 
 Todo lo externo está copiado al repo: MapLibre, maplibre-contour, PMTiles,

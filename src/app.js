@@ -94,4 +94,28 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   // dispararse y quedaríamos sin registrar nunca.
   if (document.readyState === 'complete') registrar();
   else window.addEventListener('load', registrar, { once: true });
+
+  /*
+   * Se recarga una vez cuando un service worker NUEVO toma el control.
+   *
+   * Sin esto, publicar una versión no llegaba a quien ya tenía la app
+   * abierta o instalada: `sw.js` cachea el HTML en red-primero pero los
+   * módulos en caché-primero, así que el shell nuevo se ejecutaba con los
+   * módulos viejos hasta la SIGUIENTE navegación —y en una PWA de pantalla de
+   * inicio, "la siguiente navegación" puede no llegar nunca—. `skipWaiting` +
+   * `clients.claim` en el propio `sw.js` hacen que el nuevo worker tome el
+   * control sin esperar a que se cierren las pestañas; a esto solo le
+   * faltaba refrescar la página para que ese control se notara.
+   *
+   * `controllerchange` dispara igual la PRIMERA vez que se instala —pasar de
+   * «sin worker» a «con worker» también es un cambio—, y ahí no hace falta
+   * recargar nada: lo que ya está corriendo se pidió a la red tal cual,
+   * directo, así que no puede estar desactualizado. La distinción es de
+   * qué había ANTES de registrar: si ya existía un controlador, lo que
+   * llega después es una versión nueva reemplazando a una vieja.
+   */
+  const habiaControlador = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (habiaControlador) location.reload();
+  });
 }
