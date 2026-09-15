@@ -198,6 +198,17 @@ let state = {
   profileCursor: null,
   /** Unidades geológicas definidas por el usuario. */
   units: defaultUnits(),
+  /**
+   * Rotular los polígonos con el código de su unidad.
+   *
+   * Apagado de fábrica y a propósito. Mientras se levanta, el mapa está lleno
+   * de polígonos chicos y a medio cerrar, y rotularlos todos tapa justo la
+   * geometría que se está mirando. Encendido, tampoco se rotulan todos: el
+   * mapa elige los que en el encuadre actual son lo bastante grandes para que
+   * el código quepa dentro, y solo unos pocos de ellos (ver `syncUnitLabels`
+   * en mapView). Un rótulo por polígono sería una mancha de texto, no un mapa.
+   */
+  unitLabels: false,
   /** Línea que se va a continuar en cuanto se ponga el primer vértice. */
   extendFrom: null,
 
@@ -1284,6 +1295,11 @@ export function removeUnit(id) {
   set({ units, polygonType: state.polygonType === id ? units[0].id : state.polygonType });
 }
 
+/** Enciende o apaga el rótulo de código sobre los polígonos. */
+export function setUnitLabels(on) {
+  set({ unitLabels: !!on });
+}
+
 export function loadUnits(units) {
   if (Array.isArray(units) && units.length) set({ units });
 }
@@ -1340,6 +1356,7 @@ export const SETTING_KEYS = [
   'scaleLock',
   'scalePresets',
   'scalePixelMm',
+  'unitLabels',
 ];
 
 /*

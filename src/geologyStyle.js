@@ -50,6 +50,22 @@ export function unitFillExpr(units) {
   return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, u.color]), '#999999'];
 }
 
+/**
+ * El texto del rótulo: el código de la unidad a la que pertenece el polígono.
+ *
+ * Se resuelve por el catálogo de unidades y no por el atributo `code` del
+ * elemento, por el mismo motivo que el color: renombrar el código de una
+ * unidad tiene que verse en el mapa en el acto, sin tocar cada polígono. El
+ * atributo del elemento queda de reserva para lo que venga de fuera con un
+ * código propio y sin unidad que lo respalde.
+ */
+export function unitCodeExpr(units) {
+  const reserva = ['coalesce', ['get', 'code'], ''];
+  const list = (units || []).filter((u) => u && u.id);
+  if (!list.length) return reserva;
+  return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, String(u.code || '')]), reserva];
+}
+
 export function unitOutlineExpr(units) {
   const list = units && units.length ? units : POLYGON_TYPES.map((t) => ({ id: t.id, color: t.color }));
   return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, shade(u.color)]), '#555555'];
@@ -171,10 +187,63 @@ export function geologyLayers() {
     BASE_OPACITY[id] = 1;
   }
 
+  /*
+   * EL CÓDIGO DE LA UNIDAD, ROTULADO SOBRE EL POLÍGONO.
+   *
+   * Va la última —encima de todo lo demás del dibujo— y apagada de fábrica:
+   * un mapa de terreno a medio levantar tiene decenas de polígonos pequeños y
+   * rotularlos todos lo vuelve ilegible justo cuando hace falta ver la
+   * geometría. Se enciende cuando el mapa ya se está leyendo, no mientras se
+   * dibuja.
+   *
+   * QUIÉN LLEVA ETIQUETA NO SE DECIDE AQUÍ. El filtro nace vacío y lo
+   * reescribe mapView con la lista de polígonos que en ESTE encuadre son lo
+   * bastante grandes para que quepa el rótulo dentro, y solo con los más
+   * grandes de ellos: ver `syncUnitLabels`. La razón de hacerlo por lista y no
+   * con una expresión es que «lo bastante grande» se mide en píxeles de
+   * pantalla, y eso depende del zoom, de la latitud y de la forma del
+   * polígono, que ninguna expresión de estilo sabe calcular.
+   *
+   * `symbol-placement: point` sobre un polígono hace que MapLibre coloque el
+   * rótulo en el polo de inaccesibilidad —el punto más adentro—, así que la
+   * etiqueta cae DENTRO de la unidad aunque sea cóncava, y no en el centroide,
+   * que en una unidad en forma de arco queda fuera.
+   */
+  layers.push({
+    id: 'geology-unit-label',
+    type: 'symbol',
+    source: GEOLOGY_SOURCE,
+    filter: ['in', ['get', 'id'], ['literal', []]],
+    layout: {
+      'symbol-placement': 'point',
+      'text-field': unitCodeExpr(null),
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 13,
+      'text-padding': 6,
+      // Sin solape y sin recorte por el borde: una etiqueta a medias miente
+      // sobre qué unidad rotula.
+      'text-allow-overlap': false,
+      'text-ignore-placement': false,
+      // El rótulo se lee horizontal aunque la vista esté girada: es una
+      // etiqueta, no un elemento del terreno.
+      'text-rotation-alignment': 'viewport',
+      'text-max-width': 8,
+    },
+    paint: {
+      'text-color': '#12181f',
+      'text-halo-color': 'rgba(255,255,255,0.92)',
+      'text-halo-width': 1.6,
+    },
+  });
+  BASE_OPACITY['geology-unit-label'] = 1;
+
   return layers;
 }
 
 export const GEOLOGY_LAYER_IDS = geologyLayers().map((l) => l.id);
+
+/** La capa de rótulos de unidad, que mapView enciende y filtra. */
+export const UNIT_LABEL_LAYER_ID = 'geology-unit-label';
 
 /** Capas cuyo `line-color` sale del catálogo de tipos de línea. */
 export const GEOLOGY_LINE_LAYER_IDS = CERTAINTIES.map((c) => `geology-line-${c.id}`);

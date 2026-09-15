@@ -413,7 +413,15 @@ body,
 .brand {
   position: absolute;
   top: calc(var(--safe-t) + 12px);
-  left: calc(var(--safe-l) + 92px);
+  /*
+   * A la derecha de la barra de herramientas, SEA CUAL SEA SU ANCHO. Estaba
+   * clavado en 92 px —la barra de una columna más un margen— y en cuanto la
+   * barra pasó a envolver en columnas para no recortar botones, la marca se
+   * plantaba encima de la segunda. El ancho real lo mide `wireToolbarWidth`
+   * en ui.js y lo escribe aquí; el valor de reserva es el de siempre, para
+   * que la página se vea bien también antes del primer cálculo.
+   */
+  left: calc(var(--safe-l) + var(--toolbar-w, 80px) + 12px);
   z-index: 11;
   display: flex;
   align-items: center;
@@ -484,6 +492,20 @@ body,
  * aquí arriba: la marca cede el sitio cuando hay algo que lo necesita.
  */
 .palette:not(.hidden) ~ .brand {
+  display: none;
+}
+
+/*
+ * Y también cuando, medida, no cabe entre la barra de herramientas y la fila
+ * de botones de arriba.
+ *
+ * El punto de corte no puede ser un ancho de ventana fijo: desde que la barra
+ * envuelve en columnas para no recortar botones, cuánto sitio deja depende de
+ * la ALTURA disponible, no del ancho. La pone `wireToolbarWidth` en ui.js
+ * comparando los dos rectángulos de verdad. De las tres cosas que compiten
+ * por esa franja, la marca es la única que no hace nada.
+ */
+.brand.crowded {
   display: none;
 }
 

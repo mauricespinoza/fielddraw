@@ -22,10 +22,12 @@ import {
   GEOLOGY_LAYER_IDS,
   GEOLOGY_LINE_LAYER_IDS,
   GEOLOGY_SOURCE,
+  UNIT_LABEL_LAYER_ID,
   draftLayers,
   editLayers,
   geologyLayers,
   lineColorExpr,
+  unitCodeExpr,
   unitFillExpr,
   unitOutlineExpr,
   withFeatureAlpha,
@@ -807,6 +809,7 @@ export function createMapView({
     applyScaleLock();
     applyLayerStack(map, store.getState().layers);
     syncGeology();
+    syncUnitLabels();
     syncStrabo();
     syncDraft();
     syncProfile();
@@ -838,6 +841,176 @@ export function createMapView({
       const id = `geology-outline-${c}`;
       if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', unitOutlineExpr(units));
     }
+    // El rótulo sale del mismo catálogo: renombrar un código se ve en el mapa
+    // sin tocar los polígonos.
+    if (map.getLayer(UNIT_LABEL_LAYER_ID)) {
+      map.setLayoutProperty(UNIT_LABEL_LAYER_ID, 'text-field', unitCodeExpr(units));
+    }
+  }
+
+  /* ---------- rótulos de unidad ---------- */
+
+  /**
+   * CUÁNTOS RÓTULOS Y CUÁLES, QUE ES TODA LA DIFICULTAD.
+   *
+   * Un mapa geológico levantado en terreno tiene decenas o cientos de
+   * polígonos, y muchos son esquirlas de unos pocos píxeles al zoom al que se
+   * está mirando. Rotularlos todos no produce un mapa rotulado: produce una
+   * mancha de texto encima de la geología, con códigos que no se sabe a cuál
+   * de los tres polígonos vecinos pertenecen. Por eso el rótulo se reparte con
+   * tres criterios, y los tres se miden EN PÍXELES DE PANTALLA, que es donde
+   * se lee:
+   *
+   * 1. **Que quepa.** El polígono tiene que tener, en la pantalla de ahora, un
+   *    hueco de al menos `LABEL_MIN_SPAN_PX` de lado y `LABEL_MIN_AREA_PX` de
+   *    superficie visible. Las dos condiciones y no solo el área: una cinta
+   *    larga y angosta —un dique, un nivel guía— puede sumar mucha superficie
+   *    y no tener sitio para una palabra en ninguna parte.
+   * 2. **Unos pocos.** De los que caben, solo los `LABEL_MAX_LABELS` más
+   *    grandes. Es la diferencia entre rotular un mapa y taparlo.
+   * 3. **Repartidos entre unidades.** Como mucho `LABEL_MAX_PER_UNIT` por
+   *    unidad. Sin esto, un mapa con cuarenta polígonos de la misma formación
+   *    y tres de otra se gastaría todos los rótulos en la primera, y la
+   *    segunda —que es la que hay que identificar— quedaría muda.
+   *
+   * Lo que sobre lo resuelve MapLibre, que no coloca dos etiquetas encima de
+   * otra y prefiere no dibujar antes que solapar.
+   */
+
+  /** Lado mínimo, en píxeles, del hueco visible donde ha de caber el código. */
+  const LABEL_MIN_SPAN_PX = 52;
+  /** Y superficie mínima visible, para descartar cintas largas y angostas. */
+  const LABEL_MIN_AREA_PX = 3000;
+  /** Tope de rótulos en pantalla. Más que esto ya no es un mapa, es una lista. */
+  const LABEL_MAX_LABELS = 14;
+  /** Y tope por unidad, para que ninguna se coma todos los rótulos. */
+  const LABEL_MAX_PER_UNIT = 3;
+  /**
+   * Vértices que se miran como mucho por anillo. Medir el tamaño en pantalla
+   * no necesita el detalle del contacto —un anillo de diez mil vértices y su
+   * versión de doscientos ocupan lo mismo— y esto se recalcula en cada
+   * `moveend`, así que el coste tiene que depender de cuántos polígonos hay y
+   * no de lo fino que se digitalizó cada uno.
+   */
+  const LABEL_RING_SAMPLES = 160;
+
+  /** El anillo exterior proyectado a pantalla, submuestreado. */
+  function ringToScreen(coords) {
+    const n = coords.length;
+    if (n < 3) return null;
+    const paso = Math.max(1, Math.ceil(n / LABEL_RING_SAMPLES));
+    const pts = [];
+    for (let i = 0; i < n; i += paso) {
+      const q = map.project(coords[i]);
+      if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) return null;
+      pts.push([q.x, q.y]);
+    }
+    return pts.length >= 3 ? pts : null;
+  }
+
+  /** Superficie de un polígono de pantalla, por la fórmula del agrimensor. */
+  function screenArea(pts) {
+    let a = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+    }
+    return Math.abs(a) / 2;
+  }
+
+  /**
+   * Cuánto de este polígono se ve, en píxeles.
+   *
+   * El recorte contra la ventana es a ojo —se recorta el rectángulo
+   * envolvente, no el polígono— y con eso basta: lo que se decide aquí es si
+   * hay sitio para una palabra, no una superficie que nadie va a leer. Un
+   * polígono que sale de la pantalla por tres lados conserva así el trozo que
+   * se ve, que es donde MapLibre va a intentar poner el rótulo.
+   */
+  function visibleFootprint(pts, w, h) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [x, y] of pts) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    const x0 = Math.max(0, minX);
+    const y0 = Math.max(0, minY);
+    const x1 = Math.min(w, maxX);
+    const y1 = Math.min(h, maxY);
+    if (x1 <= x0 || y1 <= y0) return null;
+
+    const anchoCaja = maxX - minX;
+    const altoCaja = maxY - minY;
+    /*
+     * El área se prorratea: de la superficie real del polígono se conserva la
+     * fracción de su caja que quedó dentro de la ventana. Es una aproximación,
+     * y es la honesta que se puede hacer sin recortar la geometría de verdad.
+     */
+    const fraccion =
+      anchoCaja > 0 && altoCaja > 0 ? ((x1 - x0) * (y1 - y0)) / (anchoCaja * altoCaja) : 1;
+    return { span: Math.min(x1 - x0, y1 - y0), area: screenArea(pts) * fraccion };
+  }
+
+  /** Reescribe el filtro de la capa de rótulos para el encuadre de ahora. */
+  function syncUnitLabels() {
+    if (!ready || !map.getLayer(UNIT_LABEL_LAYER_ID)) return;
+    const st = store.getState();
+
+    const aplicar = (ids) =>
+      map.setFilter(UNIT_LABEL_LAYER_ID, ['in', ['get', 'id'], ['literal', ids]]);
+
+    if (!st.unitLabels) {
+      aplicar([]);
+      return;
+    }
+
+    const c = map.getContainer();
+    const w = c.clientWidth;
+    const h = c.clientHeight;
+    if (!(w > 0 && h > 0)) return;
+
+    const codigos = new Map(st.units.map((u) => [u.id, String(u.code || '')]));
+    const candidatos = [];
+
+    for (const f of st.features) {
+      const g = f.geometry;
+      if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) continue;
+      const tipo = f.properties ? f.properties.type : null;
+      const code = codigos.has(tipo) ? codigos.get(tipo) : String((f.properties || {}).code || '');
+      // Sin código no hay nada que rotular, y una unidad sin código es normal
+      // mientras se está definiendo: no es un error, simplemente no se rotula.
+      if (!code) continue;
+
+      // De un multipolígono se mide solo la pieza mayor: es donde MapLibre va
+      // a poner el rótulo y la única que decide si cabe.
+      const anillos = g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map((p) => p[0]);
+      let mejor = null;
+      for (const anillo of anillos) {
+        const pts = ringToScreen(anillo);
+        if (!pts) continue;
+        const v = visibleFootprint(pts, w, h);
+        if (v && (!mejor || v.area > mejor.area)) mejor = v;
+      }
+      if (!mejor) continue;
+      if (mejor.span < LABEL_MIN_SPAN_PX || mejor.area < LABEL_MIN_AREA_PX) continue;
+      candidatos.push({ id: f.properties.id, unit: tipo, area: mejor.area });
+    }
+
+    candidatos.sort((a, b) => b.area - a.area);
+    const porUnidad = new Map();
+    const ids = [];
+    for (const cand of candidatos) {
+      if (ids.length >= LABEL_MAX_LABELS) break;
+      const n = porUnidad.get(cand.unit) || 0;
+      if (n >= LABEL_MAX_PER_UNIT) continue;
+      porUnidad.set(cand.unit, n + 1);
+      ids.push(cand.id);
+    }
+    aplicar(ids);
   }
 
   function syncGeology() {
@@ -1789,6 +1962,10 @@ export function createMapView({
       }
     }
     publishScale(true);
+    // El reparto de rótulos depende del encuadre, así que se rehace al acabar
+    // de mover y no durante: durante el gesto no se lee, y hacerlo por cuadro
+    // costaría proyectar todos los polígonos sesenta veces por segundo.
+    syncUnitLabels();
   });
 
   /* ---------- edición de vértices ---------- */
@@ -2475,7 +2652,11 @@ export function createMapView({
     if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
     if (store.changed('planeTrace')) syncPlaneTrace();
     if (store.changed('thickness') || store.changed('thicknessFrom')) syncThickness();
-    if (store.changed('units')) applyUnitColors();
+    if (store.changed('units')) {
+      applyUnitColors();
+      syncUnitLabels();
+    }
+    if (store.changed('unitLabels')) syncUnitLabels();
     if (store.changed('ornaments')) {
       applyOrnamentStyle(map, store.getState().ornaments);
       applyLineColors();
@@ -2496,7 +2677,10 @@ export function createMapView({
     if (store.changed('imported')) syncImported();
     else if (store.changed('tileSets')) syncTileSets();
     else if (store.changed('layers')) applyLayerStack(map, store.getState().layers);
-    if (store.changed('features')) syncGeology();
+    if (store.changed('features')) {
+      syncGeology();
+      syncUnitLabels();
+    }
     // `extendFrom` también repinta el borrador: es lo que marca los extremos
     // de la línea que se va a continuar.
     if (store.changed('draft') || store.changed('extendFrom')) syncDraft();

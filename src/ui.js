@@ -404,6 +404,8 @@ function renderUnits() {
   const s = store.getState();
   list.replaceChildren();
 
+  $('unit-labels').checked = !!s.unitLabels;
+
   for (const u of s.units) {
     const li = document.createElement('li');
     li.className = 'unit-row';
@@ -1050,6 +1052,41 @@ const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet', 'btn-scale'
  * de que el elemento de debajo reaccione, que es lo que uno espera de un
  * popover.
  */
+/**
+ * Publica el ancho real de la barra de herramientas como `--toolbar-w`.
+ *
+ * La barra envuelve en columnas cuando no le cabe todo a lo alto —es lo que
+ * evita que se recorten Escala, GPS o Hecho en una tablet apaisada— y por eso
+ * su ancho ya no es una constante que se pueda escribir en el CSS. Lo que
+ * cuelga a su derecha, hoy la marca, necesita saberlo para no plantarse
+ * encima. Se recalcula al girar la tablet y al aparecer o desaparecer un
+ * botón, que es cuando puede cambiar el número de columnas.
+ */
+function wireToolbarWidth() {
+  const barra = $('toolbar');
+  if (!barra) return;
+  const marca = document.querySelector('.brand');
+  const arriba = document.querySelector('.top-right');
+  const medir = () => {
+    const w = Math.round(barra.getBoundingClientRect().width);
+    if (w > 0) document.documentElement.style.setProperty('--toolbar-w', `${w}px`);
+    if (!marca || !arriba) return;
+    /*
+     * Y si con ese ancho la marca ya no cabe antes de los botones, se retira.
+     * Se mide en limpio —sin la clase puesta— porque lo que hay que saber es
+     * si CABRÍA, no si cabe estando escondida.
+     */
+    marca.classList.remove('crowded');
+    const m = marca.getBoundingClientRect();
+    if (m.width > 0 && m.right > arriba.getBoundingClientRect().left - 8) {
+      marca.classList.add('crowded');
+    }
+  };
+  medir();
+  if (typeof ResizeObserver === 'function') new ResizeObserver(medir).observe(barra);
+  else window.addEventListener('resize', medir);
+}
+
 function wireClickOutside() {
   const dentroDeAlgoAbierto = (target) => {
     for (const id of [...DRAWERS, ...POPOVERS, 'props-menu', ...CLICK_OUTSIDE_EXEMPT]) {
@@ -3705,6 +3742,7 @@ export function initUI() {
     if (file) doOpenProject(file);
   });
   $('btn-close-props').addEventListener('click', closePropsMenu);
+  $('unit-labels').addEventListener('change', (e) => store.setUnitLabels(e.target.checked));
   $('btn-add-unit').addEventListener('click', () => {
     const name = $('new-unit-name').value.trim();
     if (!name) return;
@@ -3869,6 +3907,7 @@ export function initUI() {
   wireScale();
   wireShortcuts();
   wireClickOutside();
+  wireToolbarWidth();
 
   // StraboSpot vive en su propio módulo: la API, el aplanado de spots y su
   // simbología no tienen por qué mezclarse con el resto de la interfaz.
@@ -3896,7 +3935,7 @@ export function initUI() {
     ) {
       buildPalette();
     }
-    if (store.changed('units')) renderUnits();
+    if (store.changed('units') || store.changed('unitLabels')) renderUnits();
     if (store.changed('ornaments')) renderSymbology();
     if (store.changed('layers')) renderLayers();
     // Abrir un proyecto reescribe los ajustes: los controles tienen que

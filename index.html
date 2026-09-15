@@ -648,6 +648,18 @@
         <p class="hint">
           Name and code are exported as the GeoPackage fields <code>unit</code> and <code>code</code>.
         </p>
+        <!-- El rótulo se enciende aquí, junto a los códigos que rotula, y no
+             en Ajustes: lo que se quiere comprobar al encenderlo es si el
+             código elegido se lee bien sobre el mapa. -->
+        <label class="check">
+          <input type="checkbox" id="unit-labels" />
+          Label the polygons with their code
+        </label>
+        <p class="hint footnote">
+          Only where it fits, and only on a few of them: the map keeps the biggest polygons of
+          each unit in the current view and leaves the rest bare. Zoom in and more of them take
+          a label.
+        </p>
         <ul id="unit-list"></ul>
         <div class="unit-new">
           <input type="text" id="new-unit-name" placeholder="Unit name" />
