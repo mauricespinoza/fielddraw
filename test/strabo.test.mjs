@@ -206,7 +206,8 @@ console.log('== subida: features de FieldDraw -> spots nativos ==');
         id: 'm1', kind: 'point', geomKind: 'measurement', type: 'bedding',
         strike: 45.4, dip: 32.6, dipAzimuth: 135.4, overturned: true,
         method: 'plane-fit', strikeSd: 3.2, dipSd: 1.8, rms: 4.5, baseline: 180, n: 12,
-        demSource: 'Terrarium',
+        demSource: 'Terrarium', unitId: 'unit-1', unit: 'Fm. Cura-Mallin', code: 'Kcm',
+        note: 'contact zone',
       },
       geometry: { type: 'Point', coordinates: [-71.2, -37.2] },
     },
@@ -249,6 +250,18 @@ console.log('== subida: features de FieldDraw -> spots nativos ==');
   ok('la trazabilidad va en las notas', /plane|least-squares/i.test(o.notes) && o.notes.includes('RMS'), o.notes);
   ok('el valor exacto se conserva aparte', medida.properties.fielddraw.strike === 45.4);
   ok('el nombre de la medida se lee', /Bedding/.test(medida.properties.name), medida.properties.name);
+
+  // --- el error del ajuste va en las notas del SPOT, no solo en las de la orientacion
+  ok('las notas del spot llevan el error del ajuste',
+    medida.properties.notes.includes('RMS') && medida.properties.notes.includes('180 m'),
+    medida.properties.notes);
+  ok('y la nota propia del geologo tambien', medida.properties.notes.includes('contact zone'), medida.properties.notes);
+  ok('las notas del spot y de la orientacion dicen lo mismo', medida.properties.notes === o.notes);
+
+  // --- la unidad de una medida tambien genera / se suma al tag del proyecto
+  ok('sigue siendo un solo tag: medida y poligono comparten unidad', tags.length === 1);
+  ok('el tag incluye el spot de la medida y el del poligono',
+    tags[0].spots.length === 2 && tags[0].spots.includes(medida.properties.id) && tags[0].spots.includes(poligono.properties.id));
 
   // --- un joint es fracture, no `option_13`
   const [joint] = featuresToSpots(
@@ -297,7 +310,7 @@ console.log('== subida: features de FieldDraw -> spots nativos ==');
   ok('el tag es de unidad geologica', tags[0].type === 'geologic_unit');
   ok('el tag lleva nombre, sigla y color',
     tags[0].name === 'Fm. Cura-Mallin' && tags[0].unit_label_abbreviation === 'Kcm' && tags[0].color === '#ffb74d');
-  ok('el tag apunta al spot del poligono', tags[0].spots.length === 1 && tags[0].spots[0] === poligono.properties.id);
+  ok('el tag apunta al spot del poligono', tags[0].spots.includes(poligono.properties.id));
 
   const alteracion = featuresToSpots([
     { type: 'Feature', properties: { id: 'a', kind: 'polygon', type: 'alteration-zone', unit: 'Argilica' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } },

@@ -184,6 +184,37 @@ function numberField(label, value, { min, max, step }, onInput) {
   return wrap;
 }
 
+/**
+ * Fila de chips de unidad geológica, compartida entre la paleta de medir y el
+ * panel de propiedades de una medida ya puesta. `allowNone` ofrece un chip
+ * "None" que quita la etiqueta: a diferencia de un polígono, cuya unidad ES
+ * su tipo, una medida puede no tener unidad asignada todavía.
+ */
+function unitChips(container, units, activeId, onPick, { allowNone = true } = {}) {
+  if (allowNone) {
+    container.appendChild(
+      chip({
+        label: 'None',
+        title: 'Do not tag this measurement with a map unit',
+        active: activeId === null || activeId === undefined,
+        onClick: () => onPick(null),
+      }),
+    );
+  }
+  for (const u of units) {
+    container.appendChild(
+      chip({
+        label: u.code || u.name.slice(0, 8),
+        title: u.name,
+        color: u.color,
+        swatch: true,
+        active: activeId === u.id,
+        onClick: () => onPick(u.id),
+      }),
+    );
+  }
+}
+
 /* ---------- paleta de tipos ---------- */
 
 /** Modos de la herramienta Edit Nodes, con su glifo y su ayuda. */
@@ -257,6 +288,9 @@ function buildPalette() {
         }),
       );
     }
+
+    const unidades = paletteGroup(scroll, 'Unit');
+    unitChips(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
 
     // Invertido solo aplica a la estratificación: una foliación o una diaclasa
     // no tienen techo y muro que se puedan haber dado vuelta.
@@ -1118,6 +1152,40 @@ function enCampoDeTexto(target) {
   return !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
 }
 
+/**
+ * Abre y cierra los menús volantes de Create y Topology.
+ *
+ * Van aparte de `wireClickOutside`: ese sistema trata la barra entera como
+ * "dentro" —`CLICK_OUTSIDE_EXEMPT` incluye `toolbar`—, así que un clic en
+ * Navigate mientras el volante de Create está abierto no lo cerraría por esa
+ * vía. Aquí basta con lo mismo que ya usa ese otro sistema: capturar el
+ * `pointerdown`, antes de que el propio botón de debajo actúe.
+ */
+function wireToolGroups() {
+  document.addEventListener(
+    'pointerdown',
+    (e) => {
+      for (const { group: groupId } of Object.values(TOOL_GROUPS)) {
+        const group = $(groupId);
+        if (group.classList.contains('open') && !group.contains(e.target)) {
+          group.classList.remove('open');
+        }
+      }
+    },
+    { capture: true },
+  );
+
+  for (const { group: groupId, toggle: toggleId } of Object.values(TOOL_GROUPS)) {
+    const group = $(groupId);
+    $(toggleId).addEventListener('click', () => group.classList.toggle('open'));
+    // Elegir una herramienta del volante lo cierra: ya se sabe qué se quería,
+    // y dejarlo abierto solo taparía el mapa sin motivo.
+    for (const btn of group.querySelectorAll('.tool-flyout .tool')) {
+      btn.addEventListener('click', () => group.classList.remove('open'));
+    }
+  }
+}
+
 /** ¿Hay algo flotando sobre el mapa ahora mismo? */
 function anyOverlayOpen() {
   if (DRAWERS.some((id) => $(id).classList.contains('open'))) return true;
@@ -1558,33 +1626,6 @@ function wireScale() {
   $('scale-ruler-mm').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') calibrar();
   });
-}
-
-/* ---------- diagnóstico del lápiz ---------- */
-
-const POINTER_LABEL = {
-  pen: 'Apple Pencil / stylus',
-  touch: 'Finger',
-  mouse: 'Mouse / trackpad',
-};
-
-export function renderPointerInfo(info) {
-  const box = $('pen-readout');
-  const detail = $('pen-detail');
-  box.classList.toggle('live', !!info);
-  if (!info) {
-    $('pen-kind').textContent = 'No contact';
-    detail.hidden = true;
-    return;
-  }
-  detail.hidden = false;
-  $('pen-kind').textContent = POINTER_LABEL[info.pointerType] || info.pointerType;
-  $('pen-pressure').textContent = info.pressure.toFixed(2);
-  $('pen-pressure-bar').style.width = `${Math.round(info.pressure * 100)}%`;
-  $('pen-tilt').textContent = `${info.tiltX.toFixed(0)}° / ${info.tiltY.toFixed(0)}°`;
-  $('pen-alt').textContent =
-    info.altitudeAngle === null ? 'n/a' : `${((info.altitudeAngle * 180) / Math.PI).toFixed(0)}°`;
-  $('pen-coalesced').textContent = String(info.coalesced);
 }
 
 /** Cuánto dura un aviso en pantalla antes de desvanecerse solo, en ms. */
@@ -3115,6 +3156,15 @@ function measurementSection(body, medida, reabrir) {
     sec.appendChild(inv);
   }
 
+  const uni = section(body, 'Unit');
+  const uniRow = document.createElement('div');
+  uniRow.className = 'palette-row';
+  unitChips(uniRow, store.getState().units, p.unitId ?? null, (id) => {
+    store.assignUnitToSelection(id);
+    reabrir();
+  });
+  uni.appendChild(uniRow);
+
   /*
    * Calidad. Es la parte que justifica todo el módulo: un manteo sacado de un
    * DEM sin la base sobre la que se midió y sin su incertidumbre es un número
@@ -3356,6 +3406,21 @@ async function doImportGeoPackage(file) {
  */
 const GEOMETRY_TOOL_BUTTONS = ['t-hole', 't-measure', 't-cut', 't-reshape', 't-profile'];
 
+/**
+ * Qué herramientas hay detrás de cada botón de grupo (Create, Topology), para
+ * que el botón se marque activo aunque el menú volante esté cerrado: sin
+ * esto, elegir Dip y cerrar el menú dejaría la barra sin decir con qué se
+ * está dibujando.
+ */
+const TOOL_GROUPS = {
+  create: { group: 'group-create', toggle: 'tg-create', tools: new Set(['line', 'polygon', 'measure']) },
+  topology: {
+    group: 'group-topology',
+    toggle: 'tg-topology',
+    tools: new Set(['vertices', 'hole', 'cut', 'reshape']),
+  },
+};
+
 const TERRAIN_BLOCKED_TITLE =
   'Not available while 3D terrain is on: on tilted ground the point you touch is not the point on the map';
 
@@ -3393,6 +3458,15 @@ function renderToolbar() {
   $('t-snap').classList.toggle('active', s.snapEnabled);
   $('t-trace').classList.toggle('active', s.traceEnabled);
   $('t-3d').classList.toggle('active', s.terrain3d);
+
+  // El botón de grupo se enciende si la herramienta activa vive dentro, o —en
+  // Topology— si Snap o Follow trace están encendidos: son ajustes que
+  // importan aunque en ese momento se esté navegando, no dibujando.
+  $(TOOL_GROUPS.create.toggle).classList.toggle('active', TOOL_GROUPS.create.tools.has(s.tool));
+  $(TOOL_GROUPS.topology.toggle).classList.toggle(
+    'active',
+    TOOL_GROUPS.topology.tools.has(s.tool) || s.snapEnabled || s.traceEnabled,
+  );
 
   /*
    * Con el relieve puesto, las herramientas que dependen de tocar con
@@ -3869,6 +3943,7 @@ export function initUI() {
   wireScale();
   wireShortcuts();
   wireClickOutside();
+  wireToolGroups();
 
   // StraboSpot vive en su propio módulo: la API, el aplanado de spots y su
   // simbología no tienen por qué mezclarse con el resto de la interfaz.
@@ -3892,6 +3967,7 @@ export function initUI() {
       store.changed('measureMethod') ||
       store.changed('measureType') ||
       store.changed('measureOverturned') ||
+      store.changed('measureUnit') ||
       store.changed('units')
     ) {
       buildPalette();

@@ -3,6 +3,7 @@ import { formatStrikeDip } from '../structure.js';
 import { newStraboId } from './api.js';
 import {
   geologicUnitTag,
+  measurementProvenance,
   planarOrientation,
   pruneEmpty,
   surfaceFeatureFor,
@@ -126,26 +127,56 @@ function isoNow() {
 }
 
 /**
+ * Unidad de un elemento, sea polígono o medida.
+ *
+ * En un polígono la unidad ES su `type` —así lo modela el store—; en una
+ * medida es una etiqueta aparte, `unitId`, porque `type` ya lo ocupa la
+ * superficie medida (bedding, foliation…). Las dos formas denormalizan
+ * nombre y código en `unit`/`code`, que es lo que permite reconstruir la
+ * unidad aunque ya no esté en el catálogo vigente (`units` puede venir de un
+ * proyecto viejo que cambió sus unidades desde entonces).
+ */
+function unitFor(f, units) {
+  const p = f.properties;
+  if (f.geometry.type === 'Polygon') {
+    return units.find((u) => u.id === p.type) || (p.unit ? { id: p.type, name: p.unit, code: p.code } : null);
+  }
+  if (esMedida(f) && p.unitId) {
+    return units.find((u) => u.id === p.unitId) || (p.unit ? { id: p.unitId, name: p.unit, code: p.code } : null);
+  }
+  return null;
+}
+
+/**
  * @param {Array} features features de FieldDraw
  * @param {{field?: string, geologist?: string, units?: Array}} meta
  * @returns {{collection: object, count: number, tags: Array, breakdown: object}}
  *   `tags` son los tags `geologic_unit` que hay que escribir en el proyecto
- *   para que los polígonos salgan con su unidad y su color; sin ellos el
- *   polígono llega, pero llega anónimo.
+ *   para que los polígonos y las medidas salgan con su unidad y su color; sin
+ *   ellos un polígono llega anónimo y una medida sin decir en qué unidad se
+ *   tomó.
  */
 export function featuresToSpots(features, meta = {}) {
   const now = Date.now();
   const iso = isoNow();
   const counters = new Map();
   const units = Array.isArray(meta.units) ? meta.units : [];
-  /** unidad -> ids de los spots de polígono que le pertenecen. */
+  /** unidad -> ids de los spots (de polígono o de medida) que le pertenecen. */
   const porUnidad = new Map();
 
   const spots = features.filter(subible).map((f) => {
     const p = f.properties;
     const id = newStraboId();
     const name = spotName(f, counters);
-    const notas = (p.notes || p.note || '').trim();
+    /*
+     * En una medida, las notas del SPOT llevan también el error del ajuste
+     * (σ de rumbo y manteo, RMS, base, fuente del DEM): es lo primero que se
+     * ve al abrir el spot en StraboSpot, y sin eso ahí un manteo calculado
+     * sobre un DEM se lee igual que uno de brújula. El mismo texto se repite
+     * en la orientación (ver `planarOrientation`), que es lo único visible al
+     * editar la medición desde el formulario.
+     */
+    const notas = esMedida(f) ? measurementProvenance(p) : (p.notes || p.note || '').trim();
 
     const propiedades = {
       id,
@@ -169,12 +200,10 @@ export function featuresToSpots(features, meta = {}) {
       fielddraw: fielddrawBlock(f),
     };
 
-    if (f.geometry.type === 'Polygon') {
-      const unidad = units.find((u) => u.id === p.type) || (p.unit ? { id: p.type, name: p.unit, code: p.code } : null);
-      if (unidad && unidad.name) {
-        if (!porUnidad.has(unidad.name)) porUnidad.set(unidad.name, { unit: unidad, spots: [] });
-        porUnidad.get(unidad.name).spots.push(id);
-      }
+    const unidad = unitFor(f, units);
+    if (unidad && unidad.name) {
+      if (!porUnidad.has(unidad.name)) porUnidad.set(unidad.name, { unit: unidad, spots: [] });
+      porUnidad.get(unidad.name).spots.push(id);
     }
 
     return { type: 'Feature', geometry: f.geometry, properties: propiedades };

@@ -5,7 +5,6 @@ import {
   initUI,
   openImportedAttrs,
   openPropsMenu,
-  renderPointerInfo,
   renderScale,
   showBanner,
   wireLocate,
@@ -29,7 +28,11 @@ import {
 initUI();
 
 const view = createMapView({
-  onPointerInfo: renderPointerInfo,
+  // El HUD de diagnóstico del lápiz (presión, inclinación, altitud) se quitó
+  // de la interfaz; el cálculo sigue intacto en drawController/mapView —no
+  // hay nada más que dependa de él— así que aquí solo hace falta un callback
+  // que no haga nada.
+  onPointerInfo: () => {},
   onContourError: (msg) => showBanner(`Curvas de nivel no disponibles: ${msg}`),
   onEditMessage: showBanner,
   onOpenProps: openPropsMenu,

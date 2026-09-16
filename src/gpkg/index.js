@@ -281,7 +281,7 @@ export async function exportGeoPackage(features, units, ornaments) {
         columns: [
           'type', 'strike', 'dip', 'dip_dir', 'overturned', 'method',
           'strike_sd', 'dip_sd', 'rms_m', 'n_points', 'base_m', 'spread_m',
-          'dem_source', 'label', 'note', 'created_at',
+          'dem_source', 'unit', 'code', 'label', 'note', 'created_at',
         ],
         /*
          * Los campos de calidad se exportan junto al dato y no solo se muestran
@@ -303,6 +303,8 @@ export async function exportGeoPackage(features, units, ornaments) {
           p.baseline ?? null,
           p.minorSpread ?? null,
           p.demSource || null,
+          p.unit || '',
+          p.code || '',
           `${STRUCTURE_TYPE_BY_ID.get(p.type)?.label || p.type} ${formatStrikeDip(p.strike, p.dip)}`,
           p.note || null,
         ],
