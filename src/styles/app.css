@@ -221,6 +221,60 @@ body,
 }
 
 /*
+ * Grupos de herramientas (Create, Topology): varios botones afines plegados
+ * bajo uno solo, que se abre en un menú volante.
+ *
+ * Con las veinte herramientas sueltas la columna no cabía sin desplazarse en
+ * un iPad apaisado, y agrupar las que se usan juntas —dibujar; corregir la
+ * geometría y su topología— acorta la barra sin esconder nada: lo agrupado
+ * queda a un toque más, no a un menú más.
+ */
+.tool-group {
+  position: relative;
+}
+
+.group-toggle {
+  position: relative;
+}
+
+/* El puntito dice que detrás hay más de una herramienta. */
+.group-toggle::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  bottom: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.tool-flyout {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: calc(100% + 6px);
+  z-index: 20;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  /* Nunca más alto que la pantalla: en un iPad apaisado siete botones
+     apilados sí pueden pasarse del borde inferior. */
+  max-height: min(340px, calc(100dvh - 90px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tool-group.open .tool-flyout {
+  display: flex;
+}
+
+/*
  * Deshacer y rehacer del DIBUJO —no el «Undo» de vértice, que ya vive más
  * abajo en esta misma barra— escondidos salvo en la disposición compacta (ver
  * el bloque final). En tablet y PC el atajo `Ctrl+Z` y el gesto de dos dedos
@@ -1180,76 +1234,6 @@ input[type='radio'] {
   padding-left: 28px;
 }
 
-/* ---------- diagnóstico del lápiz ---------- */
-/* Abajo a la izquierda: la columna de la paleta ocupa el borde superior. */
-.pen-readout {
-  position: absolute;
-  left: calc(var(--safe-l) + 100px);
-  bottom: calc(var(--safe-b) + 34px);
-  z-index: 9;
-  width: 190px;
-  padding: 9px 11px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  font-size: 11.5px;
-  color: var(--muted);
-  opacity: 0.55;
-  transition: opacity 0.2s;
-}
-
-.pen-readout.live {
-  opacity: 1;
-  border-color: rgba(45, 212, 191, 0.5);
-}
-
-.pen-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text);
-  font-size: 12.5px;
-  margin-bottom: 4px;
-}
-
-.pen-title .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #4b5563;
-}
-
-.pen-readout.live .pen-title .dot {
-  background: var(--accent);
-}
-
-.pen-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  justify-content: space-between;
-  min-height: 18px;
-}
-
-.pen-row .bar {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-
-.pen-row .bar div {
-  height: 100%;
-  background: var(--accent);
-}
-
-.pen-row .num {
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-
 /* ---------- barra de estado y avisos ---------- */
 .statusbar {
   position: absolute;
@@ -2186,6 +2170,22 @@ input[type='radio'] {
   }
 
   /*
+   * En la tira horizontal el menú volante ya no puede salir hacia la
+   * derecha —se saldría de la pantalla en dos toques— así que sale hacia
+   * ARRIBA, apoyado sobre la tira, y en fila: siete botones apilados en
+   * vertical sobre un dedo son más difíciles de acertar que siete en línea.
+   */
+  .tool-flyout {
+    top: auto;
+    left: 0;
+    bottom: calc(100% + 6px);
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-width: min(320px, 92vw);
+    max-height: none;
+  }
+
+  /*
    * La paleta no entra aquí: dónde ponerla depende de qué falte. Estrecha (B)
    * sobra alto y falta ancho, así que va de hoja al pie; baja (C) es al revés
    * y vuelve a ser la columna del costado de siempre.
@@ -2209,16 +2209,6 @@ input[type='radio'] {
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {
     margin-bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
-  }
-
-  /*
-   * Presión, inclinación y altitud del lápiz: 190 px de diagnóstico, y encima
-   * en la esquina que acaba de ocupar la tira de herramientas. Es una ayuda
-   * para calibrar el Pencil, no algo que se consulte en terreno, así que se
-   * retira y sigue estando en la tablet.
-   */
-  .pen-readout {
-    display: none;
   }
 
   /*

@@ -23,6 +23,14 @@ const poly = (id, rings) => ({
   properties: { id, kind: 'polygon', type: 'volcanic-unit', certainty: 'observed', createdAt: 1 },
   geometry: { type: 'Polygon', coordinates: rings },
 });
+const measurement = (id, extra = {}) => ({
+  type: 'Feature', id,
+  properties: {
+    id, kind: 'point', geomKind: 'measurement', type: 'bedding',
+    strike: 10, dip: 20, dipAzimuth: 100, certainty: 'observed', createdAt: 1, ...extra,
+  },
+  geometry: { type: 'Point', coordinates: [0, 0] },
+});
 
 console.log('== punto en polígono ==');
 {
@@ -354,6 +362,24 @@ console.log('== propiedades de la selección ==');
      p.properties.code === unidad.code, JSON.stringify(p.properties));
   ok('no toca las líneas', l.properties.type === 'dike');
 
+  // A una medida se le asigna la unidad como una etiqueta propia: `type` ya
+  // lo ocupa la superficie medida, así que no puede ser también la unidad
+  // como en un polígono.
+  store.loadFeatures([...store.getState().features, measurement('M')]);
+  store.setSelection(['M']);
+  store.assignUnitToSelection(unidad.id);
+  const m = store.getState().features.find((f) => f.properties.id === 'M');
+  ok('asigna unidad a la medida sin tocar su tipo de superficie',
+     m.properties.type === 'bedding' && m.properties.unitId === unidad.id &&
+     m.properties.unit === unidad.name && m.properties.code === unidad.code,
+     JSON.stringify(m.properties));
+
+  store.assignUnitToSelection(null);
+  const m2 = store.getState().features.find((f) => f.properties.id === 'M');
+  ok('null quita la unidad de la medida',
+     !('unitId' in m2.properties) && !('unit' in m2.properties) && !('code' in m2.properties),
+     JSON.stringify(m2.properties));
+
   store.setSelection(['L']);
   store.transformSelectedGeometry(() => ({ type: 'LineString', coordinates: [[9, 9], [8, 8]] }));
   ok('transforma la geometría',
@@ -369,16 +395,39 @@ console.log('== unidades ==');
   ok('con id propio', !!u.id && u.code === 'Kc');
 
   store.clearFeatures();
-  store.loadFeatures([{ ...poly('X', [[[0, 0], [1, 0], [1, 1], [0, 0]]]),
-    properties: { id: 'X', kind: 'polygon', type: u.id, unit: u.name, code: u.code, certainty: 'observed', createdAt: 1 } }]);
+  store.loadFeatures([
+    { ...poly('X', [[[0, 0], [1, 0], [1, 1], [0, 0]]]),
+      properties: { id: 'X', kind: 'polygon', type: u.id, unit: u.name, code: u.code, certainty: 'observed', createdAt: 1 } },
+    measurement('Y', { unitId: u.id, unit: u.name, code: u.code }),
+  ]);
   store.updateUnit(u.id, { name: 'Fm. Curanilahue', code: 'Kcu' });
-  const px = store.getState().features[0];
+  const px = store.getState().features.find((f) => f.properties.id === 'X');
+  const my = store.getState().features.find((f) => f.properties.id === 'Y');
   ok('renombrar propaga a los polígonos',
      px.properties.unit === 'Fm. Curanilahue' && px.properties.code === 'Kcu',
      JSON.stringify(px.properties));
+  ok('renombrar propaga también a las medidas',
+     my.properties.unit === 'Fm. Curanilahue' && my.properties.code === 'Kcu' && my.properties.unitId === u.id,
+     JSON.stringify(my.properties));
+
+  // La paleta de medir hereda la unidad activa, igual que el tipo de
+  // superficie o el volcamiento — no hay que pasarla en cada llamada.
+  store.setMeasureUnit(u.id);
+  const creada = store.createMeasurement({ lngLat: [1, 2], strike: 5, dip: 5 });
+  ok('una medida nueva hereda la unidad activa de la paleta',
+     creada.properties.unitId === u.id && creada.properties.unit === 'Fm. Curanilahue',
+     JSON.stringify(creada.properties));
+  const explicita = store.createMeasurement({ lngLat: [1, 2], strike: 5, dip: 5, unitId: null });
+  ok('pero un unitId explícito manda sobre la paleta',
+     !('unitId' in explicita.properties), JSON.stringify(explicita.properties));
 
   store.removeUnit(u.id);
   ok('elimina la unidad', store.getState().units.length === n);
+  const yTrasBorrar = store.getState().features.find((f) => f.properties.id === 'Y');
+  ok('borrar la unidad le quita la etiqueta a las medidas que la tenían',
+     !('unitId' in yTrasBorrar.properties) && !('unit' in yTrasBorrar.properties),
+     JSON.stringify(yTrasBorrar.properties));
+  ok('y deja de ser la unidad activa de la paleta', store.getState().measureUnit === null);
   ok('no deja quedarse sin ninguna',
      (store.loadUnits([{ id: 'solo', name: 'Única', code: 'U', color: '#fff' }]),
       store.removeUnit('solo'), store.getState().units.length === 1));

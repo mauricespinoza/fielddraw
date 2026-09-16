@@ -164,6 +164,13 @@ let state = {
   measureType: 'bedding',
   /** Estratos invertidos: cambia el símbolo, no el número. */
   measureOverturned: false,
+  /**
+   * Unidad geológica en la que se toma la medida, o `null` si no se etiqueta.
+   * A diferencia de un polígono —donde la unidad ES el tipo— una medida puede
+   * tomarse sin saber todavía en qué unidad cae, así que "sin unidad" es un
+   * estado válido y no solo el punto de partida.
+   */
+  measureUnit: null,
   /** Valores de partida del método manual, que se editan tras colocarlo. */
   manualStrike: 0,
   manualDip: 30,
@@ -960,6 +967,7 @@ export function clearPendingCut() {
 export const setMeasureMethod = (measureMethod) => set({ measureMethod, draft: null });
 export const setMeasureType = (measureType) => set({ measureType });
 export const setMeasureOverturned = (measureOverturned) => set({ measureOverturned });
+export const setMeasureUnit = (measureUnit) => set({ measureUnit });
 export const setManualStrike = (manualStrike) => set({ manualStrike: norm360(manualStrike) });
 export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) });
 
@@ -1004,10 +1012,19 @@ export function createMeasurement({
   method = 'manual',
   quality = {},
   note = '',
+  unitId,
 }) {
   const id = newId();
   const rumbo = norm360(strike);
   const manteo = clampDip(dip);
+  // La unidad activa en la paleta se hereda, igual que el tipo de superficie o
+  // el volcamiento; no asignar ninguna ('none' en la paleta) es tan válido
+  // como asignar una, así que `unit` solo entra en las propiedades cuando de
+  // verdad hay una.
+  // `unitId` distingue "no se pasó" (hereda la paleta) de "se pasó null"
+  // (sin unidad a propósito): `??` los trataría igual, y un `null` explícito
+  // dejaría de poder forzar "sin unidad" cuando la paleta sí tiene una activa.
+  const unit = state.units.find((u) => u.id === (unitId !== undefined ? unitId : state.measureUnit));
   const feature = {
     type: 'Feature',
     id,
@@ -1025,6 +1042,7 @@ export function createMeasurement({
       certainty: 'observed',
       opacity: 1,
       note,
+      ...(unit ? { unitId: unit.id, unit: unit.name, code: unit.code } : {}),
       ...quality,
       createdAt: Date.now(),
     },
@@ -1236,21 +1254,37 @@ export function updateSelectedProps(patch) {
   });
 }
 
-/** Asigna una unidad a los polígonos seleccionados (nombre y código). */
+/**
+ * Asigna una unidad a la selección.
+ *
+ * En un polígono la unidad ES el tipo —`type` pasa a ser el id de la
+ * unidad— y por eso no se admite quitarla: un polígono sin unidad no
+ * significa nada. En una medida es una etiqueta aparte y opcional, así que
+ * `unitId` nulo la quita en vez de no hacer nada; es lo que necesita el chip
+ * "None" del panel de propiedades.
+ */
 export function assignUnitToSelection(unitId) {
-  const unit = state.units.find((u) => u.id === unitId);
-  if (!unit || state.selection.length === 0) return;
+  if (state.selection.length === 0) return;
+  const unit = unitId ? state.units.find((u) => u.id === unitId) : null;
+  if (unitId && !unit) return;
   pushHistory();
   const ids = new Set(state.selection);
   set({
-    features: state.features.map((f) =>
-      ids.has(f.properties.id) && f.geometry.type === 'Polygon'
-        ? {
-            ...f,
-            properties: { ...f.properties, type: unit.id, unit: unit.name, code: unit.code },
-          }
-        : f,
-    ),
+    features: state.features.map((f) => {
+      if (!ids.has(f.properties.id)) return f;
+      if (f.geometry.type === 'Polygon') {
+        if (!unit) return f;
+        return { ...f, properties: { ...f.properties, type: unit.id, unit: unit.name, code: unit.code } };
+      }
+      if (f.properties.geomKind === 'measurement') {
+        if (!unit) {
+          const { unitId: _unitId, unit: _unit, code: _code, ...rest } = f.properties;
+          return { ...f, properties: rest };
+        }
+        return { ...f, properties: { ...f.properties, unitId: unit.id, unit: unit.name, code: unit.code } };
+      }
+      return f;
+    }),
   });
 }
 
@@ -1279,20 +1313,37 @@ export function addUnit({ name, code, color }) {
 export function updateUnit(id, patch) {
   const units = state.units.map((u) => (u.id === id ? { ...u, ...patch } : u));
   const unit = units.find((u) => u.id === id);
-  // Los polígonos guardan nombre y código denormalizados para la exportación,
-  // así que hay que propagarles el cambio.
-  const features = state.features.map((f) =>
-    f.properties.type === id && f.geometry.type === 'Polygon'
-      ? { ...f, properties: { ...f.properties, unit: unit.name, code: unit.code } }
-      : f,
-  );
+  // Los polígonos y las medidas guardan nombre y código denormalizados para
+  // la exportación, así que hay que propagarles el cambio a los dos.
+  const features = state.features.map((f) => {
+    if (f.geometry.type === 'Polygon' && f.properties.type === id) {
+      return { ...f, properties: { ...f.properties, unit: unit.name, code: unit.code } };
+    }
+    if (f.properties.geomKind === 'measurement' && f.properties.unitId === id) {
+      return { ...f, properties: { ...f.properties, unit: unit.name, code: unit.code } };
+    }
+    return f;
+  });
   set({ units, features });
 }
 
 export function removeUnit(id) {
   if (state.units.length <= 1) return;
   const units = state.units.filter((u) => u.id !== id);
-  set({ units, polygonType: state.polygonType === id ? units[0].id : state.polygonType });
+  // Una medida solo referencia la unidad por id: hay que quitarle la etiqueta
+  // entera o quedaría apuntando a una unidad que ya no existe. Un polígono no
+  // se toca aquí: su unidad se resuelve más abajo, cambiándole el tipo.
+  const features = state.features.map((f) => {
+    if (f.properties.geomKind !== 'measurement' || f.properties.unitId !== id) return f;
+    const { unitId: _unitId, unit: _unit, code: _code, ...rest } = f.properties;
+    return { ...f, properties: rest };
+  });
+  set({
+    units,
+    features,
+    polygonType: state.polygonType === id ? units[0].id : state.polygonType,
+    measureUnit: state.measureUnit === id ? null : state.measureUnit,
+  });
 }
 
 /** Enciende o apaga el rótulo de código sobre los polígonos. */
@@ -1349,6 +1400,7 @@ export const SETTING_KEYS = [
   'measureMethod',
   'measureType',
   'measureOverturned',
+  'measureUnit',
   'profileSource',
   'opentopoDem',
   'profileSamples',

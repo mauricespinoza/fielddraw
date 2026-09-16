@@ -723,10 +723,16 @@ de abajo.
 Los iconos de la tira bajan de 24 a 19 px y los rótulos desaparecen del todo
 por debajo de 520 px de alto: el icono ya identifica cada herramienta, el
 `title` sigue ahí para el que dude, y con veinte botones esos pocos píxeles por
-botón se notan sumados. Lo que se retira entero es el **diagnóstico del lápiz**
-—presión, inclinación, altitud—, que es una ayuda para calibrar el Pencil y no
-algo que se consulte en terreno, y la **marca** de la esquina, que ya se
-escondía por debajo de 900 px.
+botón se notan sumados. Lo que se retira entero, y no solo por debajo de este
+punto de quiebre, es la **marca** de la esquina, que ya se escondía por debajo
+de 900 px.
+
+El **diagnóstico del lápiz** —presión, inclinación, altitud, muestras por
+evento— ya no tiene HUD en ninguna disposición, tablet incluida: era una ayuda
+para calibrar el Pencil, no algo que se consulte en terreno, y ocupaba sitio de
+mapa todo el tiempo para un dato que casi nunca hacía falta mirar. El cálculo
+sigue intacto en `drawController.js`/`mapView.js` —nada más dependía de él—,
+así que reactivar el HUD sería volver a pintarlo, no volver a medirlo.
 
 Dos detalles que no se ven pero se notan:
 
@@ -1770,6 +1776,21 @@ propaga el cambio a los polígonos que ya la usaban.
 Si un polígono quedó sin unidad, o con la equivocada, se corrige seleccionándolo
 y usando el menú de propiedades.
 
+**Unidad de una medida.** Una medida de rumbo y manteo también puede llevar
+unidad, pero no de la misma forma que un polígono: en un polígono `type` ES la
+unidad, mientras que en una medida `type` ya está ocupado por la superficie
+medida (estratificación, foliación…), así que la unidad va en un campo propio,
+`unitId`, denormalizado igual que en los polígonos (`unit`, `code`). Por eso
+"sin unidad" es un estado válido en una medida y no lo es en un polígono: se
+puede tomar un dato sin saber todavía en qué unidad cae.
+
+La paleta de la herramienta **Dip** trae un grupo **Unit** con un chip `None`
+además de las unidades del catálogo; lo que quede activo se hereda en cada
+punto que se coloque, igual que el tipo de superficie o el volcamiento. Para
+corregir la unidad de una medida ya puesta, el menú de propiedades de esa
+medida trae la misma fila de chips. Renombrar o borrar una unidad propaga el
+cambio a las medidas que la tenían asignada, igual que a los polígonos.
+
 ### Rotular los polígonos con su código
 
 La casilla **Label the polygons with their code** enciende el rótulo sobre el
@@ -2274,6 +2295,14 @@ que se ve.
 las diaclasas. El símbolo lo rota StraboSpot con el rumbo, y una estratificación
 invertida lleva `facing: overturned`, que es lo que le da su símbolo propio.
 
+**El error del ajuste va en las notas del spot**, no solo en las de la
+medición. Un manteo calculado con tres puntos o ajustado a la traza sobre el
+DEM lleva σ de rumbo y manteo, RMS del ajuste, largo de la base y fuente del
+modelo — sin eso al lado, en StraboSpot se lee igual que uno tomado con
+brújula. El texto va en el campo `notes` del spot, que es lo primero que se ve
+al abrirlo, y se repite en `orientation_data[].notes` para que también aparezca
+al editar la medición desde su propio formulario.
+
 **Líneas → `trace{}`.** El color de la traza sale de `trace_type` y el patrón de
 línea de `trace_quality`, que es exactamente la certeza de FieldDraw:
 observado → `known`, inferido → `inferred`, cubierto → `concealed`. Los
@@ -2281,12 +2310,15 @@ contactos van bajo `contact` (negro) y las fallas y ejes de pliegue bajo
 `geologic_struc` (rojo); un dique **no** es una estructura, es un contacto
 intrusivo, y así lo dibuja la app.
 
-**Polígonos → `surface_feature{}` + un tag del proyecto.** Un polígono no lleva
-el nombre de su unidad: en StraboSpot el nombre y el color vienen de un tag de
-tipo `geologic_unit` que apunta al spot. Por eso la subida escribe también los
-tags —nombre, sigla en `unit_label_abbreviation`, color y litología— y sin ellos
-el polígono llega anónimo y azul. Se puede desactivar con una casilla, porque es
-la única escritura que toca el **proyecto** y no solo el dataset nuevo.
+**Polígonos y medidas → un tag del proyecto.** Ni un polígono ni una medida
+llevan el nombre de su unidad: en StraboSpot el nombre y el color vienen de un
+tag de tipo `geologic_unit` que apunta al spot. Por eso la subida escribe
+también los tags —nombre, sigla en `unit_label_abbreviation`, color y
+litología— y sin ellos el polígono llega anónimo y azul, y la medida sin decir
+en qué unidad se tomó. Un polígono y una medida de la misma unidad comparten un
+único tag: sus dos spots se suman a la misma lista, no se crea uno por cada
+elemento. Se puede desactivar con una casilla, porque es la única escritura que
+toca el **proyecto** y no solo el dataset nuevo.
 
 | FieldDraw | StraboSpot |
 | --- | --- |
@@ -2300,6 +2332,7 @@ la única escritura que toca el **proyecto** y no solo el dataset nuevo.
 | Dyke | `contact` + `intrusive` + `dike` |
 | Observado · Inferido · Cubierto | `trace_quality` `known` · `inferred` · `concealed` |
 | Unidad de un polígono | tag `geologic_unit` + `surface_feature_type: rock_unit` |
+| Unidad de una medida | tag `geologic_unit` (el mismo tag si comparte unidad con un polígono) |
 | Zona de alteración | `surface_feature_type: other` («alteration zone») |
 
 Cuatro decisiones que el dato no toma solo:
@@ -2317,8 +2350,8 @@ Cuatro decisiones que el dato no toma solo:
   StraboSpot los declara enteros. El valor exacto del ajuste no se pierde: viaja
   en el bloque `fielddraw` del spot, junto al método, las desviaciones estándar,
   el RMS, la base y la fuente del DEM. Un resumen legible de todo eso va además
-  en las notas de la medición, que es lo único de esto que se ve al abrir el
-  spot en StraboSpot.
+  en las notas del spot y en las de la medición (ver arriba), que es donde de
+  verdad se lee al abrir el dato en StraboSpot.
 
 **Los tags no se pisan.** `POST /db/project` reenvía el proyecto **entero**, así
 que la subida lee el proyecto, le añade los tags y lo devuelve completo: lo que
