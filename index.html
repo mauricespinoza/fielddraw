@@ -389,6 +389,11 @@
         </label>
         <button class="pill wide" id="btn-save-project">Save project…</button>
         <button class="pill wide" id="btn-open-project">Open project…</button>
+        <!-- La lámina cuelga de Proyecto y no de Export, que es donde está el
+             GeoPackage: lo de Export son DATOS para otro programa, y esto es
+             una figura para una memoria. Son dos cosas distintas y se buscan
+             en momentos distintos. -->
+        <button class="pill wide" id="btn-map-image">Export the map view…</button>
         <button class="pill danger wide" id="btn-new-project">New project</button>
         <p class="hint">
           A <code>.fdproj.json</code> holding the drawing, units, symbology and settings. Imported
@@ -418,6 +423,48 @@
           is inserted there. Undoable in one step.
         </p>
         <button class="pill wide" id="topo-apply">Apply</button>
+      </div>
+
+      <!-- La vista del mapa como lámina: con marco de coordenadas, escala
+           gráfica y norte. Ver src/mapExport.js. -->
+      <div class="dropdown hidden" id="map-export-menu">
+        <header>
+          <h2>Export the map view</h2>
+          <button class="icon-btn" id="btn-close-map-export" aria-label="Close">✕</button>
+        </header>
+        <p class="hint">
+          What is on screen right now, framed the way a figure in a report is framed: a zebra
+          border with latitudes and longitudes, a graphic scale bar and a north arrow.
+        </p>
+        <label class="field">
+          <span>Title (optional)</span>
+          <input type="text" id="map-export-title" placeholder="Cerro Colorado — geological map" />
+        </label>
+        <label class="field">
+          <span>Footnote</span>
+          <input type="text" id="map-export-credit" placeholder="Left blank: centre coordinates and date" />
+        </label>
+        <label class="field">
+          <span>PNG resolution</span>
+          <select id="map-export-scale">
+            <option value="1">1× — screen size</option>
+            <option value="2" selected>2× — for a report</option>
+            <option value="3">3× — for printing</option>
+          </select>
+        </label>
+        <div class="export-row">
+          <button class="pill" id="btn-map-svg">SVG</button>
+          <button class="pill" id="btn-map-png">PNG</button>
+          <button class="pill" id="btn-map-pdf">PDF</button>
+        </div>
+        <p class="hint footnote" id="map-export-note"></p>
+        <p class="hint footnote">
+          The map itself is an image in all three — it is drawn by the graphics card and there are
+          no vectors to recover from it. Everything around it (frame, labels, scale bar, north) is
+          vector in the SVG and the PDF, so the lettering can be restyled in Illustrator or
+          Inkscape without exporting again. The sheet is always taken in plan view: tilted or with
+          3D terrain on there is no single scale and no honest coordinate frame.
+        </p>
       </div>
 
       <div class="dropdown hidden" id="scale-menu">

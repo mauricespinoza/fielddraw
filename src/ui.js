@@ -71,6 +71,7 @@ import {
   saveOpenTopoKey,
 } from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
+import { exportMapImage, pageSizeMm } from './mapExport.js';
 import { MBTILES_WARN_BYTES, openTileFile, readTileBytes } from './tiles.js';
 import {
   applyCut,
@@ -1021,6 +1022,7 @@ const POPOVERS = [
   'project-menu',
   'topo-menu',
   'scale-menu',
+  'map-export-menu',
   'attrs',
   'shortcuts',
   'trace-menu',
@@ -1683,6 +1685,60 @@ function setBusy(text) {
 }
 
 /* ---------- GeoPackage ---------- */
+
+/* ---------- la lámina del mapa ---------- */
+
+/**
+ * Escribe la vista del mapa como lámina.
+ *
+ * Todo el trabajo está en otros dos módulos —`mapFrame` compone y `mapExport`
+ * escribe—; aquí solo se recogen las opciones del panel, se avisa de lo que el
+ * usuario tiene que saber y se entrega el archivo.
+ */
+async function doExportMapImage(format) {
+  if (!mapBridge || !mapBridge.captureForExport) return;
+  const titulo = $('map-export-title').value.trim();
+  const credito = $('map-export-credit').value.trim();
+  const escala = Number($('map-export-scale').value) || 2;
+
+  setBusy('Composing the sheet…');
+  try {
+    const view = await mapBridge.captureForExport();
+    const { blob, filename, layout } = await exportMapImage(view, {
+      format,
+      title: titulo,
+      scale: escala,
+      credit: credito || undefined,
+    });
+    downloadBlob(blob, filename);
+
+    const mm = pageSizeMm(layout);
+    const aviso = view.flattened
+      ? ' Taken in plan view: tilted, a map has no single scale and no honest coordinate frame.'
+      : '';
+    showBanner(
+      `Map exported as ${format.toUpperCase()}, ${mm.width}\u2009\u00D7\u2009${mm.height} mm on paper.${aviso}`,
+      'info',
+    );
+  } catch (err) {
+    showBanner(`Could not export the map view: ${err && err.message ? err.message : err}`);
+  } finally {
+    setBusy(null);
+  }
+}
+
+/** Lo que el panel dice del encuadre de ahora, antes de exportar nada. */
+function renderMapExportNote() {
+  const nota = $('map-export-note');
+  if (!nota) return;
+  const s = store.getState();
+  const partes = [];
+  if (Number.isFinite(escalaActual)) partes.push(`Now showing ${formatScale(escalaActual)}.`);
+  if (s.terrain3d) {
+    partes.push('3D terrain is on: the sheet will be taken flat, from directly above.');
+  }
+  nota.textContent = partes.join(' ');
+}
 
 async function doExportGeoPackage() {
   const features = store.getState().features;
@@ -3743,6 +3799,19 @@ export function initUI() {
   });
   $('btn-close-props').addEventListener('click', closePropsMenu);
   $('unit-labels').addEventListener('change', (e) => store.setUnitLabels(e.target.checked));
+
+  $('btn-map-image').addEventListener('click', () => {
+    openPanel('map-export-menu');
+    // El nombre del proyecto es el título que uno querría casi siempre; se
+    // propone y se puede cambiar, en vez de dejarlo en blanco.
+    const titulo = $('map-export-title');
+    if (!titulo.value.trim()) titulo.value = $('project-name').value.trim();
+    renderMapExportNote();
+  });
+  $('btn-close-map-export').addEventListener('click', () => closeOverlays());
+  $('btn-map-svg').addEventListener('click', () => doExportMapImage('svg'));
+  $('btn-map-png').addEventListener('click', () => doExportMapImage('png'));
+  $('btn-map-pdf').addEventListener('click', () => doExportMapImage('pdf'));
   $('btn-add-unit').addEventListener('click', () => {
     const name = $('new-unit-name').value.trim();
     if (!name) return;

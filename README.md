@@ -233,6 +233,8 @@ Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
 | Fijar la escala | botón **Scale** de la barra, píldora `1:…` abajo a la izquierda, o `K` |
 | Decirle cuánto mide la pantalla | en el mismo panel: **This screen** |
 | Ir a mi posición | botón **Locate** |
+| Rotular los polígonos con su código | casilla en el panel de **Unidades** |
+| Exportar la vista como lámina | **Proyecto → Export the map view…** (SVG, PNG o PDF) |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
 mapa renderizando, el hilo principal se satura y el `pointerup` puede llegar
@@ -249,6 +251,30 @@ Sin nada en construcción, ese mismo toque **selecciona** el elemento que haya
 debajo, sea cual sea la herramienta activa: mientras el lápiz dibuja, el dedo es
 lo que se tiene libre para señalar. Y mantenerlo pulsado ~1 s abre el menú de
 propiedades, también en cualquier herramienta, incluida **Navegar**.
+
+### Por qué el toque no puede colgar del `click` del navegador
+
+En **Navegar** y en **Elegir** la selección iba por el evento `click` de
+MapLibre, y ahí «en la tablet a veces no selecciona» tenía una causa exacta: ese
+evento no es del programa. Lo **sintetiza el navegador** a partir del toque, y
+solo si el dedo se movió menos que su propio umbral, que ronda los diez píxeles.
+Medido en Chromium, un dedo que se corre doce píxeles no produce `click`
+ninguno: ni se selecciona lo que hay debajo ni se deselecciona tocando afuera, y
+no hay nada en pantalla que diga por qué. Doce píxeles es un dedo normal en una
+tablet que se sujeta con la otra mano. Con el lápiz es peor todavía: MapLibre da
+el gesto por arrastre a los **tres** píxeles.
+
+El controlador de dibujo ya medía los toques sobre los eventos de puntero, con
+umbrales pensados para un dedo —14 px y 900 ms— pero solo los atendía mientras
+se estaba dibujando. Ahora los atiende siempre, y el lápiz entra por la misma
+puerta que el dedo. El ratón se queda con el `click` del navegador: en
+escritorio llega siempre, y duplicar el camino abriría dos veces el mismo
+recuadro. El `click` tardío que el navegador sintetiza detrás de un toque ya
+atendido se ignora durante medio segundo.
+
+Seleccionar y deseleccionar comparten una sola función (`selectAt` en
+`mapView.js`), para que el clic y el toque no puedan discrepar sobre qué hay
+debajo.
 
 Dos detalles del reconocimiento de gestos que cuestan de encontrar y que
 explican fallos que parecen aleatorios:
@@ -622,6 +648,26 @@ En macOS el modificador es ⌘ y se normaliza al mismo combo, así que no hay do
 tablas que mantener. Los símbolos ignoran `Shift` deliberadamente: en un teclado
 español `?` ya se escribe con `Shift`, y registrarlo como `Shift+?` lo haría
 inalcanzable en un teclado inglés.
+
+## La barra de herramientas no recorta: envuelve
+
+Con veinte herramientas, la columna de la izquierda mide unos 1200 px de alto.
+En una **tablet apaisada** —que es como se sujeta en terreno— el sitio
+disponible son unos 700, y la barra llevaba `overflow-y: auto` con la barra de
+desplazamiento escondida por CSS. El resultado, medido en iPad, iPad Air e iPad
+Pro: **Escala, GPS, Hecho, Cancelar y Borrar quedaban debajo del borde**, sin
+nada en pantalla que anunciara que la tira seguía.
+
+Eso explica un síntoma que parecía otra cosa: «la herramienta Escala no abre al
+tocarla». No es que no abriera; es que el botón no estaba donde se estaba
+tocando. El mismo recorte pasaba en un monitor de 1080 px de alto.
+
+Ahora la barra **envuelve en columnas**: se ensancha lo justo para que todas las
+herramientas estén a la vista y a un toque. Un desplazamiento oculto no es una
+alternativa — no se descubre. Como su ancho dejó de ser una constante, lo
+publica en `--toolbar-w` y lo que cuelga a su derecha (la marca de la app) lo
+lee de ahí y se retira cuando, medido, ya no cabe entre la barra y la fila de
+botones de arriba.
 
 ## En un teléfono
 
@@ -1648,6 +1694,69 @@ El autosave en localStorage sigue como estaba, para no perder el trabajo si se
 cierra Safari; el proyecto es para llevárselo, versionarlo o pasarlo a otro
 equipo.
 
+## Exportar la vista del mapa como lámina
+
+**Proyecto → Export the map view…** escribe lo que hay en pantalla como SVG,
+PNG o PDF. No es una captura de pantalla: una imagen del mapa, sola, no dice
+dónde está, ni a qué escala, ni hacia dónde, y esas tres cosas son la diferencia
+entre una figura de una memoria y algo pegado en un documento. La lámina lleva:
+
+- **Marco de cebra** con los cortes del graticulado y las coordenadas rotuladas
+  en los cuatro bordes, que es como se lee una coordenada sobre el papel con una
+  regla y nada más.
+- **Escala gráfica**, que sobrevive a la fotocopia y al PDF reescalado, cosa que
+  «1:25 000» no hace. Debajo va también el denominador.
+- **Norte**, girado al revés que la cámara: con la vista girada, el norte del
+  terreno aparece en pantalla a `-bearing`.
+- **Título** opcional (se propone el nombre del proyecto) y un pie con el centro
+  del encuadre y la fecha, que es lo que permite volver al mismo sitio meses
+  después.
+
+### El escalón del graticulado
+
+Se elige el más grande que aún parta el encuadre en al menos tres tramos, de una
+escalera de grados, minutos y segundos enteros: 10°, 5°, 2°, 1°, 30′, 20′, 15′,
+10′, 5′, 2′, 1′, 30″, 20″, 15″, 10″, 5″, 2″, 1″. No hay escalones decimales a
+propósito: un borde rotulado en grados decimales no se lee con la misma regla
+que una libreta de terreno escrita en grados y minutos. A z11 salen cortes cada
+2′; a z17, cada 5″; a z6, cada 2°.
+
+Dónde corta cada línea no se calcula invirtiendo la proyección, sino muestreando
+la longitud y la latitud a lo largo de los cuatro bordes cada cuatro píxeles y
+buscando el cruce. Es lo que hace que funcione igual **con la vista girada**: el
+borde superior de un mapa torcido no es una línea de latitud constante, y
+cualquier fórmula cerrada tendría que tratar los dos casos por separado y podría
+discrepar consigo misma.
+
+### Se captura siempre en planta
+
+Con la cámara basculada o con el relieve 3D puesto no hay **una** escala del
+mapa —cada franja de la pantalla tiene la suya— ni un marco de coordenadas que
+valga. Una lámina así mentiría en las dos cosas que la hacen un mapa. Así que si
+hace falta se aplana, se captura y se devuelve la vista a como estaba; el aviso
+lo dice. El giro **sí** se respeta: girar para alinear con una estructura es una
+decisión del levantamiento, y para eso está la flecha del norte.
+
+### Qué es vector y qué no
+
+El mapa es una imagen en los tres formatos: lo rasteriza la GPU y no hay
+vectores que sacar de ahí. Todo lo demás —marco, rótulos, escala gráfica y
+norte— es vector en el SVG y en el PDF, así que la rotulación se puede retocar
+en Illustrator o Inkscape sin volver a exportar.
+
+Los tres formatos nacen de la **misma** lista de primitivas (`mapFrame.js`,
+comprobable sin navegador), así que no pueden discrepar: el PNG es el SVG
+rasterizado, y el PDF dibuja las mismas primitivas con su propio escritor.
+
+Ese escritor (`pdf.js`, ~280 líneas, sin dependencias) usa Helvetica y
+Helvetica-Bold, dos de las catorce fuentes que todo lector trae, con
+`WinAnsiEncoding` y las tablas de anchos necesarias para centrar un rótulo. La
+imagen del mapa va sin pérdida (`FlateDecode` sobre RGB crudo) mientras el
+navegador traiga `CompressionStream` y la imagen no pase de doce megapíxeles;
+por encima de eso cae a JPEG, que lo hace el navegador. Sin pérdida mientras se
+pueda porque un contacto es una línea de dos píxeles sobre fondo oscuro, que es
+justo donde el JPEG deja halos.
+
 ## Unidades geológicas
 
 El botón **Unidades** abre el módulo donde se definen las unidades del mapa:
@@ -1660,6 +1769,40 @@ propaga el cambio a los polígonos que ya la usaban.
 
 Si un polígono quedó sin unidad, o con la equivocada, se corrige seleccionándolo
 y usando el menú de propiedades.
+
+### Rotular los polígonos con su código
+
+La casilla **Label the polygons with their code** enciende el rótulo sobre el
+mapa. Viene apagada: mientras se levanta, el mapa está lleno de polígonos chicos
+y a medio cerrar, y rotularlos todos tapa justo la geometría que se está
+mirando.
+
+Encendida, tampoco se rotulan todos, y ahí está el trabajo. Un mapa de terreno
+tiene decenas de polígonos, muchos esquirlas de unos píxeles al zoom al que se
+mira; un rótulo por polígono no es un mapa rotulado, es una mancha de texto con
+códigos que no se sabe a cuál de los tres vecinos pertenecen. El reparto se
+recalcula en cada encuadre con tres criterios, medidos los tres **en píxeles de
+pantalla**, que es donde se lee:
+
+1. **Que quepa.** El polígono necesita un hueco visible de al menos 52 px de
+   lado y 3000 px² de superficie. Las dos condiciones y no solo el área: un
+   dique o un nivel guía suman mucha superficie y no tienen sitio para una
+   palabra en ninguna parte.
+2. **Unos pocos.** De los que caben, los catorce mayores.
+3. **Repartidos entre unidades.** Como mucho tres por unidad. Sin esto, un mapa
+   con cuarenta polígonos de una formación y tres de otra gastaría todos los
+   rótulos en la primera y dejaría muda a la segunda, que es la que hay que
+   identificar.
+
+Lo que sobre lo resuelve MapLibre, que antes de solapar dos etiquetas prefiere
+no dibujar. La etiqueta cae en el **polo de inaccesibilidad** del polígono y no
+en su centroide, así que en una unidad en forma de arco queda dentro y no fuera.
+
+El texto sale del catálogo de unidades y no del atributo `code` del elemento,
+por el mismo motivo que el color: renombrar un código se ve en el mapa en el
+acto, sin tocar cada polígono.
+
+Acercarse rotula más polígonos; alejarse los va soltando.
 
 ## Menú de propiedades
 
@@ -2330,6 +2473,17 @@ Las cinco cosas tienen prueba de regresión.
   regla de verdad sobre una barra de calibración.
 - ✅ Quitar un área interior de un polígono, dejando un anillo interior real que
   sobrevive a la fusión con la unidad vecina.
+- ✅ Barra de herramientas que envuelve en columnas en vez de recortar: en una
+  tablet apaisada quedaban fuera de la pantalla Escala, GPS, Hecho, Cancelar y
+  Borrar, sin barra de desplazamiento que lo anunciara.
+- ✅ El toque del dedo y del lápiz seleccionan y deseleccionan en todas las
+  herramientas, medidos sobre los eventos de puntero y no sobre el `click` que
+  sintetiza el navegador, que con doce píxeles de deriva no llega a emitirse.
+- ✅ Rótulo del código de la unidad sobre los polígonos, solo donde cabe, solo
+  en unos pocos y repartido entre unidades.
+- ✅ Exportar la vista del mapa como SVG, PNG o PDF con marco de cebra y
+  coordenadas, escala gráfica y norte, siempre en planta y con el marco y la
+  rotulación en vector.
 - 🚧 **Pendiente**: nodado automático de intersecciones al dibujar (hoy hay que
   pulsar **Topología**), subtipos por categoría, descarga dirigida de un área
   de basemap para llevar al terreno (hoy se resuelve importando un PMTiles), y

@@ -2761,6 +2761,10 @@ export function createMapView({
   // mismo gancho, y quién arranca antes depende de cuándo cargue el estilo.
   window.__fielddraw = Object.assign(window.__fielddraw || {}, {
     map,
+    // La captura de la lámina: se expone para poder comprobar desde una prueba
+    // de navegador que el aplanado y el marco salen bien con la vista girada y
+    // con el relieve puesto, que son los dos casos que a mano no se prueban.
+    captureForExport,
     // De pantalla al terreno. Se expone porque es lo que hay que mirar cuando
     // en un dispositivo concreto los vértices caen corridos en 3D —el aviso de
     // `toLngLat` habla justo de eso— y ahí no suele haber devtools a mano:
@@ -2785,9 +2789,137 @@ export function createMapView({
     endVertexDrag,
   });
 
+  /* ---------- la lámina ---------- */
+
+  /**
+   * La vista, medida y capturada, lista para componer una lámina.
+   *
+   * SE CAPTURA EN PLANTA, SIEMPRE. Con la cámara basculada o con el relieve
+   * 3D puesto no hay una escala del mapa —cada franja de la pantalla tiene la
+   * suya— ni un marco de coordenadas que valga, porque los bordes de la
+   * pantalla dejan de ser rectas del terreno. Una lámina así mentiría en las
+   * dos cosas que la hacen un mapa. Así que si hace falta se aplana, se
+   * captura y se devuelve la vista tal como estaba; `flattened` lo dice, para
+   * que la interfaz pueda avisar de por qué la figura no es lo que se veía.
+   *
+   * La captura del lienzo va DENTRO del manejador de `render` y no después.
+   * El mapa se dibuja sin `preserveDrawingBuffer` —ponerlo cuesta una copia
+   * del framebuffer en cada cuadro, y eso en una tablet se nota todo el rato
+   * para algo que se usa una vez— y sin él, el contenido del lienzo solo es
+   * legible dentro del cuadro en que se pintó. Un `await` de por medio y sale
+   * una imagen en blanco.
+   */
+  async function captureForExport() {
+    if (!ready) throw new Error('The map is still loading.');
+
+    const antes = {
+      pitch: map.getPitch(),
+      terreno: !!(map.getTerrain && map.getTerrain()),
+    };
+    const aplanar = antes.pitch > 0.01 || antes.terreno;
+    if (aplanar) {
+      if (antes.terreno) map.setTerrain(null);
+      map.jumpTo({ pitch: 0 });
+    }
+
+    try {
+      // Aplanar puede pedir teselas que no estaban: se espera a que el mapa se
+      // quede quieto, pero con tope. Una lámina con una tesela a medio cargar
+      // es mejor que un botón que no responde.
+      await waitForIdle(4000);
+
+      const image = await new Promise((resolve, reject) => {
+        const reloj = setTimeout(() => reject(new Error('the map did not finish drawing')), 8000);
+        map.once('render', () => {
+          clearTimeout(reloj);
+          try {
+            resolve(map.getCanvas().toDataURL('image/png'));
+          } catch (err) {
+            reject(err);
+          }
+        });
+        map.triggerRepaint();
+      });
+
+      const lienzo = map.getCanvas();
+      const caja = map.getContainer();
+      const w = caja.clientWidth;
+      const h = caja.clientHeight;
+      const c = map.getCenter();
+
+      return {
+        image,
+        pixelWidth: lienzo.width,
+        pixelHeight: lienzo.height,
+        width: w,
+        height: h,
+        bearing: map.getBearing(),
+        center: [c.lng, c.lat],
+        metresPerPixel: metresPerPixelNow(),
+        denominator: currentDenominator(),
+        edges: edgeSamples(w, h),
+        flattened: aplanar,
+      };
+    } finally {
+      if (aplanar) {
+        map.jumpTo({ pitch: antes.pitch });
+        if (antes.terreno) applyTerrain();
+      }
+    }
+  }
+
+  function waitForIdle(ms) {
+    if (map.loaded() && !map.isMoving()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const listo = () => {
+        clearTimeout(reloj);
+        map.off('idle', listo);
+        resolve();
+      };
+      const reloj = setTimeout(listo, ms);
+      map.on('idle', listo);
+    });
+  }
+
+  /**
+   * La longitud y la latitud a lo largo de los cuatro bordes de la pantalla.
+   *
+   * Es lo que el marco necesita para saber dónde cortan las líneas del
+   * graticulado, y se entrega muestreado en vez de resuelto porque así el
+   * mismo cálculo vale con el mapa al norte y con el mapa girado: el borde
+   * superior de una vista girada no es una línea de latitud constante, y
+   * cualquier fórmula cerrada tendría que tratar los dos casos por separado.
+   *
+   * Cada cuatro píxeles: el error de interpolar entre dos muestras a esa
+   * distancia es muy inferior al píxel, y son unas mil llamadas a `unproject`
+   * en total, que sin relieve es aritmética pura.
+   */
+  function edgeSamples(w, h, paso = 4) {
+    const recorrer = (largo, punto, comp) => {
+      const out = [];
+      for (let t = 0; t <= largo; t += paso) {
+        const ll = map.unproject(punto(t));
+        out.push({ t, v: comp === 'lng' ? ll.lng : ll.lat });
+      }
+      if (out.length === 0 || out[out.length - 1].t < largo) {
+        const ll = map.unproject(punto(largo));
+        out.push({ t: largo, v: comp === 'lng' ? ll.lng : ll.lat });
+      }
+      return out;
+    };
+    return {
+      top: recorrer(w, (t) => [t, 0], 'lng'),
+      bottom: recorrer(w, (t) => [t, h], 'lng'),
+      left: recorrer(h, (t) => [0, t], 'lat'),
+      right: recorrer(h, (t) => [w, t], 'lat'),
+    };
+  }
+
   return {
     map,
     locateMe,
+    /** La vista capturada y medida, para exportarla como lámina. */
+    captureForExport,
     /** Lleva el mapa a una escala concreta, sin fijarla. */
     goToScale,
     /** Desplazar, girar, bascular y acercar desde el teclado. */

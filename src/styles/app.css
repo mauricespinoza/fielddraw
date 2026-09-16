@@ -811,6 +811,16 @@ input[type='radio'] {
 }
 
 /* ---------- tolerancia con deslizador + número ---------- */
+/* Los tres formatos de la lámina, en una fila de botones iguales. */
+.export-row {
+  display: flex;
+  gap: 6px;
+}
+
+.export-row .pill {
+  flex: 1;
+}
+
 .tol-row {
   display: flex;
   align-items: center;
@@ -2110,6 +2120,15 @@ input[type='radio'] {
     gap: 2px;
     padding: 5px 6px;
     max-height: none;
+    /*
+     * AQUÍ NO SE ENVUELVE. En columna, envolver es lo que evita que se
+     * recorten los últimos botones y solo cuesta ancho, del que sobra. En
+     * esta tira es al revés: envolver la partiría en tres o cuatro filas
+     * —medido, 194 px de alto en un móvil en vertical— y eso tapa un tercio
+     * del mapa DE FORMA PERMANENTE, mientras que una fila que se arrastra
+     * solo cuesta el gesto de ir a buscar la herramienta.
+     */
+    flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
