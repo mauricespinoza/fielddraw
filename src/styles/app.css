@@ -289,9 +289,16 @@ body,
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  /* Nunca más alto que la pantalla: en un iPad apaisado siete botones
-     apilados sí pueden pasarse del borde inferior. */
-  max-height: min(340px, calc(100dvh - 24px));
+  /*
+   * Nunca más alto que la pantalla —de ahí el `calc`, no un número fijo—,
+   * pero SIN un tope propio por debajo de eso: un tope arbitrario (340px,
+   * pensado para las siete herramientas de Topology de antes) es lo que
+   * metía una barra de desplazamiento en cuanto el grupo creció a ocho con
+   * Merge, incluso en un monitor de sobra alto. `overflow-y: auto` se deja
+   * puesto solo como red de seguridad para una ventana de verdad diminuta;
+   * en cualquier pantalla normal el volante entero cabe y no se activa.
+   */
+  max-height: calc(100dvh - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -2174,15 +2181,17 @@ input[type='radio'] {
    * encima de todo ello. Sin esto, tocar un alto obligaba a repasar cinco
    * reglas y a acordarse de las cinco.
    *
-   * No son números redondos ni elegidos: `--bar-h` es 48 de botón + 10 de
-   * relleno + 2 de borde, y `--status-h`, la píldora de escala de 28 más 10 de
-   * relleno, con dos de holgura. Si cambia cualquiera de esas piezas, estos
-   * dos también. El bloque B los recalcula cuando el estado pasa a dos líneas.
+   * `--bar-h` no es un número redondo ni elegido: es 48 de botón + 10 de
+   * relleno + 2 de borde. `--status-h` en cambio es CERO a propósito: la
+   * píldora de escala y el mensaje de estado ya no viven ahí abajo —la
+   * numérica se fue arriba a la derecha y el mensaje se retiró entero, ver
+   * más abajo—, así que no queda nada que reservarle a la barra de estado y
+   * la tira de herramientas baja hasta pegarse al borde de seguridad.
    */
   :root {
     --edge: 8px;
     --bar-h: 60px;
-    --status-h: 40px;
+    --status-h: 0px;
   }
 
   /* Fila superior: una sola línea, deslizable.
@@ -2484,31 +2493,6 @@ input[type='radio'] {
 /* ---- B · estrecho: los paneles al ancho de la pantalla ---- */
 @media (max-width: 680px) {
   /*
-   * En una sola fila de 390 px el mensaje de estado quedaba en unos 150 px, es
-   * decir, en nada: «Navigation mode — pick Line…». Sube a una línea entera
-   * para él solo y deja la de abajo a la escala y al contador. Cuesta 14 px de
-   * mapa y es lo único que va diciendo qué espera la app a continuación.
-   */
-  :root {
-    --status-h: 58px;
-  }
-
-  .statusbar {
-    flex-wrap: wrap;
-    align-items: center;
-    /* El atajo `gap` pisa a `row-gap`, así que van los dos en uno. */
-    gap: 3px 10px;
-  }
-
-  .statusbar #status-text {
-    flex: 1 1 100%;
-    order: -1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /*
    * Paleta: hoja sobre la barra, no columna a su lado. En 390 px de ancho la
    * columna de 106 px se llevaba más de un cuarto de la pantalla, y encima
    * justo el borde por donde se entra a dibujar.
@@ -2640,7 +2624,6 @@ input[type='radio'] {
 @media (max-height: 520px) {
   :root {
     --bar-h: 54px;
-    --status-h: 40px;
   }
 
   .tool span {
@@ -2651,12 +2634,6 @@ input[type='radio'] {
     width: 46px;
     min-width: 0;
     min-height: 42px;
-  }
-
-  /* Sin sitio para dos líneas: el mensaje vuelve a compartir fila. */
-  .statusbar #status-text {
-    flex: 1 1 auto;
-    order: 0;
   }
 
   /*

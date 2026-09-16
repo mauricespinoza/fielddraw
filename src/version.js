@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.24.0';
+export const APP_VERSION = '0.25.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -36,6 +36,7 @@ export const APP_TOOLS = [
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
   ['Topology · Split · Reshape', 'Cortar un elemento con una línea, o redibujar un tramo de su contorno.'],
   ['Topology · Snap · Follow trace', 'Enganchar a la geometría existente y recorrer el borde de otro elemento.'],
+  ['Topology · Merge', 'Unir dos o más elementos seleccionados del mismo tipo de geometría en uno solo.'],
   ['Profile', 'Perfil topográfico de una traza, leído del modelo de elevación.'],
   ['3D', 'Relieve para mirar la ladera. Línea y Polígono siguen dibujando.'],
   ['Scale', 'Escala de trabajo: elegirla, fijar el mapa a ella y calibrar el tamaño real de la pantalla.'],
@@ -51,6 +52,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.0',
+    items: [
+      'Merge se muda a Topology, junto a las demás herramientas que trabajan sobre la selección; su volante ya no recorta con una barra de desplazamiento, se ve entero.',
+      'En teléfono, dos dedos ya no giran la vista: con Elegir puesto, arrastrarlos desplaza y separarlos hace zoom, como el pellizco de siempre.',
+      'En teléfono, la tira de herramientas baja hasta el borde de abajo: ya no reserva sitio para una barra de estado que se fue arriba.',
+      'Deshacer y Rehacer se quedan siempre a la vista en su columna; Hecho, Cancelar y Borrar solo aparecen cuando hay algo a medio trazar o ya guardado.',
+    ],
+  },
   {
     version: '0.24.0',
     items: [

@@ -3836,6 +3836,22 @@ function renderToolbar() {
     ? `Delete ${s.selection.length} selected feature(s)`
     : 'Delete the last saved feature';
   $('btn-export').disabled = s.features.length === 0;
+
+  /*
+   * Deshacer y Rehacer se quedan siempre a la vista —son del documento
+   * entero, no de lo que se esté mirando ahora— pero Hecho, Cancelar y
+   * Borrar solo dicen algo cuando hay a qué aplicarlos: un elemento a medio
+   * trazar (línea, polígono, medida o perfil) para los dos primeros, algo ya
+   * guardado para el tercero. Se esconden y no solo se apagan, y el
+   * separador que los antecede se va con ellos para no dejar una rayita
+   * suelta entre Rehacer y el siguiente botón visible.
+   */
+  $('sep-draft').classList.toggle('hidden', !hasDraft);
+  $('t-finish').classList.toggle('hidden', !hasDraft);
+  $('t-cancel').classList.toggle('hidden', !hasDraft);
+  const hayFeatures = s.features.length > 0;
+  $('sep-delete').classList.toggle('hidden', !hayFeatures);
+  $('t-delete').classList.toggle('hidden', !hayFeatures);
 }
 
 function renderStatus() {

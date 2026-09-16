@@ -2856,6 +2856,18 @@ export function createMapView({
       // defecto del propio mapa (`grab`/`grabbing`, ver maplibre-gl.css).
       map.getCanvas().style.cursor =
         herramienta === 'select' ? 'default' : drawing ? 'crosshair' : '';
+      /*
+       * En Elegir, dos dedos desplazan y pellizcan para hacer zoom, y ya no
+       * giran el rumbo de la vista. Girar con dos dedos es fácil de disparar
+       * sin querer justo mientras se arrastra el lazo —un pellizco rara vez
+       * es perfectamente simétrico—, y en Elegir el giro no aporta nada que
+       * no dé ya el botón de Navegar. `disableRotation()` deja el pellizco
+       * de zoom intacto: apaga solo el componente de giro del mismo gesto.
+       */
+      if (map.touchZoomRotate) {
+        if (herramienta === 'select') map.touchZoomRotate.disableRotation();
+        else map.touchZoomRotate.enableRotation();
+      }
       if (!drawing) {
         hoverEl.hidden = true;
         showSnapMarker(null);
