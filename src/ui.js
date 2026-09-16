@@ -3831,27 +3831,28 @@ function renderToolbar() {
   $('btn-redo').disabled = !store.canRedo();
   $('t-finish').disabled = !hasDraft;
   $('t-cancel').disabled = !hasDraft;
-  $('t-delete').disabled = s.features.length === 0;
-  $('t-delete').title = s.selection.length
-    ? `Delete ${s.selection.length} selected feature(s)`
-    : 'Delete the last saved feature';
+  $('t-delete').disabled = s.selection.length === 0;
+  $('t-delete').title = `Delete ${s.selection.length} selected feature(s)`;
   $('btn-export').disabled = s.features.length === 0;
 
   /*
    * Deshacer y Rehacer se quedan siempre a la vista —son del documento
    * entero, no de lo que se esté mirando ahora— pero Hecho, Cancelar y
    * Borrar solo dicen algo cuando hay a qué aplicarlos: un elemento a medio
-   * trazar (línea, polígono, medida o perfil) para los dos primeros, algo ya
-   * guardado para el tercero. Se esconden y no solo se apagan, y el
-   * separador que los antecede se va con ellos para no dejar una rayita
-   * suelta entre Rehacer y el siguiente botón visible.
+   * trazar (línea, polígono, medida o perfil) para los dos primeros, una
+   * selección para Borrar —«hay features guardadas en alguna parte» se
+   * cumple casi siempre con el proyecto autoguardado en localStorage, así
+   * que Borrar quedaba a la vista todo el rato igual que Deshacer y
+   * Rehacer, y eso es justo lo que este botón no debía hacer. Se esconden y
+   * no solo se apagan, y el separador que los antecede se va con ellos para
+   * no dejar una rayita suelta entre Rehacer y el siguiente botón visible.
    */
   $('sep-draft').classList.toggle('hidden', !hasDraft);
   $('t-finish').classList.toggle('hidden', !hasDraft);
   $('t-cancel').classList.toggle('hidden', !hasDraft);
-  const hayFeatures = s.features.length > 0;
-  $('sep-delete').classList.toggle('hidden', !hayFeatures);
-  $('t-delete').classList.toggle('hidden', !hayFeatures);
+  const haySeleccion = s.selection.length > 0;
+  $('sep-delete').classList.toggle('hidden', !haySeleccion);
+  $('t-delete').classList.toggle('hidden', !haySeleccion);
 }
 
 function renderStatus() {
@@ -4092,10 +4093,9 @@ export function initUI() {
   $('btn-close-strabo').addEventListener('click', () =>
     $('strabo-panel').classList.remove('open'),
   );
-  $('t-delete').addEventListener('click', () => {
-    if (store.getState().selection.length) store.deleteSelected();
-    else store.deleteLastFeature();
-  });
+  // Visible y activo solo con selección (ver `renderToolbar()`), así que
+  // aquí ya no hace falta el «si no hay nada elegido, borra lo último».
+  $('t-delete').addEventListener('click', () => store.deleteSelected());
 
   $('btn-layers').addEventListener('click', () => togglePanel('layer-panel'));
   $('btn-close-layers').addEventListener('click', () => $('layer-panel').classList.remove('open'));

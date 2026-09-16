@@ -162,7 +162,7 @@
 
       <!--
         Deshacer, rehacer, terminar, descartar y borrar: el mismo trío de
-        siempre —cerrar el trazo, tirarlo o quitar lo último guardado— más el
+        siempre —cerrar el trazo, tirarlo o quitar la selección— más el
         `Ctrl+Z`/`Ctrl+Shift+Z` del documento entero, juntos y fuera de la
         barra de herramientas, para que no se pierdan entre las veinte
         herramientas de dibujo.
@@ -177,10 +177,14 @@
         del documento entero y preguntan «¿hay algo que deshacer?», que tiene
         sentido responder que no. Hecho y Cancelar solo importan con un
         elemento a medio trazar —línea, polígono, medida o perfil—, y Borrar
-        solo con algo ya guardado que borrar: sin eso que mostrar, `renderToolbar()`
-        en ui.js los esconde en vez de apagarlos, junto con el separador que
-        les toca (`#sep-draft`, `#sep-delete`), para no dejar una rayita suelta
-        entre Rehacer y el siguiente botón visible.
+        con una edición activa, es decir con algo elegido con Elegir: «hay
+        features guardadas en el proyecto» casi siempre es cierto —el dibujo
+        se autoguarda en localStorage— así que ESE no sirve de condición, se
+        cumple todo el rato y Borrar quedaría a la vista igual que Deshacer
+        y Rehacer. Sin eso que mostrar, `renderToolbar()` en ui.js los
+        esconde en vez de apagarlos, junto con el separador que les toca
+        (`#sep-draft`, `#sep-delete`), para no dejar una rayita suelta entre
+        Rehacer y el siguiente botón visible.
       -->
       <div class="side-actions" id="side-actions">
         <button class="tool" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
@@ -213,7 +217,7 @@
 
         <div class="tool-sep" id="sep-delete"></div>
 
-        <button class="tool danger" id="t-delete" title="Delete the last saved feature" disabled>
+        <button class="tool danger" id="t-delete" title="Delete the selected features" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>

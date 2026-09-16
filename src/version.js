@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.0';
+export const APP_VERSION = '0.25.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.1',
+    items: [
+      'Borrar se esconde salvo con algo elegido con Elegir: mostrarlo cada vez que el proyecto tiene features guardadas lo dejaba a la vista todo el rato, igual que Deshacer y Rehacer, que es justo lo que no debía.',
+      'En teléfono, dos dedos ya no bascula la vista en 3D con Elegir puesto, igual que ya no la giran: solo desplazan y hacen zoom.',
+    ],
+  },
   {
     version: '0.25.0',
     items: [
