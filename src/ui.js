@@ -82,6 +82,15 @@ import {
   applyTopology,
 } from './editOps.js';
 import { openProject, parseProject, saveProject } from './project.js';
+import {
+  APP_AUTHOR,
+  APP_CONTACT,
+  APP_ORG,
+  APP_STAGE,
+  APP_TOOLS,
+  APP_VERSION,
+  CHANGELOG,
+} from './version.js';
 import { initStraboPanel } from './strabo/panel.js';
 import {
   SHORTCUTS,
@@ -1059,6 +1068,7 @@ const POPOVERS = [
   'map-export-menu',
   'attrs',
   'shortcuts',
+  'about',
   'trace-menu',
   'trace-type-menu',
   'import-menu',
@@ -1191,6 +1201,57 @@ function enCampoDeTexto(target) {
   return !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
 }
 
+/** Margen al borde de la pantalla al colocar un volante, en px. */
+const FLYOUT_MARGIN = 8;
+
+/**
+ * Coloca un volante junto a su botón, en coordenadas de ventana.
+ *
+ * El lado lo decide la FORMA de la barra y no un punto de quiebre repetido
+ * aquí: cuando es columna (PC y tablet) el volante sale a la derecha, y
+ * cuando es tira (móvil, al pie) sale por encima. Preguntarle al estilo ya
+ * calculado evita que la media query de `app.css` y esta función se
+ * contradigan cuando una de las dos cambie.
+ *
+ * Después se mete dentro de la pantalla a la fuerza. Sin esto, el volante de
+ * Topology —siete botones— se salía por abajo en un iPad apaisado y por la
+ * derecha en un móvil con el botón cerca del borde.
+ */
+function placeFlyout(toggle, flyout) {
+  const barra = $('toolbar');
+  const tira = getComputedStyle(barra).flexDirection === 'row';
+  const t = toggle.getBoundingClientRect();
+
+  // Se mide con el volante YA visible: oculto, `display: none` da 0×0 y todo
+  // el encaje se calcularía contra una caja que no existe.
+  const f = flyout.getBoundingClientRect();
+  const maxX = window.innerWidth - f.width - FLYOUT_MARGIN;
+  const maxY = window.innerHeight - f.height - FLYOUT_MARGIN;
+
+  const x = tira ? t.left : t.right + 6;
+  const y = tira ? t.top - f.height - 6 : t.top;
+
+  flyout.style.left = `${Math.max(FLYOUT_MARGIN, Math.min(x, maxX))}px`;
+  flyout.style.top = `${Math.max(FLYOUT_MARGIN, Math.min(y, maxY))}px`;
+}
+
+/** El grupo abierto ahora mismo, o null. */
+let openFlyout = null;
+
+function closeToolGroups() {
+  if (!openFlyout) return;
+  $(openFlyout.flyout).classList.remove('open');
+  openFlyout = null;
+}
+
+function openToolGroup(grupo) {
+  closeToolGroups();
+  const flyout = $(grupo.flyout);
+  flyout.classList.add('open');
+  openFlyout = grupo;
+  placeFlyout($(grupo.toggle), flyout);
+}
+
 /**
  * Abre y cierra los menús volantes de Create y Topology.
  *
@@ -1204,25 +1265,44 @@ function wireToolGroups() {
   document.addEventListener(
     'pointerdown',
     (e) => {
-      for (const { group: groupId } of Object.values(TOOL_GROUPS)) {
-        const group = $(groupId);
-        if (group.classList.contains('open') && !group.contains(e.target)) {
-          group.classList.remove('open');
-        }
-      }
+      if (!openFlyout) return;
+      /*
+       * El volante ya no cuelga del grupo —vive fuera de la barra para que no
+       * lo recorte— así que hay que preguntar por los dos: si solo se mirara
+       * el grupo, tocar un botón del volante contaría como "fuera", se
+       * cerraría en el `pointerdown` y el `click` nunca llegaría a un botón
+       * que para entonces ya está en `display: none`. Es decir: no se podría
+       * elegir ninguna herramienta.
+       */
+      if ($(openFlyout.flyout).contains(e.target) || $(openFlyout.toggle).contains(e.target)) return;
+      closeToolGroups();
     },
     { capture: true },
   );
 
-  for (const { group: groupId, toggle: toggleId } of Object.values(TOOL_GROUPS)) {
-    const group = $(groupId);
-    $(toggleId).addEventListener('click', () => group.classList.toggle('open'));
+  for (const grupo of Object.values(TOOL_GROUPS)) {
+    $(grupo.toggle).addEventListener('click', () => {
+      if (openFlyout === grupo) closeToolGroups();
+      else openToolGroup(grupo);
+    });
     // Elegir una herramienta del volante lo cierra: ya se sabe qué se quería,
     // y dejarlo abierto solo taparía el mapa sin motivo.
-    for (const btn of group.querySelectorAll('.tool-flyout .tool')) {
-      btn.addEventListener('click', () => group.classList.remove('open'));
+    for (const btn of $(grupo.flyout).querySelectorAll('.tool')) {
+      btn.addEventListener('click', () => closeToolGroups());
     }
   }
+
+  /*
+   * Girar la tablet cambia la barra de columna a tira —y con ella el lado por
+   * el que sale el volante—, así que un volante abierto se recoloca. Lo mismo
+   * al desplazar la tira: el botón se mueve y el volante se quedaría flotando
+   * sobre otro.
+   */
+  const recolocar = () => {
+    if (openFlyout) placeFlyout($(openFlyout.toggle), $(openFlyout.flyout));
+  };
+  window.addEventListener('resize', recolocar);
+  $('toolbar').addEventListener('scroll', recolocar, { passive: true });
 }
 
 /** ¿Hay algo flotando sobre el mapa ahora mismo? */
@@ -2029,6 +2109,12 @@ function handleEscape() {
     closeOverlays();
     return;
   }
+  // Un volante de la barra también es algo abierto por encima del mapa, y va
+  // antes que descartar el trazo: cerrar un menú no debería costar el dibujo.
+  if (openFlyout) {
+    closeToolGroups();
+    return;
+  }
   const s = store.getState();
   if (s.draft) {
     store.cancelDraft();
@@ -2140,6 +2226,89 @@ const ARROW_DIR = {
   arrowleft: [-1, 0],
   arrowright: [1, 0],
 };
+
+/* ---------- About ---------- */
+
+/** Un párrafo de ayuda, que es el formato en el que habla el resto de paneles. */
+function aboutHint(parent, texto, cls = 'hint') {
+  const p = document.createElement('p');
+  p.className = cls;
+  p.textContent = texto;
+  parent.appendChild(p);
+  return p;
+}
+
+function aboutSection(parent, titulo) {
+  const h = document.createElement('span');
+  h.className = 'palette-label';
+  h.textContent = titulo;
+  parent.appendChild(h);
+}
+
+/**
+ * Pinta el panel «About» desde `src/version.js`.
+ *
+ * Se dibuja una sola vez, al arrancar: ni la versión ni el registro de
+ * cambios dependen de nada que pase durante la sesión.
+ */
+function renderAbout() {
+  const body = $('about-body');
+  body.replaceChildren();
+
+  const version = document.createElement('p');
+  version.className = 'about-version';
+  version.textContent = `v${APP_VERSION} ${APP_STAGE}`;
+  body.appendChild(version);
+
+  aboutHint(body, `${APP_AUTHOR} · ${APP_ORG} · 2026`);
+
+  aboutHint(
+    body,
+    'Versión beta: gratuita para uso académico y docente, sin uso comercial. ' +
+      'Está en desarrollo, así que conviene guardar el proyecto seguido y no ' +
+      'confiarle el único respaldo de una campaña.',
+  );
+  aboutHint(body, 'Implementada con asistencia de inteligencia artificial.');
+
+  // El correo es lo que se viene a buscar cuando algo falla en terreno, así
+  // que va enlazado y no como texto suelto que haya que copiar a mano.
+  const contacto = document.createElement('p');
+  contacto.className = 'hint';
+  contacto.append(document.createTextNode('Errores y sugerencias: '));
+  const mail = document.createElement('a');
+  mail.href = `mailto:${APP_CONTACT}?subject=${encodeURIComponent(`FieldDraw v${APP_VERSION} — reporte`)}`;
+  mail.textContent = APP_CONTACT;
+  contacto.appendChild(mail);
+  body.appendChild(contacto);
+
+  aboutSection(body, 'Herramientas');
+  const tools = document.createElement('dl');
+  tools.className = 'about-tools';
+  for (const [nombre, texto] of APP_TOOLS) {
+    const dt = document.createElement('dt');
+    dt.textContent = nombre;
+    const dd = document.createElement('dd');
+    dd.textContent = texto;
+    tools.append(dt, dd);
+  }
+  body.appendChild(tools);
+
+  aboutSection(body, 'Novedades');
+  for (const entrada of CHANGELOG) {
+    const h = document.createElement('p');
+    h.className = 'about-release';
+    h.textContent = `v${entrada.version}`;
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.className = 'about-list';
+    for (const item of entrada.items) {
+      const li = document.createElement('li');
+      li.textContent = item;
+      ul.appendChild(li);
+    }
+    body.appendChild(ul);
+  }
+}
 
 /** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */
 function renderShortcutsHelp() {
@@ -3506,10 +3675,14 @@ const GEOMETRY_TOOL_BUTTONS = ['t-hole', 't-measure', 't-cut', 't-reshape', 't-p
  * está dibujando.
  */
 const TOOL_GROUPS = {
-  create: { group: 'group-create', toggle: 'tg-create', tools: new Set(['line', 'polygon', 'measure']) },
+  create: {
+    toggle: 'tg-create',
+    flyout: 'flyout-create',
+    tools: new Set(['line', 'polygon', 'measure']),
+  },
   topology: {
-    group: 'group-topology',
     toggle: 'tg-topology',
+    flyout: 'flyout-topology',
     tools: new Set(['vertices', 'hole', 'cut', 'reshape']),
   },
 };
@@ -3552,14 +3725,18 @@ function renderToolbar() {
   $('t-trace').classList.toggle('active', s.traceEnabled);
   $('t-3d').classList.toggle('active', s.terrain3d);
 
-  // El botón de grupo se enciende si la herramienta activa vive dentro, o —en
-  // Topology— si Snap o Follow trace están encendidos: son ajustes que
-  // importan aunque en ese momento se esté navegando, no dibujando.
-  $(TOOL_GROUPS.create.toggle).classList.toggle('active', TOOL_GROUPS.create.tools.has(s.tool));
-  $(TOOL_GROUPS.topology.toggle).classList.toggle(
-    'active',
-    TOOL_GROUPS.topology.tools.has(s.tool) || s.snapEnabled || s.traceEnabled,
-  );
+  /*
+   * El botón de grupo se enciende SOLO si la herramienta activa vive dentro.
+   *
+   * Snap y Follow trace no cuentan aunque estén encendidos: son ajustes que
+   * acompañan al dibujo, no una herramienta elegida, y teñirlos de verde
+   * dejaba Topology marcado de forma permanente —Snap suele quedarse puesto
+   * toda la jornada—, que es justo lo contrario de lo que el resalte tiene
+   * que decir: en qué modo está el puntero ahora mismo.
+   */
+  for (const grupo of Object.values(TOOL_GROUPS)) {
+    $(grupo.toggle).classList.toggle('active', grupo.tools.has(s.tool));
+  }
 
   /*
    * Con el relieve puesto, las herramientas que dependen de tocar con
@@ -4033,6 +4210,10 @@ export function initUI() {
   $('btn-redo').addEventListener('click', () => {
     if (!store.redo()) showBanner('Nothing left to redo.');
   });
+
+  $('btn-about').addEventListener('click', () => togglePanel('about'));
+  $('btn-close-about').addEventListener('click', () => $('about').classList.add('hidden'));
+  renderAbout();
 
   $('btn-shortcuts').addEventListener('click', () => togglePanel('shortcuts'));
   $('btn-close-shortcuts').addEventListener('click', () => $('shortcuts').classList.add('hidden'));

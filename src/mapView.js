@@ -9,7 +9,14 @@ import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './s
 import { DrawController } from './drawController.js';
 import { chaikin, processStroke } from './simplify.js';
 import { createStrokeBuffer } from './stroke.js';
-import { bboxIntersects, bboxOf, nearestOnPolyline, pickFeature, ringsOf } from './geom.js';
+import {
+  bboxIntersects,
+  bboxOf,
+  featuresInBox,
+  nearestOnPolyline,
+  pickFeature,
+  ringsOf,
+} from './geom.js';
 import { baseOpacityOf, buildImportedLayers } from './importedStyle.js';
 import { SnapIndex, buildGraph, tracePath } from './snapping.js';
 import { buildTileLayers, disposeTileSet } from './tiles.js';
@@ -2129,6 +2136,90 @@ export function createMapView({
    *
    * @returns {boolean} si el toque cayó sobre algo
    */
+  /* ---------- lazo rectangular de Elegir ---------- */
+
+  const lassoEl = document.getElementById('lasso');
+
+  /** Cuánto hay que correrse para que un toque pase a ser lazo, en px. */
+  const LASSO_MIN_PX = 6;
+
+  let lasso = null;
+
+  function beginLasso(screen) {
+    lasso = { start: screen, box: null };
+  }
+
+  /**
+   * Un arrastre corto no es un lazo: es un toque con pulso. Hasta pasar el
+   * umbral no se pinta nada, y si nunca se pasa, `endLasso` lo resuelve como
+   * la selección de siempre — que es lo que hace que seguir eligiendo con un
+   * clic simple funcione igual que antes de que existiera el lazo.
+   */
+  function moveLasso(screen) {
+    if (!lasso) return;
+    const [x0, y0] = lasso.start;
+    if (!lasso.box && Math.hypot(screen[0] - x0, screen[1] - y0) < LASSO_MIN_PX) return;
+
+    const box = [
+      Math.min(x0, screen[0]),
+      Math.min(y0, screen[1]),
+      Math.max(x0, screen[0]),
+      Math.max(y0, screen[1]),
+    ];
+    lasso.box = box;
+    lassoEl.hidden = false;
+    lassoEl.style.left = `${box[0]}px`;
+    lassoEl.style.top = `${box[1]}px`;
+    lassoEl.style.width = `${box[2] - box[0]}px`;
+    lassoEl.style.height = `${box[3] - box[1]}px`;
+  }
+
+  function hideLasso() {
+    lasso = null;
+    lassoEl.hidden = true;
+  }
+
+  /**
+   * @param {[number, number]} screen  dónde se soltó
+   * @param {{moved: boolean, longPressed: boolean}} info
+   * @param {boolean} additive  con Shift: suma a lo ya marcado
+   */
+  function endLasso(screen, info, additive) {
+    const l = lasso;
+    hideLasso();
+    /*
+     * Tapón del clic sintético, el mismo que usa `onFingerTap`: el navegador
+     * puede mandar un `click` detrás del gesto, y MapLibre lo atendería
+     * seleccionando OTRA VEZ — deshaciendo el lazo recién hecho y dejando
+     * marcado solo lo que hubiera bajo el punto donde se soltó.
+     */
+    taponPunteroAt = performance.now();
+    // La pulsación sostenida ya abrió el menú de propiedades; resolver además
+    // una selección aquí lo cerraría de inmediato.
+    if (!l || (info && info.longPressed)) return;
+
+    if (!l.box) {
+      /*
+       * No llegó a ser un lazo: un clic elige uno y reemplaza, y con Shift
+       * alterna, que es como selecciona cualquier escritorio. La tolerancia
+       * es la del dedo cuando lo que tocó fue un dedo: un contacto es una
+       * línea de dos píxeles de ancho y la yema cubre cuarenta.
+       */
+      const dedo = info && info.pointerType && info.pointerType !== 'mouse';
+      selectAt(screen, { additive, tolerance: dedo ? FINGER_PICK_PX : 12 });
+      return;
+    }
+
+    const ids = featuresInBox(store.getState().features, l.box, projectLngLat);
+    if (additive) {
+      const ya = new Set(store.getState().selection);
+      for (const id of ids) ya.add(id);
+      store.setSelection([...ya]);
+    } else {
+      store.setSelection(ids);
+    }
+  }
+
   function selectAt(screen, { tolerance = 12, additive = false } = {}) {
     const hit = pickAt(screen, tolerance);
     if (hit) {
@@ -2399,15 +2490,24 @@ export function createMapView({
      * escena entera. Ver `swallow` en drawController.js.
      */
     suppressHover: () => store.getState().terrain3d,
-    // Solo Nodos arrastra: agarra una manija y la mueve. En Elegir el
-    // arrastre es del mapa.
+    // Nodos arrastra manijas. Elegir arrastra el lazo rectangular, que no es
+    // dibujo y por eso entra por su propia puerta (ver `lassoMode` en
+    // drawController.js); el mapa se sigue moviendo con dos dedos, o saliendo
+    // a Navegar.
     dragMode: () => store.getState().tool === 'vertices',
+    lassoMode: () => store.getState().tool === 'select',
     onDragStart: (p) => {
       if (onMapTap) onMapTap();
+      if (store.getState().tool === 'select') return beginLasso(p);
       return beginVertexDrag(p);
     },
-    onDragMove: (p) => moveVertexDrag(p),
-    onDragEnd: (p, info) => endVertexDrag(p, info),
+    onDragMove: (p) => (store.getState().tool === 'select' ? moveLasso(p) : moveVertexDrag(p)),
+    onDragEnd: (p, info) =>
+      store.getState().tool === 'select'
+        ? endLasso(p, info, !!(info && info.shiftKey))
+        : endVertexDrag(p, info),
+    // Un segundo dedo aborta el gesto: la goma del lazo tiene que irse con él.
+    onDragCancel: () => hideLasso(),
     // Mantener pulsado abre el menú de propiedades en cualquier herramienta:
     // es el gesto para tocar los atributos de lo que ya está dibujado sin
     // tener que cambiar a Elegir y volver.

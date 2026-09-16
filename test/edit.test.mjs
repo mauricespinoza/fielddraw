@@ -1,4 +1,10 @@
-import { chainLines, pickFeature, pointInPolygon, pointInRing } from '../src/geom.js';
+import {
+  chainLines,
+  featuresInBox,
+  pickFeature,
+  pointInPolygon,
+  pointInRing,
+} from '../src/geom.js';
 import { applyLinesToPolygon, applyReshape } from '../src/editOps.js';
 import * as store from '../src/store.js';
 
@@ -649,6 +655,40 @@ console.log('== reshape a través del store ==');
 
   store.loadFeatures([]);
   store.clearSelection();
+}
+
+console.log('== lazo rectangular: solo lo que queda encerrado ==');
+{
+  // "Pantalla" y "mundo" coinciden aquí, igual que en el resto del archivo.
+  const proj = (c) => ({ x: c[0], y: c[1] });
+  const dip = (id, at) => ({
+    type: 'Feature', id,
+    properties: { id, kind: 'point', geomKind: 'measurement', strike: 10, dip: 20 },
+    geometry: { type: 'Point', coordinates: at },
+  });
+
+  const features = [
+    line('dentro', [[10, 10], [20, 20]]),
+    line('fuera', [[200, 200], [210, 210]]),
+    line('a medias', [[20, 20], [400, 400]]),
+    poly('poli', [[[30, 30], [40, 30], [40, 40], [30, 30]]]),
+    dip('medida', [50, 50]),
+    dip('medida lejos', [500, 500]),
+  ];
+  const caja = [0, 0, 100, 100];
+  const ids = featuresInBox(features, caja, proj);
+
+  ok('se lleva lo encerrado', ids.includes('dentro') && ids.includes('poli'));
+  ok('deja lo de fuera', !ids.includes('fuera'));
+  ok('NO se lleva lo que solo cruza el borde', !ids.includes('a medias'), JSON.stringify(ids));
+  ok('también se lleva las medidas de rumbo y manteo', ids.includes('medida'));
+  ok('pero no las de fuera', !ids.includes('medida lejos'));
+  ok('el borde cuenta como dentro',
+     featuresInBox([line('justo', [[0, 0], [100, 100]])], caja, proj).length === 1);
+  ok('una caja vacía no se lleva nada', featuresInBox(features, [0, 0, 1, 1], proj).length === 0);
+  ok('sin elementos no revienta', featuresInBox(null, caja, proj).length === 0);
+  ok('una feature sin geometría se salta',
+     featuresInBox([{ properties: { id: 'x' } }], caja, proj).length === 0);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

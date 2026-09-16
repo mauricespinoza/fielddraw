@@ -535,23 +535,43 @@ export class DrawController {
     // principal de que el dedo "no hiciera nada" justo cuando más falta hace.
     if (touches > 1) {
       this.clearObserved();
-      if (this.cb.isDrawing()) this.abort();
+      // `isDrawing()` no basta: el lazo de Elegir es un gesto en curso que no
+      // es dibujo, y sin abortarlo la goma se quedaba pintada en pantalla
+      // mientras los dos dedos mueven el mapa debajo.
+      if (this.cb.isDrawing() || this.gesture) this.abort();
       return;
     }
 
     const drawing = this.cb.isDrawing();
 
+    /*
+     * EL LAZO DE ELEGIR ES UN ARRASTRE QUE NO ES DIBUJO.
+     *
+     * Elegir no construye nada, así que `isDrawing()` dice que no, y sin esto
+     * el puntero se le dejaba entero a MapLibre: al arrastrar se desplazaba el
+     * mapa y la goma del rectángulo nunca llegaba a existir. Se consume con
+     * cualquier puntero —ratón, lápiz o dedo—, y el reparto de más arriba ya
+     * garantiza que aquí solo llega UN dedo: con dos, esto ni se ejecuta y el
+     * gesto sigue siendo de navegación, que es como se sigue moviendo el mapa
+     * sin salir de Elegir.
+     *
+     * Un toque sin arrastre no se pierde: sale por `onDragEnd` con
+     * `moved: false` y ahí se resuelve como selección de siempre.
+     */
+    const lasso = !drawing && !!(this.cb.lassoMode && this.cb.lassoMode());
+
     // Elegir y Nodos no dibujan: arrastran. Ahí el dedo tiene que funcionar
     // aunque haya un Pencil en la mesa, porque seleccionar o agarrar una
     // manija con el dedo es lo natural incluso mientras se dibuja con lápiz.
     // La navegación no se pierde: sigue estando el gesto de dos dedos.
-    const dragTool = drawing && !!(this.cb.dragMode && this.cb.dragMode());
+    const dragTool = (drawing && !!(this.cb.dragMode && this.cb.dragMode())) || lasso;
 
     const consume =
-      drawing &&
-      (e.pointerType === 'pen' ||
-        (e.pointerType === 'touch' && dragTool) ||
-        (!this.penSeen && (e.pointerType === 'mouse' || this.cb.fingerDrawEnabled())));
+      lasso ||
+      (drawing &&
+        (e.pointerType === 'pen' ||
+          (e.pointerType === 'touch' && dragTool) ||
+          (!this.penSeen && (e.pointerType === 'mouse' || this.cb.fingerDrawEnabled()))));
     if (!consume) {
       /*
        * El dedo no dibuja, pero un toque limpio suyo sí cierra el elemento o
@@ -618,9 +638,9 @@ export class DrawController {
     this.emitInfo(e, 0);
     this.cb.onHover(null);
 
-    // Modo arrastre (edición de vértices): ni long-press ni trazo libre, solo
-    // agarrar y mover.
-    if (this.cb.dragMode && this.cb.dragMode()) {
+    // Modo arrastre (edición de vértices, o el lazo de Elegir): ni trazo
+    // libre ni cierre de elemento, solo agarrar y mover.
+    if (dragTool) {
       this.gesture.dragging = true;
       this.cb.onDragStart(p);
       // Mantener pulsado sin mover abre el menú de propiedades.
@@ -877,6 +897,11 @@ export class DrawController {
         moved: g.moved,
         doubleTap,
         longPressed: !!g.longPressed,
+        // Para que el lazo pueda sumar a lo ya marcado, como cualquier
+        // escritorio, y apuntar con la tolerancia del dedo o la del ratón:
+        // aquí es donde todavía se tiene el evento.
+        shiftKey: !!e.shiftKey,
+        pointerType: e.pointerType,
       });
       return;
     }
@@ -990,12 +1015,16 @@ export class DrawController {
   }
 
   abort() {
+    const arrastraba = !!(this.gesture && this.gesture.dragging);
     this.clearLongPress();
     this.gesture = null;
     this.consuming = false;
     this.cb.onLongPressArm(null);
     this.cb.onStrokeProgress([]);
     this.cb.onPointerInfo(null);
+    // Un arrastre abortado no llega a `onDragEnd`, así que lo que hubiera
+    // pintado —la goma del lazo— se quedaría en pantalla para siempre.
+    if (arrastraba && this.cb.onDragCancel) this.cb.onDragCancel();
   }
 
   beginFreehand() {

@@ -75,6 +75,20 @@ body,
   z-index: 5;
 }
 
+/*
+ * Goma del lazo rectangular de Elegir. No se transforma como los anteriores:
+ * sus cuatro lados los fija `moveLasso()` en píxeles, desde la esquina donde
+ * bajó el puntero, así que centrarlo lo descuadraría.
+ */
+.lasso {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+  border: 1.5px dashed var(--accent);
+  background: rgba(45, 212, 191, 0.12);
+  border-radius: 2px;
+}
+
 /* Marcador de enganche, en magenta como el de QGIS: cruz sobre segmento,
    cuadrado sobre vértice. */
 .snap-marker {
@@ -250,27 +264,39 @@ body,
   opacity: 0.55;
 }
 
+/*
+ * EL VOLANTE SE COLOCA DESDE JAVASCRIPT, EN COORDENADAS DE VENTANA.
+ *
+ * Aquí no hay `top`/`left` porque no puede haberlos: la barra es una columna
+ * que envuelve en PC y una tira que se desplaza en el móvil, y el botón que
+ * abre el volante acaba en un sitio distinto en cada una. `placeFlyout()`
+ * mide el botón y decide el lado —a la derecha cuando la barra es columna,
+ * por encima cuando es tira—, y de paso lo mete dentro de la pantalla.
+ *
+ * `position: fixed` y colgado del `.app`, NO de la barra: la tira compacta es
+ * `overflow: hidden` en vertical, y ahí dentro el volante se recortaba entero
+ * sin dejar rastro. Tampoco vale `fixed` dentro de la barra: su
+ * `backdrop-filter` crea bloque contenedor y el recorte volvería.
+ */
 .tool-flyout {
   display: none;
-  position: absolute;
-  top: 0;
-  left: calc(100% + 6px);
-  z-index: 20;
+  position: fixed;
+  z-index: 24;
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  background: var(--panel);
-  backdrop-filter: blur(12px);
+  background: var(--panel-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   /* Nunca más alto que la pantalla: en un iPad apaisado siete botones
      apilados sí pueden pasarse del borde inferior. */
-  max-height: min(340px, calc(100dvh - 90px));
+  max-height: min(340px, calc(100dvh - 24px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.tool-group.open .tool-flyout {
+.tool-flyout.open {
   display: flex;
 }
 
@@ -1747,6 +1773,63 @@ input[type='radio'] {
   overflow-y: auto;
 }
 
+/* ---------- About ---------- */
+
+/* Más ancho que un desplegable normal: son párrafos, no controles. */
+.dropdown.about {
+  width: min(460px, 92vw);
+}
+
+.about-version {
+  margin: 0;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-release {
+  margin: 10px 0 2px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.about-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.about-list li {
+  margin-bottom: 3px;
+}
+
+/*
+ * El nombre de la herramienta va arriba y su explicación debajo, y no en dos
+ * columnas: a 92 vw de un teléfono, una columna de nombres deja la otra en
+ * una tira de dos palabras por renglón.
+ */
+.about-tools {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.about-tools dt {
+  margin-top: 7px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.about-tools dd {
+  margin: 0;
+  color: var(--muted);
+}
+
 .shortcut-group {
   display: flex;
   flex-direction: column;
@@ -2175,14 +2258,17 @@ input[type='radio'] {
    * ARRIBA, apoyado sobre la tira, y en fila: siete botones apilados en
    * vertical sobre un dedo son más difíciles de acertar que siete en línea.
    */
+  /*
+   * Sobre la tira, el volante se despliega en fila y envuelve: siete botones
+   * apilados en vertical sobre un dedo son más difíciles de acertar que
+   * siete en línea, y en un móvil en vertical no caben siete de largo.
+   * Dónde se coloca lo decide `placeFlyout()`; esto es solo su forma.
+   */
   .tool-flyout {
-    top: auto;
-    left: 0;
-    bottom: calc(100% + 6px);
     flex-direction: row;
     flex-wrap: wrap;
-    max-width: min(320px, 92vw);
-    max-height: none;
+    width: min(320px, calc(100vw - 16px));
+    max-height: min(50dvh, 260px);
   }
 
   /*

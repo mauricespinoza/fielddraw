@@ -289,29 +289,44 @@ explican fallos que parecen aleatorios:
   no está disponible; se navega con dos, como en el resto de la app. **Elegir**
   ya no consume nada (ver abajo).
 
-### Elegir no dibuja: señala
+### Elegir: toque para uno, arrastre para el lazo
 
-**Elegir** dejó de quedarse el puntero. Antes lo consumía para arrastrar un
-lazo rectangular, y eso traía tres consecuencias que no se ven hasta que se usa
-con ratón: arrastrar no desplazaba el mapa, el clic derecho no abría el menú
-—el controlador lo interpretaba como «cerrar el elemento», y en Elegir no hay
-ninguno— y cada clic **alternaba** la selección, de modo que señalar el segundo
-contacto dejaba los dos marcados sin haberlo pedido.
+**Elegir** hace dos cosas según cuánto se corra el puntero, y esa es toda la
+regla:
 
-Ahora:
-
-- **Un clic selecciona uno**, y reemplaza lo que hubiera.
-- **`Shift` + clic** alterna, que es como selecciona cualquier escritorio. Con
-  varios marcados, el clic derecho abre el menú de propiedades de **todos**: es
-  como se le cambia la certeza, la unidad o el tipo a media docena de una vez.
-- **Arrastrar desplaza el mapa**, igual que en Navegar.
+- **Un clic o un toque selecciona uno**, y reemplaza lo que hubiera.
+- **Arrastrar dibuja un lazo rectangular** y se lleva lo que quede
+  **completamente encerrado**. Encerrado y no rozado: en una carta las líneas
+  se cruzan por todas partes, y llevarse todo lo que el rectángulo toca
+  significaría llevarse media hoja por pasar por encima. Es el criterio del
+  lazo de QGIS, y cuenta también las medidas de rumbo y manteo, que son puntos.
+- **`Shift`** alterna en el clic y **suma** en el lazo, que es como selecciona
+  cualquier escritorio.
 - **Clic derecho** abre el menú de lo que haya debajo. Si lo de debajo no está
   en la selección, manda lo señalado; si sí está, el menú es de la selección
-  entera.
+  entera: es como se le cambia la certeza, la unidad o el tipo a media docena
+  de una vez.
+- **La pulsación sostenida** abre ese mismo menú con el dedo.
 
-Con el dedo no hay `Shift`, así que en tablet la selección múltiple se arma
-desde `Ctrl+A` o desde el propio menú; el toque limpio sigue seleccionando uno
-y la pulsación sostenida sigue abriendo el menú.
+El lazo estuvo quitado una temporada, y por buenos motivos: tal como estaba
+escrito, consumía el puntero **siempre**, y eso rompía tres cosas que solo se
+notan usándolo —arrastrar no desplazaba el mapa, el clic derecho no abría el
+menú, y cada clic alternaba la selección en vez de reemplazarla—. Vuelve sin
+ninguna de las tres, y lo que lo permite es que el umbral decide **al soltar**:
+
+- Hasta que el puntero no se corre unos pocos píxeles no hay lazo ni goma
+  pintada, así que un clic con pulso sigue siendo un clic y se resuelve por la
+  vía de siempre, con la tolerancia del dedo o la del ratón según qué tocó.
+- El botón derecho ni siquiera entra: el reparto de punteros lo aparta antes,
+  así que el menú se abre como en cualquier otra herramienta.
+- Con **dos dedos** el gesto es de navegación y el lazo se aborta —con su goma—,
+  que es como se sigue moviendo el mapa sin salir de Elegir. Con ratón,
+  desplazar es `Navegar` (`H`) o las flechas.
+
+Por dentro, el lazo entra por una puerta propia del controlador de punteros
+(`lassoMode`) y no por la de dibujo: Elegir no construye nada, así que
+`isDrawing()` dice que no y sin eso el puntero se le dejaba entero a MapLibre,
+que desplazaba el mapa debajo de una goma que nunca llegaba a existir.
 
 ### El clic derecho se decide al SOLTAR, no en el evento `contextmenu`
 
@@ -668,6 +683,47 @@ alternativa — no se descubre. Como su ancho dejó de ser una constante, lo
 publica en `--toolbar-w` y lo que cuelga a su derecha (la marca de la app) lo
 lee de ahí y se retira cuando, medido, ya no cabe entre la barra y la fila de
 botones de arriba.
+
+## Grupos de la barra: Create y Topology
+
+Las herramientas que se usan juntas se pliegan bajo un solo botón que las
+despliega **al lado**, como los grupos de Illustrator: **Create** (Line,
+Polygon, Dip) y **Topology** (Edit Nodes, Hole, Split, Reshape, Topology, Snap,
+Follow trace). La barra pasa de veinte botones a trece sin esconder nada: lo
+agrupado queda a un toque más, no a un menú más.
+
+El botón del grupo se enciende cuando la herramienta activa vive dentro, para
+que con el volante cerrado se siga sabiendo con qué se está dibujando. **Snap y
+Follow trace no lo encienden** aunque estén puestos: son ajustes que acompañan
+al dibujo, no una herramienta elegida, y como Snap suele quedarse encendido
+toda la jornada, teñían Topology de verde de forma permanente — justo lo
+contrario de lo que el resalte tiene que decir.
+
+**El volante vive FUERA de la barra**, colgado del contenedor de la app, y esa
+es la parte que importa. Dentro no funcionaba en teléfono: la tira compacta del
+pie es `overflow-x: auto` con `overflow-y: hidden`, y el volante se coloca por
+encima de ella, o sea fuera de su caja, así que el navegador lo **recortaba
+entero**. La clase se activaba, el menú existía y no se veía nada — «toco
+Create y no se despliega». Ponerlo en `position: fixed` dentro de la barra
+tampoco valía: su `backdrop-filter` crea bloque contenedor y el recorte
+volvía.
+
+Fuera, nada lo recorta, y a cambio hay que colocarlo a mano. Lo hace
+`placeFlyout()` midiendo el botón en coordenadas de ventana:
+
+- El **lado** lo decide la forma de la barra, preguntándole al estilo ya
+  calculado: cuando es columna (PC y tablet) el volante sale a la derecha;
+  cuando es tira (teléfono) sale por encima. Así la media query y el
+  JavaScript no pueden contradecirse cuando una de las dos cambie.
+- Después se **mete dentro de la pantalla** a la fuerza. Sin eso, el volante de
+  Topology —siete botones— se salía por abajo en un iPad apaisado y por la
+  derecha en un móvil con el botón cerca del borde.
+- Girar la tablet o desplazar la tira lo **recoloca**, porque las dos cosas
+  mueven el botón del que cuelga.
+
+Comprobado con navegador real en tres tamaños (1440×900, 1024×768 y 390×844):
+el volante se abre, cae entero dentro de la pantalla, y elegir una herramienta
+lo cierra y la activa.
 
 ## En un teléfono
 
@@ -2430,8 +2486,33 @@ congelaría el hilo principal sin ningún error.
 
 Las cinco cosas tienen prueba de regresión.
 
+## About: versión, herramientas y novedades
+
+El botón **About** de la fila superior abre un panel con la versión, el autor,
+el correo de contacto para reportar fallos y un resumen de qué hace cada
+herramienta, seguido del registro de cambios de las últimas versiones.
+
+Todo eso sale de `src/version.js`, que es la **única** fuente: quien publica una
+versión toca esa lista y el panel se dibuja solo. No es una sutileza de
+organización — es lo que se le pide a quien reporta un fallo desde terreno
+(«¿qué versión te dice About?»), así que tiene que ser un dato exacto y no un
+número escrito a mano en dos sitios que se separan con el tiempo.
+
+`APP_VERSION` no es el `VERSION` de `sw.js`: aquel es la clave de la caché del
+service worker y cambia en cada republicación aunque no cambie nada visible;
+este numera lo que el usuario sí nota.
+
+El panel deja dicho lo que la app es: **versión beta, gratuita para uso
+académico y docente, sin uso comercial, implementada con asistencia de
+inteligencia artificial**, y que conviene guardar el proyecto seguido y no
+confiarle el único respaldo de una campaña.
+
 ## Estado
 
+- ✅ Barra agrupada en Create y Topology, con el volante fuera de su recorte
+  para que también se despliegue en teléfono.
+- ✅ Lazo rectangular en Elegir: arrastrar encierra, tocar elige de a uno.
+- ✅ Panel About con versión, herramientas, novedades y contacto.
 - ✅ Basemaps, orden de capas y transparencia por capa.
 - ✅ Curvas de nivel con intervalo por zoom.
 - ✅ Línea y polígono vértice a vértice, trazo libre por long-press,

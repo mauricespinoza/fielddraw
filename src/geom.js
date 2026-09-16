@@ -176,6 +176,36 @@ export function chainLines(lines) {
   return chain;
 }
 
+/**
+ * Ids de los elementos COMPLETAMENTE encerrados por un rectángulo de pantalla
+ * `[minX, minY, maxX, maxY]`. Es el lazo de Elegir.
+ *
+ * Encerrados y no rozados: en una carta las líneas se cruzan por todas
+ * partes, y llevarse todo lo que toca el rectángulo significaría llevarse
+ * media hoja por arrastrar sobre ella. Es el mismo criterio del lazo de QGIS.
+ */
+export function featuresInBox(features, box, project) {
+  const dentro = (c) => {
+    const q = project(c);
+    return q.x >= box[0] && q.x <= box[2] && q.y >= box[1] && q.y <= box[3];
+  };
+
+  const out = [];
+  for (const f of features || []) {
+    if (!f.geometry) continue;
+    // Una medida de rumbo y manteo es un punto y no tiene anillos: `ringsOf`
+    // devuelve vacío, y sin esta rama el lazo no se llevaba ni una sola.
+    if (f.geometry.type === 'Point') {
+      if (dentro(f.geometry.coordinates)) out.push(f.properties.id);
+      continue;
+    }
+    const rings = ringsOf(f.geometry);
+    if (rings.length === 0) continue;
+    if (rings.every((r) => r.coords.every(dentro))) out.push(f.properties.id);
+  }
+  return out;
+}
+
 /** Aplana la geometría de una feature GeoJSON a arrays de anillos/líneas. */
 export function ringsOf(geometry) {
   if (!geometry) return [];
