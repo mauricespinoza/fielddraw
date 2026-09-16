@@ -301,14 +301,64 @@ body,
 }
 
 /*
- * Deshacer y rehacer del DIBUJO —no el «Undo» de vértice, que ya vive más
- * abajo en esta misma barra— escondidos salvo en la disposición compacta (ver
- * el bloque final). En tablet y PC el atajo `Ctrl+Z` y el gesto de dos dedos
- * ya lo resuelven; en un teléfono no hay ni uno ni otro, y sin esto convertir
- * una línea en polígono y arrepentirse no tenía salida.
+ * ---------- Undo, Redo, Done, Discard, Delete ----------
+ *
+ * Fuera de `.toolbar` a propósito, en su propia columna: son los cinco
+ * botones que cierran una acción (deshacer/rehacer el documento entero,
+ * terminar o tirar el elemento a medio trazar, borrar el último guardado), y
+ * mezclados entre las veinte herramientas de dibujo se perdían.
+ *
+ * La posición cambia con el dispositivo y la resuelve cada bloque por
+ * separado: aquí solo el aspecto de columna que comparten los tres —PC
+ * arriba a la derecha, tablet abajo a la derecha (más abajo, con
+ * `pointer: coarse`), móvil abajo a la izquierda sobre la propia tira (en el
+ * bloque de la disposición compacta).
  */
-.doc-undo {
-  display: none;
+.side-actions {
+  position: absolute;
+  /*
+   * Debajo de la fila Project / Layers / ... y no a su misma altura: las dos
+   * viven en la esquina superior derecha, y esa fila envuelve a dos o tres
+   * líneas en una ventana angosta. `--top-right-h` la mide de verdad —ver
+   * `wireToolbarWidth()` en ui.js—; el `46px` es solo el valor de arranque,
+   * antes de la primera medición.
+   */
+  top: calc(var(--safe-t) + 12px + var(--top-right-h, 46px) + 10px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/*
+ * Tablet: pantalla táctil sin ratón, y no lo bastante angosta ni baja para
+ * caer en la disposición compacta del móvil (esa ya trae su propia esquina,
+ * más abajo). Ahí el pulgar vive abajo, así que la columna baja con él.
+ */
+@media (pointer: coarse) and (min-width: 681px) and (min-height: 521px) {
+  .side-actions {
+    top: auto;
+    bottom: calc(var(--safe-b) + 12px);
+    right: calc(var(--safe-r) + 12px);
+  }
+
+  /*
+   * El zoom, la brújula, el GPS y la atribución de MapLibre viven en esa
+   * misma esquina (ver `map.addControl(..., 'bottom-right')` en
+   * mapView.js): sin subirlos, `.side-actions` los tapa enteros. Medido de
+   * verdad en `--side-actions-h` —ver `wireToolbarWidth()` en ui.js—, y no
+   * a ojo, porque la columna cambia de alto con la traducción o el tamaño
+   * de letra del sistema.
+   */
+  .maplibregl-ctrl-bottom-right {
+    margin-bottom: calc(var(--safe-b) + var(--side-actions-h, 300px) + 22px);
+  }
 }
 
 /* ---------- paleta de tipos ---------- */
@@ -2241,15 +2291,81 @@ input[type='radio'] {
   }
 
   /*
-   * Deshacer y rehacer del dibujo entran a la tira, escondidos el resto del
-   * tiempo: aquí es donde no hay atajo de teclado ni gesto que los reemplace.
+   * Móvil: la columna se aprieta contra la esquina inferior izquierda, justo
+   * ENCIMA de la tira de herramientas horizontal —la misma altura que ya
+   * reservan el volante, la píldora de escala y la hoja del perfil— y no
+   * suelta sobre el mapa, que es donde un pulgar la tocaría sin querer al
+   * desplazar la tira.
    */
-  .doc-undo {
-    display: flex;
+  .side-actions {
+    top: auto;
+    left: calc(var(--safe-l) + var(--edge));
+    right: auto;
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
+    flex-direction: column;
+    padding: 4px 5px;
+    gap: 3px;
   }
 
-  .tool-sep.doc-undo {
-    display: block;
+  /* El separador de la columna es una línea horizontal, no la vertical que
+     lleva el resto de la tira: aquí se sigue apilando en vertical. */
+  .side-actions .tool-sep {
+    width: auto;
+    height: 1px;
+    margin: 2px 6px;
+  }
+
+  /*
+   * Escala gráfica de MapLibre arriba a la izquierda —la marca ya no está
+   * ahí, ver más abajo— y escala numérica arriba a la derecha, bajo la fila
+   * de píldoras: las dos abajo se pisaban con la columna anterior y con la
+   * tira de herramientas, y una escala se consulta de un vistazo, no se
+   * toca todo el rato.
+   */
+  .maplibregl-ctrl-bottom-left {
+    /*
+     * Debajo de la fila de píldoras, no a su misma altura: esa fila ocupa
+     * TODO el ancho de arriba —`left`/`right` a los dos bordes, ver
+     * `.top-right` más arriba en este mismo bloque— y a la misma altura la
+     * tapaba entera. El `58px` es el mismo que usa la escala numérica al
+     * otro lado: las dos quedan en la misma fila, cada una en su esquina.
+     */
+    bottom: auto;
+    top: calc(var(--safe-t) + 58px);
+    left: calc(var(--safe-l) + var(--edge));
+    z-index: 9;
+  }
+
+  .scale-pill {
+    /*
+     * `fixed`, y no `absolute`. La píldora sigue siendo hija de `.statusbar`,
+     * que vive anclada al PIE de la pantalla (`bottom: 0`) — con `absolute`
+     * el `top` de aquí se mide desde el borde de ESE contenedor, no desde el
+     * de la ventana, y la píldora aparecía fuera de la pantalla, por debajo
+     * del todo. `fixed` la ancla al viewport y no a su padre.
+     */
+    position: fixed;
+    top: calc(var(--safe-t) + 58px);
+    right: calc(var(--safe-r) + var(--edge));
+    left: auto;
+    bottom: auto;
+    z-index: 9;
+  }
+
+  /*
+   * El mensaje de estado y el contador de elementos sobran en un teléfono:
+   * la barra entera se les vaciaba de sitio abajo y la escala, que era lo
+   * único imprescindible, ya se fue arriba. Sin nada que mostrar, la propia
+   * franja de fondo desaparece con ellos.
+   */
+  .statusbar #status-text,
+  .statusbar .count {
+    display: none;
+  }
+
+  .statusbar {
+    background: none;
+    padding: 0;
   }
 
   /*

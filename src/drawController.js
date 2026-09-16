@@ -321,16 +321,16 @@ export class DrawController {
    * Solo ratón y lápiz. El dedo no lo necesita: sus gestos de navegación
    * siguen llegando al mapa intactos, que es de donde salen el paneo, el zoom
    * y el basculado en tablet.
+   *
+   * Vale en CUALQUIER herramienta, incluida Elegir. En Navegar el arrastre
+   * con el botón principal ya desplaza el mapa, así que el botón central no
+   * añade nada ahí, pero en Elegir ese mismo arrastre dibuja el lazo
+   * rectangular: sin esto, el botón central era la única forma de mover la
+   * vista sin soltar la herramienta y quedaba deshabilitado justo donde más
+   * se echa en falta.
    */
   cameraModeFor(e) {
     if (!this.cb.onCameraDrag || e.pointerType === 'touch') return null;
-    /*
-     * Solo con una herramienta activa. En Navegar y en Elegir el ratón ya
-     * manda sobre el mapa entero —arrastrar desplaza, el botón derecho gira y
-     * bascula— y Shift+clic añade a la selección: quedarnos el evento ahí
-     * rompería eso a cambio de nada.
-     */
-    if (!this.cb.isDrawing()) return null;
     if (e.button === 1 || e.buttons === 4) return 'pan';
     return null;
   }

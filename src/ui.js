@@ -227,6 +227,16 @@ function unitChips(container, units, activeId, onPick, { allowNone = true } = {}
 
 /* ---------- paleta de tipos ---------- */
 
+/**
+ * Mismo corte que la disposición compacta de app.css (`.side-actions`,
+ * `.toolbar` en tira): un teléfono, o cualquier pantalla igual de angosta o
+ * baja. En tablet y PC no aplica — ahí sobra sitio para dejar la paleta
+ * abierta mientras se ajustan varias cosas a la vez.
+ */
+function isCompactLayout() {
+  return window.matchMedia('(max-width: 680px), (max-height: 520px)').matches;
+}
+
 /** Modos de la herramienta Edit Nodes, con su glifo y su ayuda. */
 const VERTEX_MODES = [
   { id: 'move', label: 'Move', glyph: '✥', help: 'Drag a handle; a midpoint inserts one' },
@@ -389,7 +399,17 @@ function buildPalette() {
             // activa: la muestra tiene que enseñar eso y no el patrón de otro.
             dash: isObservedOnly(t.id) ? null : activeDash,
             active: s.lineType === t.id,
-            onClick: () => store.setLineType(t.id),
+            onClick: () => {
+              store.setLineType(t.id);
+              /*
+               * Solo en móvil: elegido el tipo, la paleta ya dijo lo que
+               * tenía que decir y en una pantalla de teléfono es medio mapa
+               * tapado por gusto. En tablet y PC se queda —ahí cabe de sobra
+               * y cambiar de tipo entre trazo y trazo es cómodo con ella
+               * abierta.
+               */
+              if (isCompactLayout()) $('palette').classList.add('hidden');
+            },
           }),
         );
       }
@@ -410,7 +430,10 @@ function buildPalette() {
           color: u.color,
           swatch: true,
           active: s.polygonType === u.id,
-          onClick: () => store.setPolygonType(u.id),
+          onClick: () => {
+            store.setPolygonType(u.id);
+            if (isCompactLayout()) $('palette').classList.add('hidden');
+          },
         }),
       );
     }
@@ -1083,9 +1106,12 @@ const POPOVERS = [
  * volvería a abrir, o al revés según el orden. La hoja del perfil va aquí por
  * otro motivo —no se cierra al tocar el mapa a propósito— y la barra de
  * herramientas porque cambiar de herramienta no debería cerrar el panel que se
- * está consultando.
+ * está consultando. `side-actions` es la misma razón que la barra: Deshacer,
+ * Rehacer, Hecho, Cancelar y Borrar viven fuera de `#toolbar` desde que
+ * tienen su propia columna, pero siguen siendo controles del dibujo en
+ * curso, no algo "fuera" de él.
  */
-const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet', 'btn-scale'];
+const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'side-actions', 'palette', 'profile-sheet', 'btn-scale'];
 
 /**
  * Cierra los paneles al hacer clic fuera de ellos.
@@ -1107,15 +1133,40 @@ const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'palette', 'profile-sheet', 'btn-scale'
  * cuelga a su derecha, hoy la marca, necesita saberlo para no plantarse
  * encima. Se recalcula al girar la tablet y al aparecer o desaparecer un
  * botón, que es cuando puede cambiar el número de columnas.
+ *
+ * De paso publica `--top-right-h`, el alto real de la fila Project / Layers
+ * / ... En PC esa fila y la columna Deshacer/Rehacer/Hecho/Cancelar/Borrar
+ * (`.side-actions`) comparten la esquina superior derecha, y la fila
+ * envuelve a dos o tres líneas en una ventana angosta —«Con siete botones ya
+ * no caben en una fila en el iPad en vertical», dice su propio comentario—,
+ * así que un alto fijo en el CSS habría dejado la columna encima de las
+ * píldoras en cuanto envuelven. Medido aquí, `.side-actions` siempre se
+ * apoya justo debajo, envuelva lo que envuelva.
  */
 function wireToolbarWidth() {
   const barra = $('toolbar');
-  if (!barra) return;
   const marca = document.querySelector('.brand');
   const arriba = document.querySelector('.top-right');
+  const acciones = $('side-actions');
   const medir = () => {
-    const w = Math.round(barra.getBoundingClientRect().width);
-    if (w > 0) document.documentElement.style.setProperty('--toolbar-w', `${w}px`);
+    if (barra) {
+      const w = Math.round(barra.getBoundingClientRect().width);
+      if (w > 0) document.documentElement.style.setProperty('--toolbar-w', `${w}px`);
+    }
+    if (arriba) {
+      const h = Math.round(arriba.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--top-right-h', `${h}px`);
+    }
+    if (acciones) {
+      /*
+       * En tablet `.side-actions` cae en la misma esquina inferior derecha
+       * que el zoom, la brújula, el GPS y la atribución de MapLibre (ver
+       * `.maplibregl-ctrl-bottom-right` en app.css): sin este alto medido, la
+       * columna los tapaba enteros.
+       */
+      const h = Math.round(acciones.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--side-actions-h', `${h}px`);
+    }
     if (!marca || !arriba) return;
     /*
      * Y si con ese ancho la marca ya no cabe antes de los botones, se retira.
@@ -1129,8 +1180,13 @@ function wireToolbarWidth() {
     }
   };
   medir();
-  if (typeof ResizeObserver === 'function') new ResizeObserver(medir).observe(barra);
-  else window.addEventListener('resize', medir);
+  if (typeof ResizeObserver === 'function') {
+    if (barra) new ResizeObserver(medir).observe(barra);
+    if (arriba) new ResizeObserver(medir).observe(arriba);
+    if (acciones) new ResizeObserver(medir).observe(acciones);
+  } else {
+    window.addEventListener('resize', medir);
+  }
 }
 
 function wireClickOutside() {

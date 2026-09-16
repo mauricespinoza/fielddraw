@@ -661,6 +661,34 @@ console.log('== botón central: desplaza como en QGIS ==');
   ok('sin poner vértices', !h.kinds().includes('vertex'));
 }
 
+console.log('== botón central: también en Elegir y en Navegar, no solo dibujando ==');
+{
+  /*
+   * En Elegir el arrastre con el botón principal dibuja el lazo rectangular
+   * (`dragMode`/`lassoMode` más abajo lo cubren), así que el botón central
+   * era la única forma de mover la vista sin soltar la herramienta — y hasta
+   * ahora `cameraModeFor` lo descartaba fuera de las herramientas de dibujo.
+   */
+  const h = harness({ drawing: false });
+  h.ev('pointerdown', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 200, clientY: 200 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 190, clientY: 230 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 190, clientY: 230 });
+  const cam = h.log.filter((l) => l[0] === 'camera');
+  ok('emite el arrastre fuera de dibujo', cam.length === 1, JSON.stringify(h.kinds()));
+  ok('como desplazamiento', cam[0] && cam[0][1] === 'pan');
+}
+
+console.log('== botón central en Elegir no dispara el lazo ==');
+{
+  const h = harness({ drawing: false, drag: true });
+  h.controller.cb.lassoMode = () => true;
+  h.ev('pointerdown', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 200, clientY: 200 });
+  h.ev('pointermove', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 210, clientY: 220 });
+  h.ev('pointerup', { pointerType: 'mouse', button: 1, buttons: 4, clientX: 210, clientY: 220 });
+  ok('desplaza la vista', h.kinds().includes('camera'), JSON.stringify(h.kinds()));
+  ok('y no arma el lazo', !h.kinds().includes('dragStart'), JSON.stringify(h.kinds()));
+}
+
 console.log('== sin Shift, el ratón sigue dibujando ==');
 {
   const h = harness();

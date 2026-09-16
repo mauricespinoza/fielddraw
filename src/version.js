@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.23.0';
+export const APP_VERSION = '0.24.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -51,6 +51,16 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.24.0',
+    items: [
+      'Deshacer, Rehacer, Hecho, Cancelar y Borrar se van de la barra de herramientas a su propia columna: arriba a la derecha en PC, abajo a la derecha en tablet, abajo a la izquierda sobre la tira en teléfono.',
+      'En teléfono, la escala gráfica se muda arriba a la izquierda y la numérica arriba a la derecha; el mensaje de estado y el contador de elementos, que ya no cabían abajo, se retiran.',
+      'En teléfono, elegir un tipo de línea o de polígono en la paleta la cierra sola: en PC y tablet se queda abierta.',
+      'Elegir ya no se ve con la manito de Navegar: es una flecha, como en cualquier programa de escritorio.',
+      'El botón central del ratón desplaza la vista también con Elegir puesto, no solo mientras se dibuja.',
+    ],
+  },
   {
     version: '0.23.0',
     items: [

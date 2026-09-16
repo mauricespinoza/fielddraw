@@ -607,7 +607,13 @@ export function createMapView({
     let hoverCursor = '';
     map.on('mousemove', (e) => {
       const tool = store.getState().tool;
-      if (!['navigate', 'select'].includes(tool)) {
+      /*
+       * La manito de "hay algo que tocar" es de Navegar. En Elegir el
+       * puntero es una flecha siempre, como en cualquier programa de
+       * escritorio: el rectángulo de selección se dibuja con la propia
+       * flecha, y una mano ahí sugiere un enlace que no existe.
+       */
+      if (tool !== 'navigate') {
         hoverCursor = '';
         return;
       }
@@ -2845,7 +2851,11 @@ export function createMapView({
       }
       const drawing = store.getState().tool !== 'navigate';
       host.classList.toggle('is-drawing', drawing);
-      map.getCanvas().style.cursor = drawing ? 'crosshair' : '';
+      // Elegir no dibuja: es una flecha, no la cruz de "aquí se pone un
+      // punto". Navegar deja el cursor vacío para que mande la manito por
+      // defecto del propio mapa (`grab`/`grabbing`, ver maplibre-gl.css).
+      map.getCanvas().style.cursor =
+        herramienta === 'select' ? 'default' : drawing ? 'crosshair' : '';
       if (!drawing) {
         hoverEl.hidden = true;
         showSnapMarker(null);
