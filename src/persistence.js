@@ -3,6 +3,7 @@ const UNITS_KEY = 'fielddraw.units.v1';
 const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
 const STRUCTURE_STYLE_KEY = 'fielddraw.structure-style.v1';
 const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
+const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
 
 /**
  * Clave de OpenTopography.
@@ -101,6 +102,25 @@ export function saveStraboStyle(style) {
 export function loadSavedStraboStyle() {
   try {
     const raw = localStorage.getItem(STRABO_STYLE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveImportStyle(style) {
+  try {
+    localStorage.setItem(IMPORT_STYLE_KEY, JSON.stringify(style));
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedImportStyle() {
+  try {
+    const raw = localStorage.getItem(IMPORT_STYLE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;

@@ -110,6 +110,7 @@ const SHELL = [
   './src/vendorPaths.js',
   './src/version.js',
   './src/vertexEdit.js',
+  './src/strabo/adopt.js',
   './src/strabo/api.js',
   './src/strabo/mapping.js',
   './src/strabo/spots.js',

@@ -635,7 +635,12 @@
         // registrada: si falta una, MapLibre no dibuja ese símbolo y no avisa.
         const esperadas = [];
         for (const t of sym.STRUCTURE_TYPES) {
-          for (const v of sym.STRUCTURE_VARIANTS) esperadas.push(estructural.structureImageName(t.id, v));
+          for (const v of sym.STRUCTURE_VARIANTS) {
+            esperadas.push(estructural.structureImageName(t.id, v));
+            // Y su copia en el color de lo importado de StraboSpot: si falta,
+            // las medidas adoptadas se quedan sin símbolo y sin aviso.
+            esperadas.push(estructural.structureImageName(t.id, v, true));
+          }
         }
         const mapaFalso = {
           imgs: new Set(),

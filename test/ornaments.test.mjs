@@ -37,6 +37,7 @@ globalThis.document = {
 
 import {
   IMAGE_OF,
+  IMPORTED_IMAGE_OF,
   ORNAMENT_LAYER_IDS,
   applyOrnamentStyle,
   ornamentLayerId,
@@ -84,7 +85,25 @@ console.log('== flip ==');
   ok('el sin voltear no gira', normal.layout['icon-rotate'] === 0);
   ok('sin flip => solo elementos sin la marca', eq(normal.filter[3], ['!=', ['get', 'flip'], true]));
   ok('con flip => solo los marcados', eq(flip.filter[3], ['==', ['get', 'flip'], true]));
-  ok('los dos usan el mismo icono', normal.layout['icon-image'] === flip.layout['icon-image']);
+  ok('los dos usan el mismo icono',
+     JSON.stringify(normal.layout['icon-image']) === JSON.stringify(flip.layout['icon-image']));
+
+  /*
+   * Lo adoptado de StraboSpot lleva el ornamento en su color único: sin esto
+   * la traza salía morada y sus dientes del color de la falla propia, con el
+   * símbolo partido en dos colores.
+   */
+  ok('el icono elige entre el propio y el de lo importado',
+     JSON.stringify(normal.layout['icon-image']) ===
+       JSON.stringify(['case', ['==', ['get', 'source'], 'strabospot'],
+         IMPORTED_IMAGE_OF['normal-fault'], IMAGE_OF['normal-fault']]),
+     JSON.stringify(normal.layout['icon-image']));
+
+  const sinColorUnico = ornamentLayers(defaultOrnaments(), { uniform: false, color: '#7e57c2' })
+    .find((l) => l.id === ornamentLayerId('normal-fault', false));
+  ok('con el color único apagado, el icono vuelve a ser uno solo',
+     sinColorUnico.layout['icon-image'] === IMAGE_OF['normal-fault'],
+     JSON.stringify(sinColorUnico.layout['icon-image']));
 }
 
 console.log('== el tamaño escala la rampa de zoom ==');
@@ -165,8 +184,12 @@ console.log('== pliegues ==');
   const anti = layers.find((l) => l.id === ornamentLayerId('antiform', false));
   const syn = layers.find((l) => l.id === ornamentLayerId('synform', false));
   ok('hay capa de antiforme y de sinforme', !!anti && !!syn);
+  const iconoBase = (l) => {
+    const img = l.layout['icon-image'];
+    return Array.isArray(img) ? img[3] : img;
+  };
   ok('cada uno con su icono',
-     anti.layout['icon-image'] === IMAGE_OF.antiform && syn.layout['icon-image'] === IMAGE_OF.synform);
+     iconoBase(anti) === IMAGE_OF.antiform && iconoBase(syn) === IMAGE_OF.synform);
   ok('a caballo del eje: sin offset', eq(anti.layout['icon-offset'], [0, 0]) && eq(syn.layout['icon-offset'], [0, 0]));
   ok('el antiforme filtra por su tipo', eq(anti.filter[1], ['==', ['get', 'type'], 'antiform']));
 }

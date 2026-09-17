@@ -217,6 +217,9 @@ export function measurementProvenance(props) {
     'three-point': 'three-point solution on DEM',
     'plane-fit': 'least-squares fit to trace on DEM',
     edited: 'hand-edited',
+    // Bajada de StraboSpot y adoptada en el dibujo: si vuelve a subir, que
+    // conste que el dato es de allá y no una medida nueva.
+    strabospot: 'compass, imported from StraboSpot',
   }[props.method] || props.method;
   if (metodo) partes.push(`Method: ${metodo}`);
   if (Number.isFinite(props.strikeSd) && Number.isFinite(props.dipSd)) {

@@ -68,8 +68,13 @@
         <div class="pen-hover" id="pen-hover" hidden></div>
         <div class="longpress-ring" id="longpress-ring" hidden></div>
         <div class="snap-marker" id="snap-marker" hidden></div>
-        <!-- Goma del lazo rectangular de Elegir. Ver `lassoMode` en mapView.js. -->
+        <!-- Goma del lazo de Elegir. El rectángulo es un div con cuatro lados;
+             el trazo a mano alzada —lo de fábrica— es un polígono SVG que se
+             cierra solo. Ver `lassoMode` en mapView.js. -->
         <div class="lasso" id="lasso" hidden></div>
+        <svg class="lasso-free" id="lasso-free" hidden aria-hidden="true">
+          <polygon id="lasso-free-shape" points="" />
+        </svg>
       </div>
 
       <div class="toolbar" id="toolbar">
@@ -411,7 +416,7 @@
       <div class="dropdown hidden" id="project-menu">
         <header>
           <h2>Project</h2>
-          <button class="icon-btn" id="btn-close-project" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-project" aria-label="Close">✕</button>
         </header>
         <label class="field">
           <span>Name</span>
@@ -437,7 +442,7 @@
       <div class="dropdown hidden" id="topo-menu">
         <header>
           <h2>Topology check</h2>
-          <button class="icon-btn" id="btn-close-topo" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-topo" aria-label="Close">✕</button>
         </header>
         <p class="hint" id="topo-scope"></p>
         <label class="field">
@@ -460,7 +465,7 @@
       <div class="dropdown hidden" id="map-export-menu">
         <header>
           <h2>Export the map view</h2>
-          <button class="icon-btn" id="btn-close-map-export" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-map-export" aria-label="Close">✕</button>
         </header>
         <p class="hint">
           What is on screen right now, framed the way a figure in a report is framed: a zebra
@@ -500,7 +505,7 @@
       <div class="dropdown hidden" id="scale-menu">
         <header>
           <h2>Working scale</h2>
-          <button class="icon-btn" id="btn-close-scale" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-scale" aria-label="Close">✕</button>
         </header>
         <p class="hint" id="scale-current"></p>
         <div class="scale-grid" id="scale-presets"></div>
@@ -583,7 +588,7 @@
       <div class="dropdown hidden" id="import-menu">
         <header>
           <h2>Import</h2>
-          <button class="icon-btn" id="btn-close-import" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-import" aria-label="Close">✕</button>
         </header>
 
         <span class="palette-label">Drawing and maps</span>
@@ -702,7 +707,7 @@
       <div class="dropdown hidden" id="dem-notice">
         <header>
           <h2>Elevation model in use</h2>
-          <button class="icon-btn" id="btn-close-dem-notice" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-dem-notice" aria-label="Close">✕</button>
         </header>
         <p class="hint" id="dem-notice-source"></p>
         <p class="hint" id="dem-notice-effect"></p>
@@ -723,7 +728,7 @@
       <div class="dropdown hidden" id="trace-menu">
         <header>
           <h2>Trace from the DEM</h2>
-          <button class="icon-btn" id="btn-close-trace" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-trace" aria-label="Close">✕</button>
         </header>
         <p class="hint" id="trace-from"></p>
         <label class="field">
@@ -752,7 +757,7 @@
       <div class="dropdown hidden" id="trace-type-menu">
         <header>
           <h2>What is this line?</h2>
-          <button class="icon-btn" id="btn-close-trace-type" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-trace-type" aria-label="Close">✕</button>
         </header>
         <p class="hint" id="trace-summary"></p>
         <div id="trace-type-body"></div>
@@ -768,7 +773,7 @@
       <div class="dropdown about hidden" id="about">
         <header>
           <h2>About FieldDraw</h2>
-          <button class="icon-btn" id="btn-close-about" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-about" aria-label="Close">✕</button>
         </header>
         <div id="about-body"></div>
       </div>
@@ -776,7 +781,7 @@
       <div class="dropdown shortcuts hidden" id="shortcuts">
         <header>
           <h2>Keyboard shortcuts</h2>
-          <button class="icon-btn" id="btn-close-shortcuts" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-shortcuts" aria-label="Close">✕</button>
         </header>
         <div id="shortcuts-body"></div>
         <p class="hint footnote">
@@ -788,7 +793,7 @@
       <div class="props-menu hidden" id="props-menu">
         <header>
           <h2 id="props-title">Properties</h2>
-          <button class="icon-btn" id="btn-close-props" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-props" aria-label="Close">✕</button>
         </header>
         <div id="props-body"></div>
       </div>
@@ -800,7 +805,7 @@
       <div class="props-menu hidden" id="attrs">
         <header>
           <h2 id="attrs-title">Attributes</h2>
-          <button class="icon-btn" id="btn-close-attrs" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-attrs" aria-label="Close">✕</button>
         </header>
         <div id="attrs-body"></div>
       </div>
@@ -808,7 +813,7 @@
       <aside class="layer-panel" id="units-panel">
         <header>
           <h2>Geological units</h2>
-          <button class="icon-btn" id="btn-close-units" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-units" aria-label="Close">✕</button>
         </header>
         <p class="hint">
           Name and code are exported as the GeoPackage fields <code>unit</code> and <code>code</code>.
@@ -837,7 +842,7 @@
       <aside class="layer-panel" id="strabo-panel">
         <header>
           <h2>StraboSpot</h2>
-          <button class="icon-btn" id="btn-close-strabo" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-strabo" aria-label="Close">✕</button>
         </header>
 
         <div id="strabo-auth">
@@ -899,6 +904,15 @@
 
             <div id="strabo-filters"></div>
 
+            <button class="pill wide" id="strabo-adopt">Make these spots editable</button>
+            <p class="hint footnote">
+              Brings the structures, lines and polygons into the drawing, reading their StraboSpot
+              symbology on the way in: a reverse fault arrives as a thrust with its teeth, trace
+              quality becomes the certainty pattern, and geologic-unit tags become map units.
+              Adopted features are drawn in one colour — set it in <strong>Symbols</strong> — so
+              they stay apart from what you mapped here. Samples and notes stay in their layer.
+            </p>
+
             <button class="pill wide" id="strabo-clear">Remove StraboSpot layers</button>
           </div>
 
@@ -930,17 +944,38 @@
       <aside class="layer-panel" id="symbology-panel">
         <header>
           <h2>Line symbology</h2>
-          <button class="icon-btn" id="btn-close-symbology" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-symbology" aria-label="Close">✕</button>
         </header>
         <p class="hint">
-          Colour, size, spacing and position of faults and fold axial traces. The colour swatch
-          repaints both the trace and its ornament. Position is the perpendicular distance to
-          the trace: the sign picks the side, and <strong>flip</strong> in the properties menu
-          mirrors the symbol across the trace on one feature, sending it to the other block.
-          Fold arrows straddle the axis, so they have no side to flip.
+          Colour and width for <strong>every</strong> line type — contacts included — plus size,
+          spacing and position where the type carries an ornament. Width is a factor on the type's
+          nominal thickness, so it holds at any zoom. The colour swatch repaints both the trace and
+          its ornament. Position is the perpendicular distance to the trace: the sign picks the
+          side, and <strong>flip</strong> in the properties menu mirrors the symbol across the
+          trace on one feature, sending it to the other block. Fold arrows straddle the axis, so
+          they have no side to flip.
         </p>
         <ul id="symbology-list"></ul>
         <button class="pill wide" id="btn-reset-symbology">Reset to defaults</button>
+
+        <hr class="sep" />
+
+        <h2 class="panel-subhead">Imported from StraboSpot</h2>
+        <p class="hint">
+          Features adopted from a StraboSpot dataset are drawn in a single colour, whatever their
+          type, so a glance tells you which traces you walked and which you inherited. The
+          ornaments and the certainty pattern stay: a thrust still has its teeth. Turn it off and
+          they are drawn with the normal symbology, like anything else in the drawing.
+        </p>
+        <label class="check">
+          <input type="checkbox" id="import-uniform" checked />
+          One colour for everything imported
+        </label>
+        <label class="field">
+          <span>Colour</span>
+          <input type="color" id="import-color" class="swatch swatch-input" value="#7e57c2"
+                 aria-label="Colour of features imported from StraboSpot" />
+        </label>
 
         <hr class="sep" />
 
@@ -974,9 +1009,15 @@
       <aside class="layer-panel" id="layer-panel">
         <header>
           <h2>Layers</h2>
-          <button class="icon-btn" id="btn-close-layers" aria-label="Close layers panel">✕</button>
+          <button class="icon-btn close-x" id="btn-close-layers" aria-label="Close layers panel">✕</button>
         </header>
-        <p class="hint">Top to bottom, exactly as they are drawn on the map.</p>
+        <p class="hint">
+          The drawing comes apart into its three pieces — units, traces and measurements — so you
+          can put the contacts against the imagery without the unit fills on top, or clear a
+          crowded outcrop of its dip symbols. They always paint in that order (units underneath,
+          measurements on top), which is why they carry no arrows; everything else is listed top
+          to bottom exactly as it is drawn.
+        </p>
         <ul id="layer-list"></ul>
         <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
 
@@ -1006,7 +1047,7 @@
       <div class="settings hidden" id="settings">
         <header>
           <h2>Digitising settings</h2>
-          <button class="icon-btn" id="btn-close-settings" aria-label="Close">✕</button>
+          <button class="icon-btn close-x" id="btn-close-settings" aria-label="Close">✕</button>
         </header>
 
         <fieldset>
@@ -1064,6 +1105,17 @@
             this get fused into one. Type a number for values beyond the slider.
           </span>
         </label>
+
+        <fieldset>
+          <legend>Select by dragging</legend>
+          <label><input type="radio" name="selmode" id="sel-lasso" checked /> Freehand lasso</label>
+          <label><input type="radio" name="selmode" id="sel-rect" /> Rectangle</label>
+          <span class="sub">
+            Either way, <strong>touching is enough</strong>: anything the shape crosses or covers
+            in part comes along — a contact running off the screen no longer has to be enclosed
+            whole. A plain tap still picks one feature at a time.
+          </span>
+        </fieldset>
 
         <fieldset>
           <legend>Split using</legend>
@@ -1141,7 +1193,7 @@
           <button class="pill" id="btn-profile-csv" title="The sampled elevations as a table">CSV</button>
           <button class="pill" id="btn-profile-png" title="Save the profile as a picture, laid out for a report">PNG</button>
           <button class="pill" id="btn-profile-svg" title="Save the profile as vector art, editable in Illustrator or Inkscape">SVG</button>
-          <button class="icon-btn" id="btn-close-profile" aria-label="Close profile">✕</button>
+          <button class="icon-btn close-x" id="btn-close-profile" aria-label="Close profile">✕</button>
         </header>
         <div class="pf-chart-wrap">
           <svg id="profile-chart" class="pf-chart" preserveAspectRatio="none" aria-label="Elevation along the drawn line"></svg>
@@ -1174,7 +1226,7 @@
           <button class="pill" id="btn-section-svg">SVG</button>
           <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
           <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
-          <button class="icon-btn" id="btn-close-section" aria-label="Close section">✕</button>
+          <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
         </header>
         <div class="sv-body">
           <div class="sv-chart-wrap">

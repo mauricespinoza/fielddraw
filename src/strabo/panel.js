@@ -42,6 +42,11 @@ export function initStraboPanel({ message, busy }) {
   $('strabo-dataset').addEventListener('change', render);
   $('strabo-download').addEventListener('click', doDownload);
   $('strabo-upload').addEventListener('click', doUpload);
+  $('strabo-adopt').addEventListener('click', () => {
+    const d = store.getState().strabo;
+    if (!d) return;
+    offerAdopt(d.estructuras.features.length + d.lineas.features.length);
+  });
   $('strabo-clear').addEventListener('click', () => {
     store.clearStraboData();
     onMessage('StraboSpot layers removed.', 'info');
@@ -101,6 +106,9 @@ export function render() {
     const l = data.lineas.features.length;
     $('strabo-loaded-text').textContent =
       `${data.datasetName}: ${e} structure(s), ${o} observation(s), ${l} line/polygon(s).`;
+    // Sin geometría cartográfica no hay nada que adoptar: las observaciones
+    // solas no son ni trazas ni medidas.
+    $('strabo-adopt').disabled = e + l === 0;
   }
 }
 
@@ -404,6 +412,11 @@ async function doDownload() {
           `observation(s) and ${lineas.features.length} line/polygon(s) from StraboSpot.`,
         'info',
       );
+      // Preguntar aquí y no dejarlo en un botón escondido: quien acaba de
+      // bajar un dataset sabe en ese momento si viene a mirarlo o a seguir
+      // trabajando sobre él, y diez minutos después ya no se acuerda de que
+      // se podía.
+      offerAdopt(estructuras.features.length + lineas.features.length);
     }
   } catch (err) {
     onMessage(`Could not download: ${err.message}`, 'warn');
@@ -411,6 +424,47 @@ async function doDownload() {
     onBusy(null);
     render();
   }
+}
+
+/**
+ * ¿EDITAR LO QUE SE ACABA DE BAJAR?
+ *
+ * Un dataset bajado entra como capa de consulta: se ve y se toca para leer sus
+ * atributos, pero no se puede mover un vértice ni cerrar un contacto. Eso está
+ * bien para comprobar, y no sirve para lo que casi siempre se viene a hacer,
+ * que es continuar el mapa de otra persona.
+ *
+ * Adoptarlo traduce su simbología a la de FieldDraw —una falla inversa entra
+ * como cabalgamiento, con sus dientes— y lo deja editable con todas las
+ * herramientas. Queda marcado con su color propio, así que sigue sabiéndose de
+ * un vistazo qué se caminó y qué se heredó.
+ */
+function offerAdopt(cuantos) {
+  if (!cuantos) return;
+  const seguir = confirm(
+    `Edit these ${cuantos} StraboSpot feature(s)?\n\n` +
+      'They come in as a read-only layer. Bringing them into the drawing makes every tool work ' +
+      'on them — vertices, split, merge, reshape, holes — and they travel in the project and the ' +
+      'GeoPackage.\n\n' +
+      'Their StraboSpot symbology is read on the way in: a reverse fault becomes a thrust with ' +
+      'its teeth, trace quality becomes the certainty pattern, and geologic-unit tags become map ' +
+      'units. Everything adopted is drawn in one colour so it stays apart from what you mapped ' +
+      'here. Undo puts it back.',
+  );
+  if (!seguir) return;
+
+  const r = store.adoptStraboData();
+  if (!r || r.features.length === 0) {
+    onMessage('Nothing in that dataset could be turned into drawing features.', 'warn');
+    return;
+  }
+  const partes = [];
+  if (r.stats.points) partes.push(`${r.stats.points} measurement(s)`);
+  if (r.stats.lines) partes.push(`${r.stats.lines} line(s)`);
+  if (r.stats.polygons) partes.push(`${r.stats.polygons} polygon(s)`);
+  const resumen = `${partes.join(', ')} from StraboSpot are now editable.`;
+  onMessage(r.warnings.length ? `${resumen} ${r.warnings.join(' ')}` : resumen, 'info');
+  render();
 }
 
 /** `/db/project/{id}` trae los tags con la lista de spots de cada uno. */

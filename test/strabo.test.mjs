@@ -10,6 +10,12 @@ import {
   senseOfSlip,
 } from '../src/strabo/spots.js';
 import { featuresToSpots, uploadBreakdown, uploadableCount } from '../src/strabo/upload.js';
+import {
+  adoptStrabo,
+  straboCertainty,
+  straboLineType,
+  straboStructureType,
+} from '../src/strabo/adopt.js';
 import { mergeGeologicUnitTags } from '../src/strabo/mapping.js';
 import {
   STRABO_FILTER_FIELD,
@@ -458,6 +464,171 @@ console.log('== STRABO_FILTER_FIELD ==');
   ok('estructuras filtra por Type', STRABO_FILTER_FIELD.structures === 'Type');
   ok('observación filtra por Process', STRABO_FILTER_FIELD.observations === 'Process');
   ok('líneas/polígonos filtran por Type', STRABO_FILTER_FIELD.lines === 'Type');
+}
+
+console.log('== leer la simbología de StraboSpot ==');
+{
+  const tipo = (t) => straboLineType(t).type;
+  ok('una falla inversa entra como cabalgamiento',
+     tipo('geologic structure fault thrust') === 'thrust-fault', tipo('geologic structure fault thrust'));
+  ok('«reverse» también', tipo('geologic structure fault reverse') === 'thrust-fault');
+  ok('normal, dextral y sinestral se distinguen',
+     tipo('geologic structure fault normal') === 'normal-fault' &&
+     tipo('geologic structure fault dextral') === 'dextral-fault' &&
+     tipo('geologic structure fault sinistral') === 'sinistral-fault');
+  ok('una falla sin sentido de movimiento es indiferenciada',
+     tipo('geologic structure fault') === 'undefined-fault', tipo('geologic structure fault'));
+  ok('el eje de un anticlinal es un antiforme',
+     tipo('geologic structure fold axial trace anticline') === 'antiform');
+  ok('y el de un sinclinal, un sinforme',
+     tipo('geologic structure fold axial trace syncline') === 'synform');
+  ok('un contacto depositacional es estratigráfico',
+     tipo('contact depositional stratigraphic') === 'stratigraphic-contact');
+  ok('un dique gana al contacto intrusivo, que es lo específico',
+     tipo('contact intrusive dike') === 'dike', tipo('contact intrusive dike'));
+  ok('un contacto intrusivo sin más es contacto intrusivo',
+     tipo('contact intrusive') === 'intrusive-contact');
+  ok('el contacto estructural vuelve como lo que subió',
+     tipo('contact other structural contact') === 'structural-contact',
+     tipo('contact other structural contact'));
+
+  const sinTipo = straboLineType('');
+  ok('sin tipo cae en el contacto neutro', sinTipo.type === 'stratigraphic-contact');
+  ok('y se declara adivinado, para poder avisar', sinTipo.exact === false);
+  ok('lo que sí casa se declara exacto', straboLineType('contact intrusive').exact === true);
+  // Un dataset escrito a mano en castellano: lo lee el mismo lector de cartas
+  // ajenas que ya se usa al adoptar un GeoPackage.
+  ok('«falla inversa» escrito a mano también se entiende',
+     tipo('falla inversa') === 'thrust-fault', tipo('falla inversa'));
+
+  ok('la calidad de la traza decide la certeza',
+     straboCertainty('known') === 'observed' &&
+     straboCertainty('inferred') === 'inferred' &&
+     straboCertainty('concealed') === 'covered');
+  ok('sin calidad declarada, observado', straboCertainty('') === 'observed');
+
+  ok('las superficies medidas se traducen',
+     straboStructureType('bedding').type === 'bedding' &&
+     straboStructureType('foliation').type === 'foliation' &&
+     straboStructureType('fracture').type === 'joint' &&
+     straboStructureType('fault normal').type === 'fault-plane');
+  ok('una superficie sin tipo se asume estratificación, y se declara adivinada',
+     straboStructureType('').type === 'bedding' && straboStructureType('').exact === false);
+}
+
+console.log('== adoptar un dataset ==');
+{
+  const fc = (features) => ({ type: 'FeatureCollection', features });
+  const data = {
+    datasetName: 'Río Blanco 2026',
+    estructuras: fc([
+      {
+        type: 'Feature',
+        properties: { Name: 'E-1', Type: 'bedding', Strike: 30, Dip: 70, Azimuth: 120, Unit: 'Fm Nieves', Notes: 'banco masivo' },
+        geometry: { type: 'Point', coordinates: [-71.3, -37.4] },
+      },
+      // Un punto de paso: sin rumbo ni manteo no es una medida.
+      {
+        type: 'Feature',
+        properties: { Name: 'E-2', Type: 'bedding' },
+        geometry: { type: 'Point', coordinates: [-71.2, -37.3] },
+      },
+    ]),
+    observacion: fc([
+      {
+        type: 'Feature',
+        properties: { Name: 'M-1', 'Sample Code': 'RB-01' },
+        geometry: { type: 'Point', coordinates: [-71.25, -37.35] },
+      },
+    ]),
+    lineas: fc([
+      {
+        type: 'Feature',
+        properties: { Name: 'F-1', Type: 'geologic structure fault thrust', Quality: 'inferred' },
+        geometry: { type: 'LineString', coordinates: [[-71.3, -37.4], [-71.2, -37.3]] },
+      },
+      {
+        type: 'Feature',
+        properties: { Name: 'U-1', Type: 'rock unit', Unit: 'Granodiorita Lolco', Quality: 'known' },
+        geometry: { type: 'Polygon', coordinates: [[[-71.3, -37.4], [-71.2, -37.4], [-71.2, -37.3], [-71.3, -37.4]]] },
+      },
+    ]),
+  };
+
+  let n = 0;
+  const r = adoptStrabo(data, { units: [], newId: () => `x${++n}` });
+
+  ok('cuenta lo que entró', r.stats.points === 1 && r.stats.lines === 1 && r.stats.polygons === 1,
+     JSON.stringify(r.stats));
+  ok('y descarta el punto sin rumbo ni manteo', r.stats.skipped === 1);
+
+  const medida = r.features.find((f) => f.properties.geomKind === 'measurement');
+  ok('la medida llega con su rumbo y su manteo',
+     medida.properties.strike === 30 && medida.properties.dip === 70);
+  ok('con el azimut que traía, no uno recalculado', medida.properties.dipAzimuth === 120);
+  ok('y con método propio, que no es ni brújula de aquí ni ajuste sobre el DEM',
+     medida.properties.method === 'strabospot');
+  ok('la procedencia va en la nota del elemento, que es la que se exporta',
+     medida.properties.note.includes('Río Blanco 2026') && medida.properties.note.includes('E-1'),
+     medida.properties.note);
+
+  const falla = r.features.find((f) => f.properties.kind === 'line');
+  ok('la falla inversa entra como cabalgamiento', falla.properties.type === 'thrust-fault');
+  ok('y la calidad de la traza, como certeza inferida', falla.properties.certainty === 'inferred');
+
+  const poligono = r.features.find((f) => f.properties.kind === 'polygon');
+  ok('el tag de unidad se convierte en una unidad del proyecto',
+     r.units.length === 1 && r.units[0].name === 'Granodiorita Lolco', JSON.stringify(r.units));
+  ok('y el polígono apunta a ella', poligono.properties.type === r.units[0].id);
+  ok('la litología se adivina del nombre de la unidad',
+     r.units[0].color === '#E57373', r.units[0].color);
+
+  ok('todo lo adoptado queda marcado como venido de StraboSpot',
+     r.features.every((f) => f.properties.source === 'strabospot'));
+  ok('las observaciones no se adoptan: no son geometría cartográfica',
+     r.features.length === 3);
+  ok('avisa de lo que descartó', r.warnings.some((w) => w.includes('skipped')), r.warnings.join(' | '));
+
+  // Una unidad que ya existe no se duplica: el polígono se cuelga de ella.
+  const otra = adoptStrabo(data, {
+    units: [{ id: 'u-existente', name: 'Granodiorita Lolco', code: 'Gl', color: '#123456' }],
+    newId: () => `y${++n}`,
+  });
+  ok('una unidad que ya existe no se duplica', otra.units.length === 1 && otra.stats.newUnits === 0);
+  ok('y el polígono se cuelga de la que había',
+     otra.features.find((f) => f.properties.kind === 'polygon').properties.type === 'u-existente');
+}
+
+console.log('== la calidad de la traza sobrevive a la bajada ==');
+{
+  const [linea] = buildLineasPoligonos([
+    {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
+      properties: {
+        id: 'l1',
+        name: 'F-9',
+        trace: { trace_feature: true, trace_type: 'geologic_struc', geologic_structure_type: 'fault', shear_sense: 'thrust', trace_quality: 'concealed' },
+      },
+    },
+  ]);
+  ok('la columna Quality trae la calidad de la traza', linea.properties.Quality === 'concealed',
+     JSON.stringify(linea.properties));
+  ok('y el tipo sigue armándose de lo general a lo particular',
+     linea.properties.Type === 'geologic structure fault thrust', linea.properties.Type);
+
+  const [contacto] = buildLineasPoligonos([
+    {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
+      properties: {
+        id: 'l2',
+        trace: { trace_feature: true, trace_type: 'contact', contact_type: 'other', other_contact_type: 'structural contact' },
+      },
+    },
+  ]);
+  ok('el término escrito a mano de un «other» no se pierde',
+     contacto.properties.Type.includes('structural contact'), contacto.properties.Type);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

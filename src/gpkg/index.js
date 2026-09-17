@@ -1,6 +1,7 @@
 import { loadVendorScript, vendorUrl } from '../vendorPaths.js';
 import {
   HORIZONTAL_DIP_MAX,
+  STRABO_SOURCE,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   VERTICAL_DIP_MIN,
@@ -154,9 +155,10 @@ CREATE TABLE geol_points (
   base_m REAL,
   spread_m REAL,
   dem_source TEXT,
-  -- Unidad asignada a la medida (ver unitId en store.js): una medida no
-  -- tiene unidad por definición como un polígono, así que necesita su
-  -- propia columna denormalizada, igual que en geol_polygons.
+  -- La unidad en la que se tomó la medida, igual que en los polígonos. Estaban
+  -- en el INSERT pero no en el esquema, así que exportar un GeoPackage con
+  -- cualquier medida fallaba entero con «table geol_points has no column
+  -- named unit».
   unit TEXT,
   code TEXT,
   label TEXT,
@@ -174,7 +176,17 @@ CREATE TABLE geol_points (
  * números sueltos ya viajan enteros dentro del proyecto `.fdproj.json`.
  */
 export function traceProvenance(p) {
-  if (!p || p.method !== 'dem-trace') return null;
+  if (!p) return null;
+  /*
+   * Lo adoptado de StraboSpot tampoco se caminó aquí, y la columna que
+   * contesta «de dónde salió esta línea» es justamente esta. En la app se
+   * distingue por el color único; abierto en QGIS, el color se pierde y solo
+   * queda lo que diga la tabla.
+   */
+  if (p.source === STRABO_SOURCE) {
+    return 'Imported from StraboSpot — mapped by someone else, not walked here';
+  }
+  if (p.method !== 'dem-trace') return null;
   const rumbo = String(Math.round(Number(p.traceStrike) || 0)).padStart(3, '0');
   const manteo = Math.round(Number(p.traceDip) || 0);
   const dem = p.demSource === 'opentopo' ? 'OpenTopography' : 'AWS Terrain Tiles';

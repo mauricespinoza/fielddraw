@@ -1,10 +1,12 @@
 import { GEOLOGY_SOURCE } from './geologyStyle.js';
 import {
   HORIZONTAL_DIP_MAX,
+  IMPORTED_FILTER,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   STRUCTURE_VARIANTS,
   VERTICAL_DIP_MIN,
+  defaultImportStyle,
   defaultStructureStyle,
 } from './symbology.js';
 
@@ -146,7 +148,20 @@ const DRAWINGS = {
   },
 };
 
-export const structureImageName = (type, variant) => `str-${type}-${variant}`;
+/**
+ * Sufijo de la copia en el color de lo importado.
+ *
+ * Una medida bajada de StraboSpot es el mismo símbolo —mismo trazo, mismo
+ * tic— pero en el color único de lo ajeno, para que se vea de un vistazo qué
+ * manteos midió uno y cuáles vienen de la libreta de otro. Es una SEGUNDA
+ * imagen y no un recoloreado en vivo por el mismo motivo que en los
+ * ornamentos: MapLibre no recolorea un icono que no sea SDF, y un SDF de
+ * cuatro trazos finos se ve sucio.
+ */
+const IMPORTED_SUFFIX = '-imp';
+
+export const structureImageName = (type, variant, imported = false) =>
+  `str-${type}-${variant}${imported ? IMPORTED_SUFFIX : ''}`;
 
 /** Todos los pares tipo × variante que hay que registrar. */
 function everyImage() {
@@ -157,20 +172,41 @@ function everyImage() {
   return out;
 }
 
-export function addStructureImages(map) {
+const imageFor = (variant, color) =>
+  render(W, H, (ctx) => {
+    for (const p of passes(color)) DRAWINGS[variant](ctx, p);
+  });
+
+/** Último color con el que se rasterizaron las copias de lo importado. */
+let importedColorDrawn = null;
+
+export function addStructureImages(map, importStyle = defaultImportStyle()) {
   for (const [type, variant] of everyImage()) {
     const name = structureImageName(type, variant);
-    if (map.hasImage(name)) continue;
-    const color = STRUCTURE_TYPE_BY_ID.get(type).color;
-    const dibujo = DRAWINGS[variant];
-    map.addImage(
-      name,
-      render(W, H, (ctx) => {
-        for (const p of passes(color)) dibujo(ctx, p);
-      }),
-      { pixelRatio: DPR },
-    );
+    if (!map.hasImage(name)) {
+      const color = STRUCTURE_TYPE_BY_ID.get(type).color;
+      map.addImage(name, imageFor(variant, color), { pixelRatio: DPR });
+    }
+    const ajeno = structureImageName(type, variant, true);
+    if (!map.hasImage(ajeno)) {
+      map.addImage(ajeno, imageFor(variant, importStyle.color), { pixelRatio: DPR });
+    }
   }
+  importedColorDrawn = importStyle.color;
+}
+
+/**
+ * Cambiar el color de lo importado redibuja solo esa tanda de iconos, y solo
+ * si de verdad cambió: arrastrar el selector de color dispara un evento por
+ * píxel de recorrido.
+ */
+export function applyImportStyle(map, importStyle) {
+  if (!importStyle || importStyle.color === importedColorDrawn) return;
+  for (const [type, variant] of everyImage()) {
+    const name = structureImageName(type, variant, true);
+    if (map.hasImage(name)) map.updateImage(name, imageFor(variant, importStyle.color));
+  }
+  importedColorDrawn = importStyle.color;
 }
 
 /**
@@ -197,7 +233,16 @@ const typeExpr = [
   'bedding',
 ];
 
-export const structureIconExpr = ['concat', 'str-', typeExpr, '-', variantExpr];
+/**
+ * El icono: tipo y variante, más el sufijo de lo importado cuando el color
+ * único está encendido. Con él apagado, un manteo de StraboSpot se dibuja con
+ * la simbología de siempre, que es lo que pide quien ya no quiere distinguir.
+ */
+export function structureIconExpr(importStyle = defaultImportStyle()) {
+  const base = ['concat', 'str-', typeExpr, '-', variantExpr];
+  if (!importStyle.uniform) return base;
+  return ['concat', base, ['case', IMPORTED_FILTER, IMPORTED_SUFFIX, '']];
+}
 
 /**
  * Solo se rotan los símbolos que tienen orientación. El de horizontal es una
@@ -222,7 +267,7 @@ const MEASUREMENT_FILTER = [
 
 export const STRUCTURE_SOURCE = GEOLOGY_SOURCE;
 
-export function structureLayers(style = defaultStructureStyle()) {
+export function structureLayers(style = defaultStructureStyle(), importStyle = defaultImportStyle()) {
   return [
     // Halo de selección, hermano del de las líneas: va debajo del símbolo.
     {
@@ -244,7 +289,7 @@ export function structureLayers(style = defaultStructureStyle()) {
       minzoom: style.minzoom,
       filter: MEASUREMENT_FILTER,
       layout: {
-        'icon-image': structureIconExpr,
+        'icon-image': structureIconExpr(importStyle),
         'icon-rotate': rotateExpr,
         'icon-rotation-alignment': 'map',
         // Las medidas se agrupan en los afloramientos buenos: dejar que
@@ -293,8 +338,11 @@ export function structureLayers(style = defaultStructureStyle()) {
 export const STRUCTURE_LAYER_IDS = structureLayers().map((l) => l.id);
 
 /** Reaplica tamaño, zoom mínimo y etiquetas sin recrear las capas. */
-export function applyStructureStyle(map, style) {
+export function applyStructureStyle(map, style, importStyle) {
   if (map.getLayer('structure-symbols')) {
+    if (importStyle) {
+      map.setLayoutProperty('structure-symbols', 'icon-image', structureIconExpr(importStyle));
+    }
     map.setLayoutProperty('structure-symbols', 'icon-size', iconSize(style.size));
     map.setLayerZoomRange('structure-symbols', style.minzoom, 24);
   }

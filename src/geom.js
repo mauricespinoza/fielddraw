@@ -176,34 +176,135 @@ export function chainLines(lines) {
   return chain;
 }
 
-/**
- * Ids de los elementos COMPLETAMENTE encerrados por un rectángulo de pantalla
- * `[minX, minY, maxX, maxY]`. Es el lazo de Elegir.
- *
- * Encerrados y no rozados: en una carta las líneas se cruzan por todas
- * partes, y llevarse todo lo que toca el rectángulo significaría llevarse
- * media hoja por arrastrar sobre ella. Es el mismo criterio del lazo de QGIS.
- */
-export function featuresInBox(features, box, project) {
-  const dentro = (c) => {
-    const q = project(c);
-    return q.x >= box[0] && q.x <= box[2] && q.y >= box[1] && q.y <= box[3];
-  };
+/** ¿Se cruzan los segmentos a-b y c-d? Colinealidad aparte, que aquí no decide. */
+export function segmentsIntersect(a, b, c, d) {
+  const cross = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0))) return true;
+  // Un extremo justo encima del otro segmento también cuenta: el lazo se
+  // dibuja a mano y rozar es exactamente lo que se quiere detectar.
+  const onSeg = (p, q, r) =>
+    Math.abs(cross(p, q, r)) < 1e-9 &&
+    Math.min(p[0], q[0]) - 1e-9 <= r[0] && r[0] <= Math.max(p[0], q[0]) + 1e-9 &&
+    Math.min(p[1], q[1]) - 1e-9 <= r[1] && r[1] <= Math.max(p[1], q[1]) + 1e-9;
+  return onSeg(c, d, a) || onSeg(c, d, b) || onSeg(a, b, c) || onSeg(a, b, d);
+}
 
+/** Los cuatro vértices de `[minX, minY, maxX, maxY]`, en orden. */
+export function boxRing(box) {
+  return [
+    [box[0], box[1]],
+    [box[2], box[1]],
+    [box[2], box[3]],
+    [box[0], box[3]],
+  ];
+}
+
+/**
+ * Ids de los elementos que una REGIÓN de pantalla se lleva. La región es un
+ * anillo de puntos `[x, y]` —los cuatro de un rectángulo, o el trazo del lazo
+ * a mano alzada—, y se cierra sola.
+ *
+ * Por omisión basta con ROZAR: si el lazo cruza una línea, o encierra un trozo
+ * de ella, esa línea entra. Antes había que envolver el elemento entero, que
+ * es el criterio de QGIS, y en una tablet resulta impracticable: un contacto
+ * de borde a borde de la pantalla no se puede encerrar sin alejar el mapa
+ * hasta perder de vista lo que se estaba eligiendo. Con `contain: true` se
+ * recupera el criterio estricto.
+ *
+ * Un polígono cuenta además si la región cae ENTERA dentro de él: arrastrar un
+ * lazo chico dentro de una unidad grande es la manera obvia de elegirla, y sin
+ * esto no habría forma de hacerlo sin llegar hasta su contorno.
+ */
+export function featuresInRegion(features, region, project, { contain = false } = {}) {
+  const ring = (region || []).filter((p) => Array.isArray(p) && p.length >= 2);
   const out = [];
+  if (ring.length < 3) return out;
+
+  const rbox = [
+    Math.min(...ring.map((p) => p[0])),
+    Math.min(...ring.map((p) => p[1])),
+    Math.max(...ring.map((p) => p[0])),
+    Math.max(...ring.map((p) => p[1])),
+  ];
+  const dentro = (p) => pointInBbox(p, rbox) && pointInRing(p, ring);
+
   for (const f of features || []) {
     if (!f.geometry) continue;
+
     // Una medida de rumbo y manteo es un punto y no tiene anillos: `ringsOf`
     // devuelve vacío, y sin esta rama el lazo no se llevaba ni una sola.
     if (f.geometry.type === 'Point') {
-      if (dentro(f.geometry.coordinates)) out.push(f.properties.id);
+      const q = project(f.geometry.coordinates);
+      if (dentro([q.x, q.y])) out.push(f.properties.id);
       continue;
     }
-    const rings = ringsOf(f.geometry);
-    if (rings.length === 0) continue;
-    if (rings.every((r) => r.coords.every(dentro))) out.push(f.properties.id);
+
+    const anillos = ringsOf(f.geometry).map((r) => ({
+      closed: r.closed,
+      pts: r.coords.map((c) => {
+        const q = project(c);
+        return [q.x, q.y];
+      }),
+    }));
+    if (anillos.length === 0) continue;
+
+    /*
+     * Descarte barato por caja. Rozar exige comparar cada segmento del
+     * elemento con cada lado de la región, y un lazo a mano alzada tiene
+     * decenas de lados: sin este filtro, elegir sobre un mapa levantado
+     * entero cuesta el producto de las dos cosas, y casi todo lo que se
+     * compara está al otro lado de la pantalla.
+     */
+    const fbox = bboxOf(anillos.flatMap((r) => r.pts));
+    if (!bboxIntersects(fbox, rbox)) continue;
+
+    if (contain) {
+      if (anillos.every((r) => r.pts.every(dentro))) out.push(f.properties.id);
+      continue;
+    }
+
+    if (anillos.some((r) => r.pts.some(dentro)) || crossesAny(anillos, ring)) {
+      out.push(f.properties.id);
+      continue;
+    }
+    // La región entera dentro del polígono: ningún vértice suyo está dentro y
+    // ningún borde se cruza, pero el lazo sí está sobre el elemento.
+    if (
+      f.geometry.type === 'Polygon' &&
+      pointInPolygon(ring[0], anillos.map((r) => r.pts))
+    ) {
+      out.push(f.properties.id);
+    }
   }
   return out;
+}
+
+/** ¿Algún tramo del elemento cruza algún lado de la región? */
+function crossesAny(anillos, ring) {
+  for (const r of anillos) {
+    const n = r.closed ? r.pts.length : r.pts.length - 1;
+    for (let i = 0; i < n; i++) {
+      const a = r.pts[i];
+      const b = r.pts[(i + 1) % r.pts.length];
+      for (let j = 0; j < ring.length; j++) {
+        if (segmentsIntersect(a, b, ring[j], ring[(j + 1) % ring.length])) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * El lazo rectangular, en los mismos términos: `[minX, minY, maxX, maxY]`.
+ * Es el mismo criterio de roce que el lazo a mano alzada — lo contrario sería
+ * que la misma herramienta eligiera distinto según con qué forma se arrastre.
+ */
+export function featuresInBox(features, box, project, opts = {}) {
+  return featuresInRegion(features, boxRing(box), project, opts);
 }
 
 /** Aplana la geometría de una feature GeoJSON a arrays de anillos/líneas. */

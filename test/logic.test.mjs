@@ -188,7 +188,8 @@ St.setLayerOpacity('esri-imagery', 0.4);
 ok('opacidad se guarda', St.getState().layers.find(l=>l.id==='esri-imagery').opacity === 0.4);
 St.setLayerVisible('osm', true);
 ok('visibilidad se guarda', St.getState().layers.find(l=>l.id==='osm').visible === true);
-ok('capa geología va primera por defecto', before[0] === 'geology');
+ok('el dibujo va primero por defecto, repartido en sus tres capas',
+   before.slice(0, 3).join() === 'geology-dips,geology-faults,geology-units', before.slice(0, 3).join());
 
 console.log('== notificación de cambios ==');
 let hits = 0;

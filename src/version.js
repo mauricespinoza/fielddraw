@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.26.0';
+export const APP_VERSION = '0.27.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
   ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
   ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, o ajustando un plano a una traza dibujada. Cada medida viaja con su incertidumbre.'],
-  ['Select', 'Elegir con un toque, o arrastrar para el lazo rectangular. Mantener pulsado abre los atributos.'],
+  ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
   ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
   ['Topology · Split · Reshape', 'Cortar un elemento con una línea, o redibujar un tramo de su contorno.'],
@@ -40,9 +40,9 @@ export const APP_TOOLS = [
   ['Profile', 'Perfil topográfico de una traza, leído del modelo de elevación.'],
   ['3D', 'Relieve para mirar la ladera. Línea y Polígono siguen dibujando.'],
   ['Scale', 'Escala de trabajo: elegirla, fijar el mapa a ella y calibrar el tamaño real de la pantalla.'],
-  ['Layers · Units · Symbols', 'Capas y su opacidad, catálogo de unidades y simbología de fallas y pliegues.'],
+  ['Layers · Units · Symbols', 'Capas y su opacidad —el dibujo repartido en unidades, trazas y medidas—, catálogo de unidades y simbología de toda línea: color y grosor, con ornamento donde lo lleva.'],
   ['Import · Export', 'GeoPackage, shapefile, GeoJSON y mapas offline (MBTiles/PMTiles); salida a GeoPackage con su QML.'],
-  ['StraboSpot', 'Bajar spots de un dataset y subir el dibujo como dataset nuevo, en el modelo de datos nativo.'],
+  ['StraboSpot', 'Bajar spots de un dataset —y adoptarlos para editarlos, leyendo su simbología— y subir el dibujo como dataset nuevo, en el modelo de datos nativo.'],
   ['Project', 'Guardar y abrir el trabajo, y exportar la vista como lámina en SVG, PNG o PDF.'],
 ];
 
@@ -53,13 +53,25 @@ export const APP_TOOLS = [
  */
 export const CHANGELOG = [
   {
-    version: '0.26.0',
+    version: '0.27.0',
     items: [
       'Nuevo: Import → «Download this area…» baja el recuadro que se está mirando y lo deja disponible sin señal, diciendo cuánto pesa ANTES de empezar, con progreso y con botón de cancelar. Va a una caché propia que no se poda nunca y que sobrevive a publicar versiones nuevas.',
       'El modelo de elevación se baja con holgura porque es dominio público y pesa poco: un área de 10 × 10 km son unos 5 MB y con eso quedan offline las curvas, el sombreado, el relieve 3D, los perfiles y los ajustes de plano. El panel abre con el basemap en «None» por eso mismo.',
       'Los basemaps de OpenStreetMap y OpenTopoMap NO se pueden bajar por adelantado, y la app lo dice en vez de hacerlo igual: sus políticas prohíben expresamente la descarga masiva y son servidores pagados con donaciones. Para cobertura garantizada de imagen, la vía sigue siendo convertir la zona a PMTiles e importarla.',
       'Los de Esri sí, con tope de 1500 teselas por área y con la atribución a la vista.',
       'Borrar un área libera sus teselas, salvo las que compartan con otra área guardada.',
+    ],
+  },
+  {
+    version: '0.26.0',
+    items: [
+      'El lazo de Elegir se dibuja a mano alzada, que es lo de fábrica; el rectángulo sigue disponible en Ajustes.',
+      'Elegir con el lazo ya no exige envolver el elemento entero: basta con rozarlo.',
+      'Las cruces de cerrar de los paneles son cuadrados rojos con el aspa blanca: se ven y se aciertan con el dedo.',
+      'La simbología de línea cubre también los contactos, y todo tipo de línea tiene color y grosor editables.',
+      'El panel de capas reparte el dibujo en Unidades, Fallas y Medidas, y anida los fondos bajo su propia cabecera.',
+      'Al bajar un dataset de StraboSpot se pregunta si se quiere editar: adoptarlo traduce su simbología —una falla inversa entra como cabalgamiento, la calidad de la traza como certeza, los tags de unidad como unidades— y lo deja editable.',
+      'Lo adoptado de StraboSpot se dibuja de un color único, configurable en Símbolos, para distinguirlo de lo cartografiado aquí.',
     ],
   },
   {

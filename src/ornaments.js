@@ -1,5 +1,11 @@
 import { GEOLOGY_SOURCE } from './geologyStyle.js';
-import { ORNAMENT_TYPES, defaultOrnaments, effectiveLineColor } from './symbology.js';
+import {
+  IMPORTED_FILTER,
+  ORNAMENT_TYPES,
+  defaultImportStyle,
+  defaultOrnaments,
+  effectiveLineColor,
+} from './symbology.js';
 
 /**
  * Ornamentos de falla y de pliegue: dientes en las inversas, tics en las
@@ -159,19 +165,54 @@ const DRAWINGS = {
 
 export const IMAGE_OF = Object.fromEntries(ORNAMENT_TYPES.map((t) => [t, `orn-${t}`]));
 
-const imageFor = (type, style) => {
+/**
+ * El mismo icono, en el color único de lo traído de StraboSpot.
+ *
+ * Sin esta segunda tanda, adoptar un dataset dejaba la traza morada y sus
+ * dientes del color de la falla propia: el símbolo se partía en dos colores y
+ * el mapa dejaba de decir de un vistazo qué venía de fuera, que es justo para
+ * lo que está el color único.
+ */
+export const IMPORTED_IMAGE_OF = Object.fromEntries(
+  ORNAMENT_TYPES.map((t) => [t, `orn-${t}-imp`]),
+);
+
+const imageWith = (type, color) => {
   const d = DRAWINGS[type];
-  const color = effectiveLineColor(type, style);
   return render(d.w, d.h, (ctx) => d.draw(ctx, color));
 };
 
+const imageFor = (type, style) => imageWith(type, effectiveLineColor(type, style));
+
 /** Registra los iconos que falten, con los colores del estilo actual. */
-export function addOrnamentImages(map, style = defaultOrnaments()) {
+export function addOrnamentImages(map, style = defaultOrnaments(), importStyle = defaultImportStyle()) {
   for (const type of ORNAMENT_TYPES) {
     const name = IMAGE_OF[type];
-    if (map.hasImage(name)) continue;
-    map.addImage(name, imageFor(type, style), { pixelRatio: DPR });
+    if (!map.hasImage(name)) map.addImage(name, imageFor(type, style), { pixelRatio: DPR });
+    const ajeno = IMPORTED_IMAGE_OF[type];
+    if (!map.hasImage(ajeno)) {
+      map.addImage(ajeno, imageWith(type, importStyle.color), { pixelRatio: DPR });
+    }
   }
+}
+
+/** Último color con el que se rasterizó la tanda de lo importado, por mapa. */
+const lastImportColor = new WeakMap();
+
+/** Redibuja los iconos de lo importado, y solo si el color de verdad cambió. */
+export function updateImportedOrnamentImages(map, importStyle) {
+  if (!importStyle || lastImportColor.get(map) === importStyle.color) return;
+  lastImportColor.set(map, importStyle.color);
+  for (const type of ORNAMENT_TYPES) {
+    const name = IMPORTED_IMAGE_OF[type];
+    if (map.hasImage(name)) map.updateImage(name, imageWith(type, importStyle.color));
+  }
+}
+
+/** `icon-image` de un tipo: el suyo, o el de lo importado si el color único está puesto. */
+export function ornamentIconExpr(type, importStyle = defaultImportStyle()) {
+  if (!importStyle.uniform) return IMAGE_OF[type];
+  return ['case', IMPORTED_FILTER, IMPORTED_IMAGE_OF[type], IMAGE_OF[type]];
 }
 
 /**
@@ -231,7 +272,7 @@ const flipFilter = (flipped) =>
 export const ornamentLayerId = (type, flipped) =>
   `orn-${type}${flipped ? '-flip' : ''}-layer`;
 
-function ornamentLayer(type, style, flipped) {
+function ornamentLayer(type, style, flipped, importStyle) {
   const s = style[type] || defaultOrnaments()[type];
   return {
     id: ornamentLayerId(type, flipped),
@@ -242,7 +283,7 @@ function ornamentLayer(type, style, flipped) {
     layout: {
       'symbol-placement': 'line',
       'symbol-spacing': s.spacing,
-      'icon-image': IMAGE_OF[type],
+      'icon-image': ornamentIconExpr(type, importStyle),
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
@@ -265,11 +306,11 @@ const iconSize = (size) => [
   1 * size,
 ];
 
-export function ornamentLayers(style = defaultOrnaments()) {
+export function ornamentLayers(style = defaultOrnaments(), importStyle = defaultImportStyle()) {
   const out = [];
   for (const type of ORNAMENT_TYPES) {
-    out.push(ornamentLayer(type, style, false));
-    out.push(ornamentLayer(type, style, true));
+    out.push(ornamentLayer(type, style, false, importStyle));
+    out.push(ornamentLayer(type, style, true, importStyle));
   }
   return out;
 }
@@ -279,12 +320,15 @@ export function ornamentLayers(style = defaultOrnaments()) {
  * layout es mucho más barato —y no parpadea— que quitar y volver a añadir las
  * ocho capas cada vez que se mueve un deslizador.
  */
-export function applyOrnamentStyle(map, style) {
+export function applyOrnamentStyle(map, style, importStyle) {
   for (const type of ORNAMENT_TYPES) {
     const s = style[type] || defaultOrnaments()[type];
     for (const flipped of [false, true]) {
       const id = ornamentLayerId(type, flipped);
       if (!map.getLayer(id)) continue;
+      if (importStyle) {
+        map.setLayoutProperty(id, 'icon-image', ornamentIconExpr(type, importStyle));
+      }
       map.setLayoutProperty(id, 'symbol-spacing', s.spacing);
       map.setLayoutProperty(id, 'icon-offset', [0, s.offset]);
       map.setLayoutProperty(id, 'icon-size', iconSize(s.size));
@@ -292,6 +336,7 @@ export function applyOrnamentStyle(map, style) {
     }
   }
   updateOrnamentImages(map, style);
+  updateImportedOrnamentImages(map, importStyle);
 }
 
 export const ORNAMENT_LAYER_IDS = ornamentLayers().map((l) => l.id);
