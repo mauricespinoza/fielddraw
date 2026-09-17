@@ -708,6 +708,61 @@
         }
       }
 
+      /* --------------------------------- áreas descargadas a la caché propia */
+      section('Descargar un área y servirla sin red');
+      {
+        /*
+         * Se baja contra el PROPIO servidor de pruebas, no contra AWS ni Esri:
+         * lo que hay que verificar es el mecanismo —que las teselas acaben en
+         * la caché correcta, que no se vuelvan a pedir y que borrar el área
+         * las quite— y para eso da igual qué bytes lleguen. Bajar de verdad
+         * de un tercero en cada `npm test` sería justo el abuso que esta
+         * herramienta tiene prohibido.
+         */
+        const area = await import('../src/areaCache.js');
+        const id = `test-area-${Math.random().toString(36).slice(2)}`;
+        // Una plantilla que apunta a un archivo real del repo, ignorando z/x/y.
+        const plantilla = new URL('../icons/icon-192.png', location.href).href + '?z={z}&x={x}&y={y}';
+        const bbox = [-71.45, -37.35, -71.4, -37.3];
+        const parte = {
+          kind: 'basemap', label: 'Prueba', template: plantilla,
+          zmin: 10, zmax: 11, tiles: area.countTiles(bbox, 10, 11),
+          limit: 9999, blocked: null, bytes: 0,
+        };
+
+        let ultimo = null;
+        const res = await area.downloadArea(
+          { id, name: 'Área de prueba', bbox, partes: [parte] },
+          { onProgress: (p) => { ultimo = p; } },
+        );
+        ok('baja todas las teselas del plan', res.tiles === parte.tiles, `${res.tiles}/${parte.tiles}`);
+        ok('ninguna falla contra el propio servidor', res.fallidas === 0, String(res.fallidas));
+        ok('informa progreso', ultimo && ultimo.total === parte.tiles, JSON.stringify(ultimo));
+
+        // Lo bajado tiene que estar en la caché de áreas, que es la que el
+        // service worker mira primero y nunca poda.
+        const cache = await caches.open(area.AREA_CACHE);
+        const una = area.tileUrl(plantilla, 10, area.tileRange(bbox, 10).x0, area.tileRange(bbox, 10).y0);
+        ok('la tesela queda en fielddraw-areas', !!(await cache.match(una)), una);
+
+        const enManifiesto = (await area.listAreas()).find((a) => a.id === id);
+        ok('el área queda en el manifiesto', !!enManifiesto);
+
+        // Volver a bajar la misma área no vuelve a pedir nada a la red.
+        const res2 = await area.downloadArea(
+          { id: `${id}-bis`, name: 'Repetida', bbox, partes: [parte] },
+          {},
+        );
+        ok('lo ya descargado no se vuelve a pedir', res2.fallidas === 0 && res2.tiles === parte.tiles);
+        await area.deleteArea(`${id}-bis`);
+
+        // Borrar el área se lleva sus teselas.
+        const { borradas } = await area.deleteArea(id);
+        ok('borrar el área libera sus teselas', borradas === parte.tiles, `${borradas}/${parte.tiles}`);
+        ok('y lo saca del manifiesto', !(await area.listAreas()).find((a) => a.id === id));
+        ok('la caché queda vacía de esas teselas', !(await cache.match(una)));
+      }
+
       document.getElementById('summary').textContent = fails === 0 ? 'TODO OK' : `${fails} FALLOS`;
       document.getElementById('summary').style.color = fails === 0 ? '#2dd4bf' : '#f87171';
     </script>

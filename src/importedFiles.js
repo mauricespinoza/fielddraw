@@ -24,45 +24,7 @@
  * que recién elegido a mano.
  */
 
-const DB_NAME = 'fielddraw';
-const DB_VERSION = 1;
-const STORE = 'imported-files';
-
-let dbPromise = null;
-
-function openDb() {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      if (!('indexedDB' in globalThis) || !globalThis.indexedDB) {
-        reject(new Error('this browser has no IndexedDB'));
-        return;
-      }
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'id' });
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error || new Error('could not open IndexedDB'));
-      // Safari en modo privado puede dejar la apertura bloqueada en vez de
-      // fallar; sin esto, el `await` de quien llame no vuelve nunca.
-      req.onblocked = () => reject(new Error('IndexedDB is blocked by another tab'));
-    });
-    // Un fallo puntual no debe dejar la promesa rota cacheada para siempre.
-    dbPromise.catch(() => {
-      dbPromise = null;
-    });
-  }
-  return dbPromise;
-}
-
-/** Promesa de una petición de IndexedDB, que es API de eventos y no de promesas. */
-function done(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error || new Error('IndexedDB request failed'));
-  });
-}
+import { STORE_FILES, del, getAll, put } from './idb.js';
 
 /**
  * Guarda un archivo ya abierto con éxito para la próxima sesión.
@@ -71,35 +33,27 @@ function done(req) {
  * offline, de los que puede haber varios: es lo que permite al arranque volver
  * a enchufar cada uno donde iba sin adivinar por el nombre.
  */
-export async function rememberImportedFile({ id, role, file }) {
-  const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  await done(
-    tx.objectStore(STORE).put({
-      id,
-      role,
-      file,
-      // Copiados fuera del `File` para poder listar y avisar sin tocar los
-      // bytes, que es lo caro.
-      name: file.name,
-      bytes: file.size,
-      savedAt: Date.now(),
-    }),
-  );
+export function rememberImportedFile({ id, role, file }) {
+  return put(STORE_FILES, {
+    id,
+    role,
+    file,
+    // Copiados fuera del `File` para poder listar y avisar sin tocar los
+    // bytes, que es lo caro.
+    name: file.name,
+    bytes: file.size,
+    savedAt: Date.now(),
+  });
 }
 
 /** Todo lo guardado, en el orden en que se importó. */
 export async function listImportedFiles() {
-  const db = await openDb();
-  const tx = db.transaction(STORE, 'readonly');
-  const all = await done(tx.objectStore(STORE).getAll());
-  return (all || []).slice().sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
+  const all = await getAll(STORE_FILES);
+  return all.slice().sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
 }
 
-export async function forgetImportedFile(id) {
-  const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  await done(tx.objectStore(STORE).delete(id));
+export function forgetImportedFile(id) {
+  return del(STORE_FILES, id);
 }
 
 /**
@@ -108,11 +62,8 @@ export async function forgetImportedFile(id) {
  * ocupando disco para siempre.
  */
 export async function forgetImportedFilesByRole(role) {
-  const db = await openDb();
-  const tx = db.transaction(STORE, 'readwrite');
-  const st = tx.objectStore(STORE);
-  const all = await done(st.getAll());
-  for (const rec of all || []) {
-    if (rec.role === role) st.delete(rec.id);
+  const all = await getAll(STORE_FILES);
+  for (const rec of all) {
+    if (rec.role === role) await del(STORE_FILES, rec.id);
   }
 }

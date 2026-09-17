@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v31';
+const VERSION = 'v33';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -33,6 +33,15 @@ const PRECACHE = `fielddraw-shell-${VERSION}`;
  * todas las publicaciones y solo la poda por tope (`podarTeselas`) la toca.
  */
 const TILES = 'fielddraw-tiles';
+
+/**
+ * Áreas descargadas a propósito (ver `src/areaCache.js`). Tampoco lleva
+ * versión, y además NUNCA se poda: lo que alguien bajó a conciencia para una
+ * campaña no puede desaparecer porque después paneara un rato por otra zona,
+ * que es exactamente lo que le pasaría si compartiera cupo con `TILES`.
+ * El service worker solo lee de aquí; quien la llena es la página.
+ */
+const AREAS = 'fielddraw-areas';
 
 /** Tope de teselas guardadas. A ~15 KB cada una son unos 90 MB. */
 const TILE_LIMIT = 6000;
@@ -58,6 +67,7 @@ const SHELL = [
 
   './src/adopt.js',
   './src/app.js',
+  './src/areaCache.js',
   './src/attrs.js',
   './src/basemaps.js',
   './src/dem.js',
@@ -66,6 +76,7 @@ const SHELL = [
   './src/geologyStyle.js',
   './src/geom.js',
   './src/geometryOps.js',
+  './src/idb.js',
   './src/importedFiles.js',
   './src/importedStyle.js',
   './src/mapExport.js',
@@ -161,7 +172,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keep = new Set([PRECACHE, TILES]);
+      const keep = new Set([PRECACHE, TILES, AREAS]);
       for (const key of await caches.keys()) {
         if (key.startsWith('fielddraw-') && !keep.has(key)) await caches.delete(key);
       }
@@ -271,6 +282,17 @@ self.addEventListener('fetch', (event) => {
      */
     event.respondWith(
       (async () => {
+        /*
+         * Las áreas descargadas van PRIMERO y se sirven tal cual, sin
+         * refrescarlas por detrás: son teselas que alguien pidió a propósito
+         * para trabajar sin señal, y gastar el poco ancho de banda de terreno
+         * en revalidar algo que ya se tiene —y que además no cambia nunca— es
+         * justo al revés de lo que hace falta.
+         */
+        const areas = await caches.open(AREAS);
+        const guardada = await areas.match(request);
+        if (guardada) return guardada;
+
         const cache = await caches.open(TILES);
         const hit = await cache.match(request);
         if (hit) {

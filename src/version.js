@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.5';
+export const APP_VERSION = '0.26.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,16 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.26.0',
+    items: [
+      'Nuevo: Import → «Download this area…» baja el recuadro que se está mirando y lo deja disponible sin señal, diciendo cuánto pesa ANTES de empezar, con progreso y con botón de cancelar. Va a una caché propia que no se poda nunca y que sobrevive a publicar versiones nuevas.',
+      'El modelo de elevación se baja con holgura porque es dominio público y pesa poco: un área de 10 × 10 km son unos 5 MB y con eso quedan offline las curvas, el sombreado, el relieve 3D, los perfiles y los ajustes de plano. El panel abre con el basemap en «None» por eso mismo.',
+      'Los basemaps de OpenStreetMap y OpenTopoMap NO se pueden bajar por adelantado, y la app lo dice en vez de hacerlo igual: sus políticas prohíben expresamente la descarga masiva y son servidores pagados con donaciones. Para cobertura garantizada de imagen, la vía sigue siendo convertir la zona a PMTiles e importarla.',
+      'Los de Esri sí, con tope de 1500 teselas por área y con la atribución a la vista.',
+      'Borrar un área libera sus teselas, salvo las que compartan con otra área guardada.',
+    ],
+  },
   {
     version: '0.25.5',
     items: [

@@ -144,9 +144,10 @@ Las pesadas (JSTS, sql.js, PMTiles) se siguen pidiendo bajo demanda, ahora desde
 | Proyectos, GeoPackage, GeoJSON | ✅ (todo es local) |
 | Cortar y unir (JSTS), importar GPKG (sql.js) | ✅ |
 | Mapas offline PMTiles/MBTiles importados | ✅ |
-| Basemaps (Esri, OSM, OpenTopoMap) | ⚠️ solo lo ya visitado |
-| Curvas de nivel (DEM de AWS) | ⚠️ solo lo ya visitado |
-| Perfiles y rumbo/manteo sobre el DEM de AWS | ⚠️ solo lo ya visitado |
+| Áreas descargadas con **Download this area** | ✅ garantizado, hasta que se borren |
+| Basemaps (Esri, OSM, OpenTopoMap) | ⚠️ solo lo ya visitado o descargado |
+| Curvas de nivel (DEM de AWS) | ⚠️ solo lo ya visitado o descargado |
+| Perfiles y rumbo/manteo sobre el DEM de AWS | ⚠️ solo lo ya visitado o descargado |
 | Perfiles vía OpenTopography (Copernicus) | ❌ necesita red y clave |
 | Relieve 3D y sombreado | ⚠️ solo lo ya visitado; fuera de eso se ve plano |
 | Guardar el perfil como figura (PNG/SVG) | ✅ se dibuja en el propio navegador |
@@ -162,6 +163,58 @@ costaba: con media barra de señal el `fetch` no falla, se queda esperando, y
 mientras tanto no se pinta lo que ya estaba descargado. Ver
 [Por qué la app se quedaba colgada](#por-qué-la-app-se-quedaba-colgada). **Para cobertura garantizada en terreno, la respuesta es
 importar un PMTiles de la zona**, que es justo para lo que está esa función.
+
+### Descargar un área antes de salir
+
+**Import → Download this area…** baja el recuadro que se está mirando y lo deja
+disponible sin señal. Es lo contrario de la caché oportunista: en vez de
+recorrer la zona con el dedo la noche antes y confiar en que quedó todo, se
+dice qué área y hasta qué detalle, se ve **cuánto pesa antes de empezar**, y
+baja con barra de progreso y botón de cancelar.
+
+Va a una caché propia, `fielddraw-areas`, separada de la de teselas visitadas y
+con dos propiedades que la otra no tiene: **no se poda nunca** —panear por otra
+zona no puede tirar lo que alguien bajó a propósito— y **no lleva la versión de
+la app en el nombre**, así que publicar tampoco la borra. El service worker la
+consulta *antes* que nada y sirve de ahí sin revalidar: una tesela z/x/y no
+cambia, y el ancho de banda de terreno no está para confirmarlo.
+
+| | Tope por área | Por qué |
+|---|---|---|
+| Modelo de elevación (AWS Terrain Tiles) | 8000 teselas | Dominio público, ~10 KB cada una |
+| Basemap | 1500 teselas | Son servidores de un tercero que la app no paga |
+
+**El DEM primero, porque es la mejor compra.** Un área de 10 × 10 km hasta z13
+son unas 180 teselas, ~5 MB, y con eso quedan offline las curvas de nivel, el
+sombreado, el relieve 3D, los perfiles y los ajustes de plano. La misma área de
+imagen satelital hasta z17 son ~2000 teselas y decenas de MB. Por eso el panel
+abre con el basemap en «None»: el DEM solo casi siempre cabe, y añadir imagen
+es una decisión aparte.
+
+#### Qué proveedores se pueden bajar y cuáles no
+
+No es una decisión técnica —bajar teselas es igual de fácil en todos— sino de
+términos de uso, y la diferencia está en quién paga el servidor.
+
+| Fuente | Precarga | Motivo |
+|---|---|---|
+| AWS Terrain Tiles (DEM) | ✅ con holgura | Dominio público, AWS Open Data |
+| Esri (imagery, topo, terrain, hillshade) | ⚠️ con tope y aviso | CDN comercial dimensionado para volumen |
+| OpenStreetMap | ❌ bloqueado | Su política lo prohíbe explícitamente |
+| OpenTopoMap | ❌ bloqueado | Proyecto voluntario con servidores muy modestos |
+
+La [Tile Usage Policy de la OSMF](https://operations.osmfoundation.org/policies/tiles/)
+no deja lugar a interpretación: nombra el caso con estas palabras —«Download
+city/country for offline use», «Save area for later»— y advierte que ese patrón
+**se bloquea sin aviso**, porque son servidores de una fundación pagados con
+donaciones. Construir ese botón sería gastarles el ancho de banda a ellos y
+conseguir que le bloqueen la IP al geólogo. Así que la app lo dice en la propia
+interfaz y ofrece la vía limpia: **convertir la zona a PMTiles e importarla**,
+que además no tiene topes ni caduca.
+
+Borrar un área se lleva sus teselas, salvo las que también pertenezcan a otra
+área guardada: si no, borrar la zona grande dejaría agujeros en la pequeña que
+la solapa, y esos agujeros no se verían hasta estar en el cerro.
 
 ### Instalar en la tablet
 

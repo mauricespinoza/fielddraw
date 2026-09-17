@@ -608,10 +608,87 @@
         <p class="hint footnote">
           A tile file says nothing about whether it holds an image or metres, so which button you
           press is the answer. Once loaded it becomes the elevation source for profiles, plane
-          fits, thickness and projected traces. The 3D relief and the contour lines keep using the
-          AWS model.
+          fits, thickness, projected traces, hillshade and 3D relief. Only the contour lines keep
+          using the AWS model.
         </p>
         <p class="hint footnote" id="import-dem-current"></p>
+
+        <hr class="sep" />
+
+        <span class="palette-label">No file at hand?</span>
+        <p class="hint">
+          You can also download the area you are looking at, straight from the sources the app
+          already uses, and keep it for the field.
+        </p>
+        <button class="pill wide" id="open-area-menu">Download this area…</button>
+      </div>
+
+      <!--
+        Bajar la zona de trabajo antes de salir. El service worker ya guarda lo
+        que se ha mirado, pero eso obliga a recorrer el área con el dedo la
+        noche antes y confiar en que quedó todo; esto lo hace explícito, con
+        cuánto pesa dicho ANTES de empezar.
+      -->
+      <div class="dropdown hidden" id="area-menu">
+        <header>
+          <h2>Download this area</h2>
+          <button class="icon-btn" id="btn-close-area" aria-label="Close">✕</button>
+        </header>
+
+        <p class="hint">
+          Downloads what is <strong>currently on screen</strong>, so frame your working area
+          first. What is downloaded stays until you delete it: it survives reloads, app updates
+          and panning elsewhere.
+        </p>
+
+        <span class="palette-label">Elevation model</span>
+        <p class="hint">
+          Public-domain AWS Terrain Tiles. Cheap and worth it: this is what makes contour lines,
+          hillshade, 3D relief, profiles and plane fits work with no signal.
+        </p>
+        <label class="field">
+          <span>Detail</span>
+          <select id="area-dem-zoom">
+            <option value="11">~75 m/px — z11</option>
+            <option value="12">~38 m/px — z12</option>
+            <option value="13" selected>~19 m/px — z13 (the data's own limit)</option>
+            <option value="14">~10 m/px — z14 (interpolated)</option>
+          </select>
+        </label>
+
+        <hr class="sep" />
+
+        <span class="palette-label">Basemap</span>
+        <label class="field">
+          <span>Layer</span>
+          <select id="area-basemap">
+            <option value="">None — elevation only</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Detail</span>
+          <select id="area-basemap-zoom">
+            <option value="14">~10 m/px — z14</option>
+            <option value="15">~5 m/px — z15</option>
+            <option value="16" selected>~2.4 m/px — z16</option>
+            <option value="17">~1.2 m/px — z17</option>
+          </select>
+        </label>
+        <p class="hint footnote" id="area-tos"></p>
+
+        <hr class="sep" />
+
+        <p class="hint" id="area-estimate">Frame your area on the map.</p>
+        <div class="export-row">
+          <button class="pill" id="area-download">Download</button>
+          <button class="pill hidden" id="area-cancel">Cancel</button>
+        </div>
+        <p class="hint footnote" id="area-storage"></p>
+
+        <hr class="sep" />
+
+        <span class="palette-label">Downloaded areas</span>
+        <div id="area-list"></div>
       </div>
 
       <!--

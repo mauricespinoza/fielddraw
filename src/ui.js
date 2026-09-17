@@ -80,6 +80,15 @@ import {
   rememberImportedFile,
 } from './importedFiles.js';
 import {
+  deleteArea,
+  downloadArea,
+  listAreas,
+  metresPerTile,
+  planArea,
+  storageUse,
+} from './areaCache.js';
+import { BASEMAPS, PREFETCH_BLOCKED } from './basemaps.js';
+import {
   applyCut,
   applyLinesToPolygon,
   applyMerge,
@@ -1107,6 +1116,7 @@ const POPOVERS = [
   'trace-menu',
   'trace-type-menu',
   'import-menu',
+  'area-menu',
   'dem-notice',
 ];
 
@@ -1951,8 +1961,6 @@ async function doExportGeoPackage() {
     setBusy(null);
   }
 }
-
-const fmtMB = (bytes) => `${(bytes / 1024 / 1024).toFixed(0)} MB`;
 
 async function doOpenTiles(file) {
   const isMbtiles = file.name.toLowerCase().endsWith('.mbtiles');
@@ -3725,6 +3733,235 @@ async function rememberImported(id, role, file) {
   }
 }
 
+/* ------------------------------------------- descargar un área a la caché */
+
+/** Descarga en curso, para poder cancelarla. */
+let areaAbort = null;
+
+/** Tamaños legibles. Sube a GB porque la cuota del navegador llega ahí. */
+function fmtMB(bytes) {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
+
+/** El recuadro que se está mirando, que es lo que se va a descargar. */
+function currentBbox() {
+  if (!mapBridge || !mapBridge.map) return null;
+  const b = mapBridge.map.getBounds();
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+}
+
+function areaPlanFromForm() {
+  const bbox = currentBbox();
+  if (!bbox) return null;
+  return planArea({
+    bbox,
+    demZoom: Number($('area-dem-zoom').value),
+    basemapId: $('area-basemap').value || null,
+    basemapZoom: Number($('area-basemap-zoom').value),
+  });
+}
+
+/**
+ * Cuánto se va a bajar, dicho antes de bajarlo.
+ *
+ * Es la mitad del valor de esta herramienta: sin la cuenta por delante, "bajar
+ * el área" es una apuesta que se cobra en datos móviles y en minutos, y en
+ * terreno se descubre tarde.
+ */
+function renderAreaEstimate() {
+  const plan = areaPlanFromForm();
+  const salida = $('area-estimate');
+  const boton = $('area-download');
+  if (!plan) {
+    salida.textContent = 'The map is not ready yet.';
+    boton.disabled = true;
+    return;
+  }
+
+  const bbox = currentBbox();
+  const lat = (bbox[1] + bbox[3]) / 2;
+  const anchoKm = Math.round((metresPerTile(0, lat) * (bbox[2] - bbox[0])) / 360 / 1000);
+  const usables = plan.partes.filter((p) => !p.blocked);
+  // Lo vetado se nombra aquí y no solo en el aviso de términos: si no, el
+  // botón diría "Download" sin dejar claro que ese basemap no va dentro.
+  const vetadas = plan.partes.filter((p) => p.blocked).map((p) => p.label);
+  const coletilla = vetadas.length ? ` ${vetadas.join(' and ')} will be skipped: not allowed.` : '';
+
+  if (plan.excede.length) {
+    const p = plan.excede[0];
+    salida.textContent =
+      `${p.label} would need ${p.tiles.toLocaleString()} tiles, over the ${p.limit.toLocaleString()} cap. ` +
+      `Zoom in, or ask for less detail. A whole region belongs in a PMTiles file, not in a browser cache.` +
+      coletilla;
+    boton.disabled = true;
+    return;
+  }
+  if (!usables.length) {
+    salida.textContent = `Nothing here can be downloaded.${coletilla}`;
+    boton.disabled = true;
+    return;
+  }
+
+  const partes = usables.map((p) => `${p.label}: ${p.tiles.toLocaleString()} tiles to z${p.zmax}`);
+  salida.textContent =
+    `About ${anchoKm} km across · ${partes.join(' · ')} · ` +
+    `roughly ${fmtMB(plan.bytes)}. Sizes are estimates; tiles already downloaded are not fetched again.` +
+    coletilla;
+  boton.disabled = false;
+}
+
+/** El aviso de términos de uso del basemap elegido, si lo hay. */
+function renderAreaTos() {
+  const id = $('area-basemap').value;
+  const nota = $('area-tos');
+  const bm = BASEMAPS.find((b) => b.id === id);
+  if (!bm) {
+    nota.textContent = '';
+    return;
+  }
+  if (bm.prefetch === PREFETCH_BLOCKED) {
+    nota.textContent =
+      `${bm.label} cannot be downloaded in advance: its tile usage policy forbids bulk downloading, ` +
+      `and those servers are paid for by donations, not by this app. Browsing it normally is fine — ` +
+      `what is off limits is saving an area for later. For guaranteed coverage, convert your zone to ` +
+      `PMTiles and import it.`;
+    return;
+  }
+  nota.textContent =
+    `${bm.attribution}. Downloading an area uses someone else's servers, so it is capped and meant for ` +
+    `your working area, not for a region. Keep the attribution on anything you publish.`;
+}
+
+async function renderAreaStorage() {
+  const uso = await storageUse();
+  $('area-storage').textContent = uso
+    ? `Browser storage in use: ${fmtMB(uso.usage)} of about ${fmtMB(uso.quota)} available.`
+    : '';
+}
+
+async function renderAreaList() {
+  const cont = $('area-list');
+  cont.textContent = '';
+  let areas = [];
+  try {
+    areas = await listAreas();
+  } catch {
+    cont.textContent = 'Downloaded areas cannot be listed in this browser.';
+    return;
+  }
+  if (!areas.length) {
+    const p = document.createElement('p');
+    p.className = 'hint footnote';
+    p.textContent = 'Nothing downloaded yet.';
+    cont.appendChild(p);
+    return;
+  }
+  for (const a of areas) {
+    const fila = document.createElement('div');
+    fila.className = 'export-row';
+    const txt = document.createElement('span');
+    txt.className = 'hint';
+    const que = a.partes.map((p) => `${p.label} z${p.zmax}`).join(', ');
+    txt.textContent =
+      `${a.name} — ${a.tiles.toLocaleString()} tiles, ${fmtMB(a.bytes)} · ${que}` +
+      (a.fallidas ? ` · ${a.fallidas} failed` : '') +
+      (a.cancelada ? ' · cancelled' : '');
+    const del = document.createElement('button');
+    del.className = 'icon-btn';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `Delete ${a.name}`);
+    del.addEventListener('click', async () => {
+      del.disabled = true;
+      try {
+        const { borradas } = await deleteArea(a.id);
+        showBanner(`${a.name} deleted: ${borradas.toLocaleString()} tiles freed.`, 'info');
+      } catch (err) {
+        showBanner(`Could not delete the area: ${err.message}`);
+      }
+      await renderAreaList();
+      await renderAreaStorage();
+    });
+    fila.appendChild(txt);
+    fila.appendChild(del);
+    cont.appendChild(fila);
+  }
+}
+
+export function renderAreaMenu() {
+  const sel = $('area-basemap');
+  if (sel.options.length <= 1) {
+    for (const b of BASEMAPS) {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = b.prefetch === PREFETCH_BLOCKED ? `${b.label} — not allowed` : b.label;
+      sel.appendChild(o);
+    }
+    /*
+     * Arranca SIN basemap, no con el que se está mirando.
+     *
+     * Parecía más servicial preseleccionarlo, pero con la vista por omisión
+     * —decenas de km de ancho— cualquier basemap a z16 se pasa del tope, así
+     * que el panel recibía a todo el mundo con un "no se puede" antes de que
+     * hubiera pedido nada. El DEM solo, en cambio, casi siempre cabe, es lo
+     * barato y es lo que más desbloquea sin señal: ese es el punto de partida
+     * honesto, y añadir imagen es una decisión aparte.
+     */
+  }
+  renderAreaTos();
+  renderAreaEstimate();
+  renderAreaList();
+  renderAreaStorage();
+}
+
+async function doDownloadArea() {
+  const plan = areaPlanFromForm();
+  if (!plan) return;
+  const usables = plan.partes.filter((p) => !p.blocked);
+  if (!usables.length || plan.excede.length) return;
+
+  const bbox = currentBbox();
+  const id = `area-${Date.now().toString(36)}`;
+  const centro = `${Math.abs((bbox[1] + bbox[3]) / 2).toFixed(2)}°${(bbox[1] + bbox[3]) / 2 < 0 ? 'S' : 'N'}`;
+  const name = `Area ${centro} · ${new Date().toISOString().slice(0, 10)}`;
+
+  areaAbort = new AbortController();
+  $('area-cancel').classList.remove('hidden');
+  $('area-download').disabled = true;
+
+  try {
+    const res = await downloadArea(
+      { id, name, bbox, partes: plan.partes },
+      {
+        signal: areaAbort.signal,
+        onProgress: ({ hechas, total, fallidas }) => {
+          $('area-estimate').textContent =
+            `Downloading ${hechas.toLocaleString()} of ${total.toLocaleString()}` +
+            (fallidas ? ` · ${fallidas} failed` : '') +
+            '. You can keep working; leaving this page stops it.';
+        },
+      },
+    );
+    showBanner(
+      res.cancelada
+        ? `Stopped: ${res.tiles.toLocaleString()} tiles kept. What was downloaded works offline.`
+        : `${name}: ${res.tiles.toLocaleString()} tiles downloaded` +
+            (res.fallidas ? `, ${res.fallidas} failed and will show as gaps` : '') +
+            '. This area now works with no signal.',
+      'info',
+    );
+  } catch (err) {
+    showBanner(`The download failed: ${err.message}`);
+  } finally {
+    areaAbort = null;
+    $('area-cancel').classList.add('hidden');
+    $('area-download').disabled = false;
+    renderAreaEstimate();
+    await renderAreaList();
+    await renderAreaStorage();
+  }
+}
+
 /**
  * Vuelve a abrir los mapas offline y el modelo de elevación de la sesión
  * anterior.
@@ -4240,6 +4477,23 @@ export function initUI() {
     togglePanel('import-menu');
   });
   $('btn-close-import').addEventListener('click', () => $('import-menu').classList.add('hidden'));
+
+  $('open-area-menu').addEventListener('click', () => {
+    $('import-menu').classList.add('hidden');
+    renderAreaMenu();
+    openPanel('area-menu');
+  });
+  $('btn-close-area').addEventListener('click', () => $('area-menu').classList.add('hidden'));
+  $('area-basemap').addEventListener('change', () => {
+    renderAreaTos();
+    renderAreaEstimate();
+  });
+  $('area-dem-zoom').addEventListener('change', renderAreaEstimate);
+  $('area-basemap-zoom').addEventListener('change', renderAreaEstimate);
+  $('area-download').addEventListener('click', doDownloadArea);
+  $('area-cancel').addEventListener('click', () => {
+    if (areaAbort) areaAbort.abort();
+  });
   $('import-map').addEventListener('click', () => {
     $('import-menu').classList.add('hidden');
     $('file-gpkg').click();
