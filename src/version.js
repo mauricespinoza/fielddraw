@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.4';
+export const APP_VERSION = '0.25.5';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.5',
+    items: [
+      'Se arregla exportar a GeoPackage con al menos una medida de rumbo/manteo en el proyecto: la tabla de puntos no tenía las columnas de unidad que la propia exportación intentaba llenar, y la app fallaba en vez de entregar el archivo. Cualquier proyecto con medidas quedaba sin poder exportar desde que existe la unidad en la medida.',
+      'La suite de pruebas de navegador (`test/browser.html`) vuelve a llegar al final: un fallo suelto de esa misma tabla la cortaba a la mitad en silencio, y una sección que depende de un CDN externo hacía lo mismo con todo lo que viene después si no hay red hasta ella. Las dos quedan aisladas para que un fallo no tape a los demás.',
+    ],
+  },
   {
     version: '0.25.4',
     items: [

@@ -154,6 +154,11 @@ CREATE TABLE geol_points (
   base_m REAL,
   spread_m REAL,
   dem_source TEXT,
+  -- Unidad asignada a la medida (ver unitId en store.js): una medida no
+  -- tiene unidad por definición como un polígono, así que necesita su
+  -- propia columna denormalizada, igual que en geol_polygons.
+  unit TEXT,
+  code TEXT,
   label TEXT,
   note TEXT,
   created_at TEXT

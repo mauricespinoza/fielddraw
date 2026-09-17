@@ -198,7 +198,9 @@
         ok('atributos conservados', f0.properties.certainty === 'observed');
         ok('QML propio se relee', !!lines.style && lines.style.rendererType === 'RuleRenderer');
         const r = lines.style.rules.find((x) => JSON.stringify(x.filter).includes('thrust-fault'));
-        ok('color de falla inversa', r.symbol.color === '#d32f2f', r.symbol.color);
+        // Todas las fallas comparten FAULT_COLOR (#0000ff): el tipo se
+        // distingue por el ornamento, no por el color. Ver symbology.js.
+        ok('color de falla inversa', r.symbol.color === '#0000ff', r.symbol.color);
         ok('observado sin guiones', r.symbol.dash === null);
         ok('filtro tipo+certeza reconstruido',
            eq(r.filter, ['all', ['==', ['get', 'type'], 'thrust-fault'], ['==', ['get', 'certainty'], 'observed']]),
@@ -513,7 +515,19 @@
 
       /* ------------------------------- validez de las capas contra el spec */
       section('Todas las capas generadas validan contra el style-spec');
-      {
+      /*
+       * El validador sale de esm.sh y no de vendor/ porque es cosa de esta
+       * página de pruebas, no de la app: no hay motivo para meterlo en lo que
+       * se precachea para terreno. Pero justo por ser de red, esta sección
+       * ENTERA se envuelve en try/catch: sin esto, un CDN inalcanzable —un
+       * proxy corporativo, un sandbox aislado, correr la prueba sin señal—
+       * tira una excepción no capturada que corta el módulo ahí mismo, y con
+       * él TODO lo que venga después en el archivo, en silencio: la página se
+       * queda en «ejecutando…» para siempre y nada dice por qué. Ya pasó: la
+       * sección de archivos importados en IndexedDB, más abajo, nunca llegó a
+       * correr por esto.
+       */
+      try {
         // Guardia de regresión: MapLibre descarta en silencio una propiedad
         // inválida (p. ej. `zoom` anidado dentro de un `*`) y la capa se
         // dibuja con el valor por defecto sin que nada falle a la vista.
@@ -643,6 +657,8 @@
            JSON.stringify(normal.filter[3]) === '["!=",["get","flip"],true]' &&
            JSON.stringify(flip.filter[3]) === '["==",["get","flip"],true]',
            JSON.stringify([normal.filter[3], flip.filter[3]]));
+      } catch (err) {
+        ok('validador de style-spec (esm.sh) alcanzable — sin red no corre esta sección', false, err.message);
       }
 
       /* ------------------------------------ archivos importados en IndexedDB */
