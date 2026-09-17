@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.3';
+export const APP_VERSION = '0.25.4';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.4',
+    items: [
+      'Los mapas offline (.pmtiles/.mbtiles) y el modelo de elevación importados vuelven solos al abrir la app: hasta ahora se perdían al recargar y había que ir a buscarlos otra vez a Archivos antes de poder trabajar.',
+      'Quitar un mapa del panel de capas lo borra también de lo guardado, y cargar un modelo de elevación nuevo reemplaza al anterior en vez de acumularlo.',
+      'Lo que no vuelve es el orden ni la opacidad que tuvieran en el panel: eso es del proyecto, no del archivo, así que cada mapa reaparece con sus valores por omisión.',
+    ],
+  },
   {
     version: '0.25.3',
     items: [

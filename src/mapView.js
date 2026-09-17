@@ -847,6 +847,11 @@ export function createMapView({
     ready = true;
     applyScaleLock();
     applyLayerStack(map, store.getState().layers);
+    // Un mapa offline restaurado de la sesión anterior puede haber llegado al
+    // store ANTES que esto: la restauración es asíncrona y no espera al mapa.
+    // Sin esta llamada, el archivo estaría cargado y el panel de capas lo
+    // mostraría, pero no habría ninguna tesela pintada.
+    syncTileSets({ fit: false });
     syncGeology();
     syncUnitLabels();
     syncStrabo();
@@ -1387,7 +1392,13 @@ export function createMapView({
     if (added) fitToGeoJSON(added.geojson);
   }
 
-  function syncTileSets() {
+  /**
+   * @param {{fit?: boolean}} opts `fit:false` al restaurar al arrancar: encuadrar
+   *   sobre el primer mapa restaurado sería mover la cámara sin que nadie lo
+   *   haya pedido, y con varios mapas el elegido sería arbitrario. Importar a
+   *   mano sí encuadra: ahí el gesto es justamente "muéstrame esto".
+   */
+  function syncTileSets({ fit = true } = {}) {
     if (!ready) return;
     const list = store.getState().tileSets;
     const present = new Set(list.map((t) => t.id));
@@ -1425,7 +1436,7 @@ export function createMapView({
     }
 
     applyLayerStack(map, store.getState().layers);
-    if (added && added.bounds) {
+    if (fit && added && added.bounds) {
       map.fitBounds(
         [
           [added.bounds[0], added.bounds[1]],

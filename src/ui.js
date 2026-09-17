@@ -74,6 +74,12 @@ import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { exportMapImage, pageSizeMm } from './mapExport.js';
 import { MBTILES_WARN_BYTES, openTileFile, readTileBytes } from './tiles.js';
 import {
+  forgetImportedFile,
+  forgetImportedFilesByRole,
+  listImportedFiles,
+  rememberImportedFile,
+} from './importedFiles.js';
+import {
   applyCut,
   applyLinesToPolygon,
   applyMerge,
@@ -637,9 +643,15 @@ function layerRow(layer) {
     del.textContent = '✕';
     del.title = layer.kind === 'tiles' ? 'Remove offline map' : 'Remove imported layer';
     del.setAttribute('aria-label', `Remove ${layer.label}`);
-    del.addEventListener('click', () =>
-      layer.kind === 'tiles' ? store.removeTileSet(layer.id) : store.removeImported(layer.id),
-    );
+    del.addEventListener('click', () => {
+      if (layer.kind !== 'tiles') {
+        store.removeImported(layer.id);
+        return;
+      }
+      store.removeTileSet(layer.id);
+      // Quitar el mapa de la sesión es también decidir que no vuelva mañana.
+      forgetImportedFile(layer.id).catch(() => {});
+    });
     move.appendChild(del);
   }
   const up = document.createElement('button');
@@ -1957,6 +1969,7 @@ async function doOpenTiles(file) {
     const id = `tiles-${Date.now().toString(36)}`;
     const descriptor = await openTileFile(file, id);
     store.addTileSet(descriptor);
+    await rememberImported(id, 'tiles', file);
     const kind = descriptor.tileKind === 'vector' ? 'vector' : 'raster';
     const zooms = `z${descriptor.minzoom}–${descriptor.maxzoom}`;
     const extra =
@@ -3667,6 +3680,7 @@ async function doImportDem(file) {
     }
 
     store.setDemSet(descriptor);
+    await rememberImported(descriptor.id, 'dem', file);
     showBanner(
       `${descriptor.label}: elevation model at about ${Math.round(sampler.nominal)} m per cell (z${descriptor.maxzoom}). Profiles, plane fits, traces, hillshade and 3D relief now read from it.`,
       'info',
@@ -3687,6 +3701,74 @@ function demSamplerFor(descriptor) {
     demSamplers.set(descriptor, s);
   }
   return s;
+}
+
+/**
+ * Guarda el archivo recién importado para la próxima sesión.
+ *
+ * Un fallo aquí NO invalida la importación: el archivo ya está abierto y
+ * funcionando, y lo único que se pierde es que siga estando mañana. Pero se
+ * dice, en vez de dejar creer que quedó guardado: alguien que cuenta con su
+ * mapa base cargado se entera en el cerro, no antes.
+ */
+async function rememberImported(id, role, file) {
+  try {
+    // Del modelo de elevación hay uno solo: el anterior deja de servir en
+    // cuanto se carga otro, y quedaría ocupando disco para siempre.
+    if (role === 'dem') await forgetImportedFilesByRole('dem');
+    await rememberImportedFile({ id, role, file });
+  } catch (err) {
+    showBanner(
+      `${file.name} is open for this session, but could not be stored for the next one (${err.message}). You will have to import it again after a reload.`,
+      'warn',
+    );
+  }
+}
+
+/**
+ * Vuelve a abrir los mapas offline y el modelo de elevación de la sesión
+ * anterior.
+ *
+ * Lo llama `app.js` al arrancar, sin bloquear el resto de la restauración: un
+ * `.mbtiles` se carga entero en memoria y puede tardar, y no hay motivo para
+ * que el dibujo guardado espere por eso.
+ *
+ * Lo que no vuelve es el ORDEN y la opacidad que tuvieran en el panel de
+ * capas: eso vive en el proyecto, no en el archivo, así que cada mapa
+ * reaparece con sus valores por omisión.
+ */
+export async function restoreImportedFiles() {
+  let records;
+  try {
+    records = await listImportedFiles();
+  } catch (err) {
+    // Sin IndexedDB —modo privado, almacenamiento bloqueado— la app funciona
+    // igual, solo que sin recordar nada. No es motivo para molestar a nadie.
+    console.warn('[importados] no se pudo leer lo guardado:', err);
+    return;
+  }
+  if (!records.length) return;
+
+  setBusy(`Reopening ${records.length} imported file(s)…`);
+  try {
+    for (const rec of records) {
+      try {
+        const descriptor = await openTileFile(rec.file, rec.id);
+        if (rec.role === 'dem') store.setDemSet(descriptor);
+        else store.addTileSet(descriptor);
+      } catch (err) {
+        // El archivo sigue ahí pero ya no se puede abrir: arrastrarlo a la
+        // siguiente sesión solo repetiría el fallo cada vez que se arranque.
+        forgetImportedFile(rec.id).catch(() => {});
+        showBanner(
+          `${rec.name || 'An imported file'} could not be reopened and was dropped: ${err.message}`,
+          'warn',
+        );
+      }
+    }
+  } finally {
+    setBusy(null);
+  }
 }
 
 async function doImportGeoPackage(file) {

@@ -1623,6 +1623,47 @@ documentar que sí lo permite, pero reimplementar alrededor de ella el pegamento
 que `DemSource` no expone es reescribir a mano una pieza no pensada para eso, y
 se puede romper sin aviso en una actualización de la librería. Queda pendiente.
 
+### Lo importado vuelve solo a la sesión siguiente
+
+Un archivo elegido con `<input type="file">` vive solo mientras dure la
+pestaña. Hasta ahora eso significaba que al recargar —o al volver a abrir la
+app por la mañana— el mapa base offline y el modelo de elevación habían
+desaparecido, y había que ir a buscarlos otra vez a la app Archivos antes de
+poder trabajar. Ahora se guardan y se vuelven a abrir solos al arrancar.
+
+**Se guardan en IndexedDB y no en OPFS**, que es lo que uno esperaría para
+archivos de cientos de MB. El motivo es Safari: escribir en OPFS necesita
+`createWritable()`, que no está en las versiones que corren en los iPad a los
+que apunta esta app —el sustituto, `createSyncAccessHandle()`, solo existe
+dentro de un Worker dedicado, o sea un camino de código aparte mantenido solo
+para iOS—. IndexedDB guarda un `File` tal cual en todos los navegadores donde
+la app ya funciona, el navegador lo respalda en disco y no en memoria, y lo
+que se recupera **sigue siendo un `File`**: conserva su `.name`, de donde
+PMTiles saca la clave del archivo, y su `.slice()`, que es como lee por rangos
+sin cargar un mapa de varios GB entero. Está cubierto por una prueba de
+navegador que verifica justo esas dos propiedades, porque son las que un Blob
+corriente no tiene.
+
+Detalles que no son obvios:
+
+- **El orden y la opacidad en el panel de capas no vuelven.** Eso es del
+  proyecto, no del archivo: cada mapa reaparece con sus valores por omisión.
+- **Quitar un mapa del panel lo borra también de lo guardado.** Sacarlo de la
+  sesión es decidir que no vuelva mañana; si no, reaparecería solo y habría
+  que quitarlo cada vez.
+- **Del modelo de elevación hay uno solo**: cargar otro borra el anterior de
+  lo guardado, o cada DEM que alguien probara quedaría ocupando disco para
+  siempre.
+- **Al restaurar no se revalida.** La comprobación de que un DEM decodifica
+  como Terrain-RGB se hizo al importarlo; repetirla en cada arranque costaría
+  una lectura de tesela antes de poder pintar nada.
+- Si un archivo guardado ya no se puede abrir, se descarta y se avisa, en vez
+  de repetir el mismo fallo en cada arranque.
+- Si el navegador no deja guardar —cuota llena, modo privado—, la importación
+  **sigue funcionando** para esta sesión y se dice que no quedó guardada. Lo
+  que no se hace es fingir que sí: alguien que cuenta con su mapa cargado se
+  enteraría en el cerro.
+
 ### De qué modelo salió cada número
 
 Después de ajustar un plano —por tres puntos o sobre una traza— y después de

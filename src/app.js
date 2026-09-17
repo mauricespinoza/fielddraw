@@ -6,6 +6,7 @@ import {
   openImportedAttrs,
   openPropsMenu,
   renderScale,
+  restoreImportedFiles,
   showBanner,
   wireLocate,
   wireMapView,
@@ -64,6 +65,17 @@ const savedOpenTopoKey = loadSavedOpenTopoKey();
 if (savedOpenTopoKey) store.setOpenTopoKey(savedOpenTopoKey);
 const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
+
+/*
+ * Los mapas offline y el modelo de elevación de la sesión anterior.
+ *
+ * Aparte del resto y sin que nadie lo espere: leerlos de IndexedDB es
+ * asíncrono y un `.mbtiles` grande tarda, mientras que el dibujo guardado ya
+ * está puesto y se puede trabajar sobre él. Si el mapa todavía no montó su
+ * estilo cuando llegan, `mapView` los encuentra en el store al montarlo; si ya
+ * lo montó, se enchufan por la suscripción de siempre.
+ */
+restoreImportedFiles();
 
 // Autosave con debounce: dibujar genera muchos cambios seguidos.
 let saveTimer = null;

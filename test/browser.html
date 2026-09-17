@@ -645,6 +645,53 @@
            JSON.stringify([normal.filter[3], flip.filter[3]]));
       }
 
+      /* ------------------------------------ archivos importados en IndexedDB */
+      section('Archivos importados que sobreviven a recargar');
+      {
+        /*
+         * Lo que se prueba aquí no es "IndexedDB funciona", sino las dos
+         * propiedades de las que depende todo el modo offline y que un Blob
+         * corriente NO tiene: que lo recuperado siga siendo un `File` con su
+         * `.name` —de ahí saca PMTiles la clave del archivo— y que su
+         * `.slice()` devuelva los bytes correctos, que es como lee por rangos
+         * sin cargar un mapa de varios GB entero en memoria.
+         *
+         * Usa un id propio y solo borra ese: esta página corre en el mismo
+         * origen que la app, así que comparte base con los mapas de verdad.
+         */
+        const idb = await import('../src/importedFiles.js');
+        const id = `test-${Math.random().toString(36).slice(2)}`;
+        const bytes = new Uint8Array(1024);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
+        const file = new File([bytes], 'prueba.pmtiles', { type: 'application/octet-stream' });
+
+        try {
+          await idb.rememberImportedFile({ id, role: 'tiles', file });
+          const rec = (await idb.listImportedFiles()).find((r) => r.id === id);
+
+          ok('el archivo guardado se recupera', !!rec);
+          ok('vuelve como File, no como Blob', rec && rec.file instanceof File);
+          ok('conserva el nombre (PMTiles lo usa de clave)',
+             rec && rec.file.name === 'prueba.pmtiles', rec && rec.file.name);
+          ok('conserva el tamaño', rec && rec.file.size === bytes.length, rec && String(rec.file.size));
+
+          // Lectura por rangos: el mismo `slice` que hace pmtiles.FileSource.
+          const trozo = new Uint8Array(await rec.file.slice(100, 110).arrayBuffer());
+          const esperado = bytes.slice(100, 110);
+          ok('slice() devuelve los bytes correctos', eq([...trozo], [...esperado]),
+             `${[...trozo]} vs ${[...esperado]}`);
+
+          ok('guarda el rol para saber dónde enchufarlo', rec && rec.role === 'tiles', rec && rec.role);
+
+          await idb.forgetImportedFile(id);
+          const tras = (await idb.listImportedFiles()).find((r) => r.id === id);
+          ok('olvidarlo lo borra de verdad', !tras);
+        } catch (err) {
+          ok('la base de archivos importados funciona', false, err.message);
+          idb.forgetImportedFile(id).catch(() => {});
+        }
+      }
+
       document.getElementById('summary').textContent = fails === 0 ? 'TODO OK' : `${fails} FALLOS`;
       document.getElementById('summary').style.color = fails === 0 ? '#2dd4bf' : '#f87171';
     </script>
