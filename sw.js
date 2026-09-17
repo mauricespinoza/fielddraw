@@ -16,9 +16,23 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v26';
+const VERSION = 'v27';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
-const TILES = `fielddraw-tiles-${VERSION}`;
+
+/*
+ * La caché de teselas NO lleva `VERSION` en el nombre, a propósito.
+ *
+ * El app shell sí debe llevarlo: es lo que permite que `activate` tire la
+ * versión anterior de HTML/JS y no queden dos shells mezclados. Pero una
+ * tesela no tiene "versión de la app" — un basemap descargado con v26 sigue
+ * siendo la misma tesela con v27 — así que si el nombre cambia en cada
+ * publicación, `activate` la trata como "caché vieja" y la borra igual que al
+ * shell. Eso fue lo que pasaba: subir una versión por un arreglo de interfaz
+ * borraba de un plumazo los cientos de MB que alguien había precargado antes
+ * de salir a terreno. Con un nombre fijo, la caché de teselas sobrevive a
+ * todas las publicaciones y solo la poda por tope (`podarTeselas`) la toca.
+ */
+const TILES = 'fielddraw-tiles';
 
 /** Tope de teselas guardadas. A ~15 KB cada una son unos 90 MB. */
 const TILE_LIMIT = 6000;

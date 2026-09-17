@@ -107,6 +107,13 @@ entera corriendo `mapView.js` y `ui.js` de dos versiones atrás contra un
 Al añadir un archivo a `src/` también hay que sumarlo a la lista `SHELL` de
 `sw.js`, o ese archivo nunca queda precacheado y falla en cuanto no hay señal.
 
+`VERSION` solo debe entrar en el nombre de la caché del **app shell**
+(`PRECACHE`). La caché de **teselas** (`TILES`) tiene nombre fijo, sin
+versión, y así debe quedarse: es la que guarda los basemaps y el DEM que
+alguien precargó antes de salir a terreno, y meterle `VERSION` al nombre hace
+que `activate` la borre entera en cada publicación —se probó y fue exactamente
+eso lo que pasaba—. Ver **Qué funciona sin señal y qué no**, más abajo.
+
 Subida la versión, quien ya tenía la app abierta la recibe solo: `sw.js` toma
 el control con `skipWaiting` + `clients.claim`, y `app.js` escucha
 `controllerchange` y recarga la página una vez —comprobando que YA hubiera un

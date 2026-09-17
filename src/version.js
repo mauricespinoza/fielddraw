@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.1';
+export const APP_VERSION = '0.25.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.2',
+    items: [
+      'La caché de basemaps y DEM ya no se borra al publicar una versión nueva: antes llevaba el número de versión en el nombre, así que un arreglo cualquiera de interfaz tiraba de un plumazo los cientos de MB que alguien había precargado la noche antes de salir a terreno.',
+      'La app pide almacenamiento persistente al navegador, para que esa misma caché no la evicte el sistema bajo presión de disco ni, en Safari fuera de pantalla de inicio, por no abrirse en una semana.',
+    ],
+  },
   {
     version: '0.25.1',
     items: [

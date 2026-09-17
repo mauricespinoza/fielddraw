@@ -122,3 +122,21 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if (habiaControlador) location.reload();
   });
 }
+
+/*
+ * Pide almacenamiento persistente.
+ *
+ * Sin esto, la caché de teselas y el proyecto en localStorage son "best
+ * effort": el navegador puede evictarlos bajo presión de disco sin avisar, y
+ * en iOS Safari una PWA no instalada a pantalla de inicio los pierde tras
+ * ~7 días sin abrirse. El permiso se concede solo (Chrome/Edge, con la app ya
+ * usada un poco) o se deniega en silencio (Safari fuera de pantalla de
+ * inicio); no hay diálogo que interrumpa. No es awaitable de forma útil aquí
+ * —nada depende del resultado— así que no se espera la promesa.
+ */
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {
+    /* API presente pero rechazada: sin persist() la caché sigue funcionando,
+     * solo sin la garantía. */
+  });
+}
