@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.25.2';
+export const APP_VERSION = '0.25.3';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -52,6 +52,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.25.3',
+    items: [
+      'El modelo de elevación propio (Import → Elevation model) ya alimenta el sombreado y el relieve 3D, no solo los perfiles y los ajustes de plano: antes esos dos seguían leyendo de AWS aunque hubiera un DEM cargado y con más señal en terreno del que la app usaba.',
+      'Las curvas de nivel, por ahora, siguen leyendo de AWS pase lo que pase: la librería que las genera no deja sustituir de dónde lee sus teselas.',
+    ],
+  },
   {
     version: '0.25.2',
     items: [

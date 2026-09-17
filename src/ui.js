@@ -3668,7 +3668,7 @@ async function doImportDem(file) {
 
     store.setDemSet(descriptor);
     showBanner(
-      `${descriptor.label}: elevation model at about ${Math.round(sampler.nominal)} m per cell (z${descriptor.maxzoom}). Profiles, plane fits and traces now read from it.`,
+      `${descriptor.label}: elevation model at about ${Math.round(sampler.nominal)} m per cell (z${descriptor.maxzoom}). Profiles, plane fits, traces, hillshade and 3D relief now read from it.`,
       'info',
     );
   } catch (err) {

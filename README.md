@@ -1609,10 +1609,19 @@ el centro de su cobertura y, si el número no es una cota plausible, se rechaza
 en vez de cargarlo — un mapa base decodificado como Terrain-RGB daría manteos
 calculados sobre el color de una imagen satelital.
 
-**El relieve 3D y las curvas de nivel siguen usando el modelo de AWS.** Es una
-limitación conocida, no un olvido: cambiarles la fuente en caliente obliga a
-recomponer el estilo entero, y lo que decide la calidad de un número medido es
-el muestreo, no el dibujo.
+El sombreado y el relieve 3D pasan a leer de este DEM también, no solo el
+muestreo: la fuente `raster-dem` se suelta y se vuelve a crear apuntando al
+archivo propio —`encoding`, límites y zoom máximo son de solo lectura una vez
+creada una fuente en MapLibre, así que no hay forma más barata de cambiarla en
+caliente—.
+
+**Las curvas de nivel siguen usando el modelo de AWS.** Esta sí es una
+limitación conocida y no un descuido: las genera `maplibre-contour`, cuya clase
+pública para pedir teselas (`DemSource`) llama `fetch()` directo a una URL y no
+expone forma de sustituir esa lectura por una propia —hay una clase interna sin
+documentar que sí lo permite, pero reimplementar alrededor de ella el pegamento
+que `DemSource` no expone es reescribir a mano una pieza no pensada para eso, y
+se puede romper sin aviso en una actualización de la librería. Queda pendiente.
 
 ### De qué modelo salió cada número
 

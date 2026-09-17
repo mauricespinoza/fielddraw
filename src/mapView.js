@@ -237,6 +237,66 @@ function ensureDemSource() {
   return demSource;
 }
 
+/**
+ * Teselas terrarium para el sombreado y el 3D cuando no hay DEM propio.
+ *
+ * LAS TESELAS SE PIDEN UNA VEZ, NO DOS: va por el protocolo compartido de
+ * `maplibre-contour` y no por la URL de AWS directamente. Apuntando a la URL,
+ * el relieve y las curvas de nivel terminaban con DOS cachés independientes
+ * sobre exactamente el mismo archivo: cada tesela del modelo se bajaba dos
+ * veces y se decodificaba dos veces —PNG a Float32, que no es barato— una
+ * para mallar el terreno y otra para trazar las curvas. Con el protocolo
+ * compartido se baja y se decodifica una sola vez y las dos beben de ahí.
+ * Medido en el escritorio, con el relieve recién encendido y sin mover la
+ * vista: 58 peticiones al modelo con las dos cachés.
+ *
+ * Esta optimización solo aplica a terrarium: un DEM propio ya está en disco,
+ * así que pedirlo dos veces no cuesta red, solo CPU de decodificar de más —y
+ * las curvas de nivel siguen leyendo de AWS aunque haya un DEM propio (ver
+ * `ensureDemSource`), así que da igual que no compartan protocolo.
+ */
+function terrariumDemTiles() {
+  try {
+    return [ensureDemSource().sharedDemProtocolUrl];
+  } catch {
+    // Sin la librería de curvas no hay protocolo compartido, pero el relieve
+    // tiene que seguir funcionando: se cae a la URL de siempre.
+    return [TERRARIUM_URL];
+  }
+}
+
+/**
+ * Fuente `raster-dem` para el sombreado y el 3D: la del DEM importado si hay
+ * uno raster, si no terrarium AWS.
+ *
+ * El esquema de codificación no se detecta: `doImportDem` (en `ui.js`) ya
+ * comprobó, al importar, que el archivo decodifica como terrarium con cotas
+ * plausibles —es el mismo esquema que usa el muestreador de perfiles en
+ * `dem.js`— así que asumirlo aquí es consistente con lo que ya se validó.
+ */
+function terrainSourceSpec() {
+  const { demSet } = store.getState();
+  if (demSet && demSet.tileKind === 'raster') {
+    return {
+      type: 'raster-dem',
+      tiles: [demSet.url],
+      encoding: 'terrarium',
+      tileSize: 256,
+      minzoom: demSet.minzoom,
+      maxzoom: demSet.maxzoom,
+      ...(demSet.bounds ? { bounds: demSet.bounds } : {}),
+    };
+  }
+  return {
+    type: 'raster-dem',
+    tiles: terrariumDemTiles(),
+    encoding: 'terrarium',
+    tileSize: 256,
+    maxzoom: DEM_RENDER_MAXZOOM,
+    attribution: 'Elevation: AWS Terrain Tiles (public domain)',
+  };
+}
+
 export function createMapView({
   onPointerInfo,
   onContourError,
@@ -370,51 +430,17 @@ export function createMapView({
     }
 
     /*
-     * DEM crudo. La fuente se declara siempre, pero MapLibre no pide una sola
-     * tesela mientras nadie la use: con el sombreado apagado y sin relieve,
-     * esto no cuesta nada de red. Es lo que permite encender cualquiera de los
-     * dos sin recomponer el estilo.
+     * DEM crudo, para el sombreado y el 3D. La fuente se declara siempre, pero
+     * MapLibre no pide una sola tesela mientras nadie la use: con el
+     * sombreado apagado y sin relieve, esto no cuesta nada de red. Es lo que
+     * permite encender cualquiera de los dos sin recomponer el estilo.
      *
-     * LAS TESELAS SE PIDEN UNA VEZ, NO DOS
-     *
-     * Va por el protocolo compartido de `maplibre-contour` y no por la URL de
-     * AWS directamente. Apuntando a la URL, el relieve y las curvas de nivel
-     * terminaban con DOS cachés independientes sobre exactamente el mismo
-     * archivo: cada tesela del modelo se bajaba dos veces y se decodificaba
-     * dos veces —PNG a Float32, que no es barato— una para mallar el terreno y
-     * otra para trazar las curvas. Con el protocolo compartido se baja y se
-     * decodifica una sola vez y las dos beben de ahí.
-     *
-     * Medido en el escritorio, con el relieve recién encendido y sin mover la
-     * vista: 58 peticiones al modelo con las dos cachés.
+     * `terrainSourceSpec()` decide entre terrarium AWS y un DEM propio ya
+     * importado; `rebuildTerrainSource()`, más abajo, repite esto mismo
+     * cuando ese DEM cambia a mitad de sesión.
      */
-    let demTiles = [TERRARIUM_URL];
-    try {
-      demTiles = [ensureDemSource().sharedDemProtocolUrl];
-    } catch {
-      // Sin la librería de curvas no hay protocolo compartido, pero el relieve
-      // tiene que seguir funcionando: se cae a la URL de siempre.
-    }
-    map.addSource(TERRAIN_SOURCE, {
-      type: 'raster-dem',
-      tiles: demTiles,
-      encoding: 'terrarium',
-      tileSize: 256,
-      maxzoom: DEM_RENDER_MAXZOOM,
-      attribution: 'Elevation: AWS Terrain Tiles (public domain)',
-    });
-    map.addLayer({
-      id: 'hillshade',
-      type: 'hillshade',
-      source: TERRAIN_SOURCE,
-      layout: { visibility: 'none' },
-      paint: {
-        'hillshade-exaggeration': 0.5,
-        'hillshade-shadow-color': '#101820',
-        'hillshade-highlight-color': '#ffffff',
-        'hillshade-accent-color': '#2b2419',
-      },
-    });
+    map.addSource(TERRAIN_SOURCE, terrainSourceSpec());
+    addHillshadeLayer();
 
     // Curvas generadas en el cliente desde terrain-RGB. Si la librería falla,
     // no debe tumbar el mapa entero.
@@ -1155,6 +1181,47 @@ export function createMapView({
         'warn',
       );
     }
+  }
+
+  function addHillshadeLayer() {
+    map.addLayer({
+      id: 'hillshade',
+      type: 'hillshade',
+      source: TERRAIN_SOURCE,
+      layout: { visibility: 'none' },
+      paint: {
+        'hillshade-exaggeration': 0.5,
+        'hillshade-shadow-color': '#101820',
+        'hillshade-highlight-color': '#ffffff',
+        'hillshade-accent-color': '#2b2419',
+      },
+    });
+  }
+
+  /**
+   * Recompone la fuente de terreno cuando cambia el DEM importado.
+   *
+   * `encoding`, `bounds` y `maxzoom` son de solo lectura una vez creada la
+   * fuente —MapLibre no tiene un `setEncoding` ni un `setBounds`—, así que un
+   * DEM propio con otros límites no se puede aplicar con `setTiles`: hay que
+   * soltar la fuente entera y volver a crearla.
+   *
+   * `setTerrain` se suelta antes de tocar la fuente porque MapLibre no deja
+   * borrar una fuente que está en uso como terreno; `applyTerrain()` la vuelve
+   * a poner al final si el 3D estaba encendido. El sombreado pasa por lo
+   * mismo: no se puede borrar una fuente con una capa todavía enganchada.
+   */
+  function rebuildTerrainSource() {
+    if (!ready) return;
+    if (store.getState().terrain3d) map.setTerrain(null);
+    if (map.getLayer('hillshade')) map.removeLayer('hillshade');
+    if (map.getSource(TERRAIN_SOURCE)) map.removeSource(TERRAIN_SOURCE);
+
+    map.addSource(TERRAIN_SOURCE, terrainSourceSpec());
+    addHillshadeLayer();
+
+    applyLayerStack(map, store.getState().layers);
+    applyTerrain();
   }
 
   /** Ancla y segmento del espesor estratigráfico. */
@@ -2746,6 +2813,7 @@ export function createMapView({
   });
 
   store.subscribe(() => {
+    if (store.changed('demSet')) rebuildTerrainSource();
     if (store.changed('terrain3d') || store.changed('terrainExaggeration')) applyTerrain();
     if (store.changed('scaleLock')) applyScaleLock();
     if (store.changed('scalePixelMm')) {
