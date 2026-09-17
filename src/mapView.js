@@ -12,7 +12,8 @@ import { createStrokeBuffer } from './stroke.js';
 import {
   bboxIntersects,
   bboxOf,
-  featuresInBox,
+  boxRing,
+  featuresInRegion,
   nearestOnPolyline,
   pickFeature,
   ringsOf,
@@ -26,14 +27,19 @@ import {
   DRAFT_SOURCE,
   EDIT_LAYER_IDS,
   EDIT_SOURCE,
+  GEOLOGY_CASING_LAYER_IDS,
   GEOLOGY_LAYER_IDS,
   GEOLOGY_LINE_LAYER_IDS,
   GEOLOGY_SOURCE,
+  GEOLOGY_TRACE_LAYER_IDS,
+  GEOLOGY_UNIT_LAYER_IDS,
   UNIT_LABEL_LAYER_ID,
+  casingWidthExpr,
   draftLayers,
   editLayers,
   geologyLayers,
   lineColorExpr,
+  lineWidthExpr,
   unitCodeExpr,
   unitFillExpr,
   unitOutlineExpr,
@@ -48,6 +54,7 @@ import {
 import {
   STRUCTURE_LAYER_IDS,
   addStructureImages,
+  applyImportStyle,
   applyStructureStyle,
   structureLayers,
 } from './structureSymbols.js';
@@ -134,11 +141,25 @@ function mlIdsFor(layer) {
   if (layer.kind === 'imported') return importedLayerIds.get(layer.id) || [];
   if (layer.kind === 'tiles') return tileLayerIds.get(layer.id) || [];
   if (layer.kind === 'strabo') return STRABO_LAYER_IDS;
-  // Los ornamentos van después para dibujarse sobre la traza de la falla, y
-  // los símbolos de rumbo/manteo al final: son puntos y no deben quedar
-  // tapados por el relleno del polígono sobre el que se midieron.
+  // El dibujo propio va repartido en tres: unidades abajo, trazas —con sus
+  // ornamentos, que se dibujan sobre la traza de la falla— encima, y las
+  // medidas de rumbo y manteo al final, que son puntos chicos y no deben
+  // quedar tapados por el relleno del polígono sobre el que se midieron.
+  if (layer.kind === 'units') return GEOLOGY_UNIT_LAYER_IDS;
+  if (layer.kind === 'faults') return [...GEOLOGY_TRACE_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
+  if (layer.kind === 'dips') return STRUCTURE_LAYER_IDS;
   return [...GEOLOGY_LAYER_IDS, ...ORNAMENT_LAYER_IDS, ...STRUCTURE_LAYER_IDS];
 }
+
+/**
+ * El halo de lo seleccionado no se apaga con su capa.
+ *
+ * Vive con las unidades para quedar por debajo de todo lo que puede señalar,
+ * pero apagar las unidades no debe dejar sin resalte a una línea elegida: el
+ * resalte no es contenido del mapa, es la respuesta a lo que se acaba de
+ * tocar, y quedarse sin ella se lee como que la selección no funcionó.
+ */
+const ALWAYS_VISIBLE = new Set(['geology-selected']);
 
 function applyOpacity(map, id, opacity) {
   const layer = map.getLayer(id);
@@ -181,7 +202,8 @@ function applyLayerStack(map, layers) {
     const l = layers[i];
     for (const id of mlIdsFor(l)) {
       if (!map.getLayer(id)) continue;
-      map.setLayoutProperty(id, 'visibility', l.visible ? 'visible' : 'none');
+      const visible = l.visible || ALWAYS_VISIBLE.has(id);
+      map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
       applyOpacity(map, id, l.opacity);
       map.moveLayer(id);
     }
@@ -498,8 +520,10 @@ export function createMapView({
     for (const l of geologyLayers()) map.addLayer(l);
 
     try {
-      addOrnamentImages(map, store.getState().ornaments);
-      for (const l of ornamentLayers(store.getState().ornaments)) map.addLayer(l);
+      addOrnamentImages(map, store.getState().ornaments, store.getState().importStyle);
+      for (const l of ornamentLayers(store.getState().ornaments, store.getState().importStyle)) {
+        map.addLayer(l);
+      }
     } catch (err) {
       console.warn('[ornamentos]', err);
     }
@@ -507,13 +531,16 @@ export function createMapView({
     // Símbolos de rumbo y manteo. Comparten la fuente del dibujo: una medida
     // es un elemento más del mapa geológico, no una capa aparte.
     try {
-      addStructureImages(map);
-      for (const l of structureLayers(store.getState().structureStyle)) map.addLayer(l);
+      addStructureImages(map, store.getState().importStyle);
+      for (const l of structureLayers(store.getState().structureStyle, store.getState().importStyle)) {
+        map.addLayer(l);
+      }
     } catch (err) {
       console.warn('[estructural]', err);
     }
     applyUnitColors();
     applyLineColors();
+    applyLineWidths();
 
     map.addSource(DRAFT_SOURCE, {
       type: 'geojson',
@@ -839,20 +866,40 @@ export function createMapView({
    * entera, que es más barato que llevar la cuenta de qué tipo cambió.
    */
   function applyLineColors() {
-    const expr = lineColorExpr(store.getState().ornaments);
+    const { ornaments, importStyle } = store.getState();
+    const expr = lineColorExpr(ornaments, importStyle);
     for (const id of GEOLOGY_LINE_LAYER_IDS) {
       if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', expr);
+    }
+  }
+
+  /**
+   * Y lo mismo con el grosor. El halo blanco se reajusta con la traza: si se
+   * quedara en su ancho anterior, engordar un contacto lo dejaría comiéndose
+   * su propio halo y el trazo perdería el borde que lo separa del satélite.
+   */
+  function applyLineWidths() {
+    const { ornaments } = store.getState();
+    const traza = lineWidthExpr(ornaments);
+    for (const id of GEOLOGY_LINE_LAYER_IDS) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'line-width', traza);
+    }
+    const halo = casingWidthExpr(ornaments);
+    for (const id of GEOLOGY_CASING_LAYER_IDS) {
+      if (map.getLayer(id)) map.setPaintProperty(id, 'line-width', halo);
     }
   }
 
   /** Repinta los polígonos cuando cambian las unidades del usuario. */
   function applyUnitColors() {
     if (!map.getLayer('geology-fill')) return;
-    const units = store.getState().units;
-    map.setPaintProperty('geology-fill', 'fill-color', unitFillExpr(units));
+    const { units, importStyle } = store.getState();
+    map.setPaintProperty('geology-fill', 'fill-color', unitFillExpr(units, importStyle));
     for (const c of ['observed', 'inferred', 'covered']) {
       const id = `geology-outline-${c}`;
-      if (map.getLayer(id)) map.setPaintProperty(id, 'line-color', unitOutlineExpr(units));
+      if (map.getLayer(id)) {
+        map.setPaintProperty(id, 'line-color', unitOutlineExpr(units, importStyle));
+      }
     }
     // El rótulo sale del mismo catálogo: renombrar un código se ve en el mapa
     // sin tocar los polígonos.
@@ -1677,12 +1724,24 @@ export function createMapView({
       }
     };
 
-    const geology = st.layers.find((l) => l.kind === 'geology');
-    if (!geology || geology.visible) {
-      for (const f of st.features) {
-        if (skip && skip.has(f.properties.id)) continue;
-        push(f.geometry);
-      }
+    /*
+     * Solo engancha a lo que se está VIENDO, y ahora eso se decide por partes:
+     * apagar las unidades en el panel deja de enganchar a sus contornos, pero
+     * los contactos siguen enganchando. Antes el dibujo era una sola capa y la
+     * pregunta era una sola; repartirlo obliga a mirar de qué capa es cada
+     * elemento, que es justamente lo que el usuario acaba de decidir.
+     */
+    const visible = (kind) => {
+      const capa = st.layers.find((l) => l.kind === kind);
+      return !capa || capa.visible;
+    };
+    const conUnidades = visible('units');
+    const conTrazas = visible('faults');
+    for (const f of st.features) {
+      if (skip && skip.has(f.properties.id)) continue;
+      const poligono = f.geometry && f.geometry.type === 'Polygon';
+      if (!(poligono ? conUnidades : conTrazas)) continue;
+      push(f.geometry);
     }
 
     for (const l of st.imported) {
@@ -2131,28 +2190,29 @@ export function createMapView({
     return pickFeature(store.getState().features, screen, projectLngLat, tolerance);
   }
 
-  /**
-   * UN TOQUE SELECCIONA LO QUE HAY DEBAJO; SI NO HAY NADA, DESELECCIONA.
-   *
-   * Es el mismo camino para el clic del ratón y para el toque del dedo o del
-   * lápiz, y por eso vive aquí y no dentro del manejador de MapLibre: los dos
-   * tienen que decidir lo mismo, y lo único que cambia entre ellos es cuánta
-   * puntería se les exige (`tolerance`) y si el modificador de selección
-   * múltiple está pulsado, que un dedo no tiene.
-   *
-   * @returns {boolean} si el toque cayó sobre algo
-   */
-  /* ---------- lazo rectangular de Elegir ---------- */
+  /* ---------- lazo de Elegir: a mano alzada o rectangular ---------- */
 
   const lassoEl = document.getElementById('lasso');
+  const lassoFreeEl = document.getElementById('lasso-free');
+  const lassoFreeShape = document.getElementById('lasso-free-shape');
 
   /** Cuánto hay que correrse para que un toque pase a ser lazo, en px. */
   const LASSO_MIN_PX = 6;
 
+  /** Separación mínima entre puntos del trazo a mano alzada, en px. */
+  const LASSO_STEP_PX = 3;
+
   let lasso = null;
 
+  /**
+   * A mano alzada por omisión. El rectángulo sigue disponible en Ajustes: es
+   * más rápido para una franja recta, pero encerrar un contacto sinuoso sin
+   * llevarse medio mapa solo lo consigue el trazo libre.
+   */
+  const lassoShape = () => (store.getState().selectMode === 'rect' ? 'rect' : 'lasso');
+
   function beginLasso(screen) {
-    lasso = { start: screen, box: null };
+    lasso = { start: screen, shape: lassoShape(), region: null, path: [screen] };
   }
 
   /**
@@ -2164,25 +2224,42 @@ export function createMapView({
   function moveLasso(screen) {
     if (!lasso) return;
     const [x0, y0] = lasso.start;
-    if (!lasso.box && Math.hypot(screen[0] - x0, screen[1] - y0) < LASSO_MIN_PX) return;
+    const lejos = Math.hypot(screen[0] - x0, screen[1] - y0) >= LASSO_MIN_PX;
+    if (!lasso.region && !lejos) return;
 
-    const box = [
-      Math.min(x0, screen[0]),
-      Math.min(y0, screen[1]),
-      Math.max(x0, screen[0]),
-      Math.max(y0, screen[1]),
-    ];
-    lasso.box = box;
-    lassoEl.hidden = false;
-    lassoEl.style.left = `${box[0]}px`;
-    lassoEl.style.top = `${box[1]}px`;
-    lassoEl.style.width = `${box[2] - box[0]}px`;
-    lassoEl.style.height = `${box[3] - box[1]}px`;
+    if (lasso.shape === 'rect') {
+      const box = [
+        Math.min(x0, screen[0]),
+        Math.min(y0, screen[1]),
+        Math.max(x0, screen[0]),
+        Math.max(y0, screen[1]),
+      ];
+      lasso.region = boxRing(box);
+      lassoEl.hidden = false;
+      lassoEl.style.left = `${box[0]}px`;
+      lassoEl.style.top = `${box[1]}px`;
+      lassoEl.style.width = `${box[2] - box[0]}px`;
+      lassoEl.style.height = `${box[3] - box[1]}px`;
+      return;
+    }
+
+    // A mano alzada: se guarda el trazo, ralo, para no acumular un punto por
+    // frame — la región se cierra sola entre el último punto y el primero.
+    const ultimo = lasso.path[lasso.path.length - 1];
+    if (Math.hypot(screen[0] - ultimo[0], screen[1] - ultimo[1]) >= LASSO_STEP_PX) {
+      lasso.path.push(screen);
+    }
+    if (lasso.path.length < 3) return;
+    lasso.region = lasso.path;
+    lassoFreeEl.hidden = false;
+    lassoFreeShape.setAttribute('points', lasso.path.map((p) => `${p[0]},${p[1]}`).join(' '));
   }
 
   function hideLasso() {
     lasso = null;
     lassoEl.hidden = true;
+    lassoFreeEl.hidden = true;
+    lassoFreeShape.setAttribute('points', '');
   }
 
   /**
@@ -2204,7 +2281,7 @@ export function createMapView({
     // una selección aquí lo cerraría de inmediato.
     if (!l || (info && info.longPressed)) return;
 
-    if (!l.box) {
+    if (!l.region) {
       /*
        * No llegó a ser un lazo: un clic elige uno y reemplaza, y con Shift
        * alterna, que es como selecciona cualquier escritorio. La tolerancia
@@ -2216,7 +2293,7 @@ export function createMapView({
       return;
     }
 
-    const ids = featuresInBox(store.getState().features, l.box, projectLngLat);
+    const ids = featuresInRegion(store.getState().features, l.region, projectLngLat);
     if (additive) {
       const ya = new Set(store.getState().selection);
       for (const id of ids) ya.add(id);
@@ -2226,6 +2303,17 @@ export function createMapView({
     }
   }
 
+  /**
+   * UN TOQUE SELECCIONA LO QUE HAY DEBAJO; SI NO HAY NADA, DESELECCIONA.
+   *
+   * Es el mismo camino para el clic del ratón y para el toque del dedo o del
+   * lápiz, y por eso vive aquí y no dentro del manejador de MapLibre: los dos
+   * tienen que decidir lo mismo, y lo único que cambia entre ellos es cuánta
+   * puntería se les exige (`tolerance`) y si el modificador de selección
+   * múltiple está pulsado, que un dedo no tiene.
+   *
+   * @returns {boolean} si el toque cayó sobre algo
+   */
   function selectAt(screen, { tolerance = 12, additive = false } = {}) {
     const hit = pickAt(screen, tolerance);
     if (hit) {
@@ -2764,8 +2852,9 @@ export function createMapView({
     }
     if (store.changed('unitLabels')) syncUnitLabels();
     if (store.changed('ornaments')) {
-      applyOrnamentStyle(map, store.getState().ornaments);
+      applyOrnamentStyle(map, store.getState().ornaments, store.getState().importStyle);
       applyLineColors();
+      applyLineWidths();
     }
     if (store.changed('strabo')) {
       syncStrabo();
@@ -2773,6 +2862,19 @@ export function createMapView({
       if (store.getState().strabo) fitToStrabo();
     }
     if (store.changed('structureStyle')) applyStructureStyle(map, store.getState().structureStyle);
+    /*
+     * El color único de lo adoptado desde StraboSpot toca las tres familias:
+     * el relleno y el contorno de los polígonos, la traza de las líneas y los
+     * iconos de rumbo y manteo, que además hay que volver a rasterizar.
+     */
+    if (store.changed('importStyle')) {
+      const st2 = store.getState();
+      applyUnitColors();
+      applyLineColors();
+      applyOrnamentStyle(map, st2.ornaments, st2.importStyle);
+      applyImportStyle(map, st2.importStyle);
+      applyStructureStyle(map, st2.structureStyle, st2.importStyle);
+    }
     if (store.changed('straboStyle')) applyStraboStyle(map, store.getState().straboStyle);
     if (store.changed('straboFilters')) {
       const filters = store.getState().straboFilters;

@@ -30,7 +30,7 @@ al código. Ver **Publicar y usar sin señal**.
 for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
 ```
 
-1226 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -206,7 +206,7 @@ Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
 | Cancelar elemento | Esc, o botón **Descartar** |
 | Navegar | dos dedos (siempre), o herramienta **Navegar** |
 | Seleccionar | un toque con el dedo o un clic, **en cualquier herramienta**: uno a la vez |
-| Seleccionar varios | `Shift` + clic sobre cada uno (PC) |
+| Seleccionar varios | arrastrar el lazo —a mano alzada de fábrica, rectangular desde Ajustes— rozando lo que interese; o `Shift` + clic sobre cada uno (PC) |
 | Propiedades | **clic derecho**, o mantener pulsado ~1 s (dedo, ratón o lápiz), en cualquier herramienta y en 2D o 3D |
 | Atributos de una capa importada | mantener pulsado ~1 s donde no haya dibujo propio |
 | Cerrar la edición | tocar con el dedo fuera del trazo; también cierra paneles y menús |
@@ -295,11 +295,28 @@ explican fallos que parecen aleatorios:
 regla:
 
 - **Un clic o un toque selecciona uno**, y reemplaza lo que hubiera.
-- **Arrastrar dibuja un lazo rectangular** y se lleva lo que quede
-  **completamente encerrado**. Encerrado y no rozado: en una carta las líneas
-  se cruzan por todas partes, y llevarse todo lo que el rectángulo toca
-  significaría llevarse media hoja por pasar por encima. Es el criterio del
-  lazo de QGIS, y cuenta también las medidas de rumbo y manteo, que son puntos.
+- **Arrastrar dibuja un lazo** y se lleva todo lo que la forma **roce**: basta
+  con que el trazo cruce el elemento o cubra un trozo de él. De fábrica el lazo
+  es **a mano alzada** —se rodea con el dedo lo que interesa— y en *Ajustes ·
+  Select by dragging* está el **rectángulo** de siempre, que sigue siendo más
+  rápido para una franja recta. Cuenta también las medidas de rumbo y manteo,
+  que son puntos, y un lazo enteramente dentro de un polígono elige ese
+  polígono.
+
+  Antes había que **encerrar el elemento entero**, que es el criterio de QGIS,
+  y en una tablet resulta impracticable: un contacto que entra y sale de la
+  pantalla no se puede envolver sin alejar el mapa hasta perder de vista lo que
+  se estaba eligiendo. El criterio estricto sigue existiendo en el código
+  (`featuresInRegion(..., { contain: true })`), pero ya no es el que usa la
+  herramienta.
+
+  Por dentro son la misma función: la región es un **anillo de puntos de
+  pantalla** —los cuatro del rectángulo, o el trazo del lazo— y un elemento
+  entra si alguno de sus vértices cae dentro, si alguno de sus segmentos cruza
+  un lado de la región, o —solo polígonos— si la región entera está dentro de
+  él. El trazo a mano alzada se guarda ralo (un punto cada 3 px) y se pinta
+  como un `<polygon>` SVG que se cierra solo; el rectángulo sigue siendo el
+  `<div>` de cuatro lados de siempre.
 - **`Shift`** alterna en el clic y **suma** en el lazo, que es como selecciona
   cualquier escritorio.
 - **Clic derecho** abre el menú de lo que haya debajo. Si lo de debajo no está
@@ -1530,13 +1547,67 @@ asoman entre los del trazo y emborronan justo el patrón de certeza que hay que
 distinguir a ojo. Una línea segmentada ya se separa del fondo por su ritmo. Los ejes de pliegue son la excepción: **solo observados** (ver
 *Pliegues*).
 
-El color de los tipos que llevan ornamento —las cuatro fallas y los dos
-pliegues— se puede cambiar desde el módulo de simbología; el resto sale de esta
-tabla (ver *Color editable*).
+**Color y grosor son editables en todos los tipos**, contactos incluidos, desde
+el módulo de simbología; la tabla de arriba es solo el valor de partida (ver
+*Color editable*). Los tipos con ornamento añaden encima los parámetros del
+icono —tamaño, espaciado, posición, zoom mínimo—, y los que no lo llevan
+enseñan solo las dos filas que sí significan algo sobre un contacto.
+
+El grosor es un **factor** sobre el `weight` nominal del tipo, no un ancho en
+píxeles: se aplica dentro de cada parada de la rampa por zoom, así que el mismo
+ajuste vale a escala regional y a escala de detalle. El halo blanco se reajusta
+con la traza —si se quedara en su ancho anterior, engordar un contacto lo
+dejaría comiéndose su propio halo— y el QML y el SLD del GeoPackage salen con
+el grosor efectivo, igual que ya salían con el color efectivo.
 
 Nota técnica: `line-dasharray` no admite expresiones data-driven en MapLibre,
 así que hay una capa por patrón de certeza, filtrada por atributo. El color sí
 es data-driven con una expresión `match`.
+
+## Panel de capas
+
+Lista de arriba hacia abajo, tal como se pinta el mapa, y en dos grupos.
+
+**El dibujo propio va repartido en tres capas**: *Units (polygons)*, *Faults,
+contacts & folds* y *Dips (measurements)*. Antes era una sola —«Geology
+(drawing)»— y eso dejaba el panel sin nada que ofrecer: o se veía el dibujo
+entero o no se veía nada. Poner los contactos contra la ortofoto sin la mancha
+de las unidades encima, o quitar de en medio los cientos de símbolos de rumbo y
+manteo para leer la traza que hay debajo, es lo que uno hace todo el rato en
+QGIS.
+
+Las tres **no se reordenan entre sí** y por eso no llevan flechas: las unidades
+son manchas de fondo, las trazas van encima de ellas o no se leen, y las medidas
+encima de todo porque son puntos chicos. Cualquier otro orden produce un mapa
+peor, no un mapa distinto. En el panel se nombran en el orden en que se piensa
+el mapa —unidades, fallas, medidas— aunque en la pantalla se pinten al revés.
+
+Apagar una capa apaga también el **snapping** contra lo que hay en ella: con las
+unidades ocultas dejan de engancharse sus contornos, y los contactos siguen
+enganchando. El **halo de la selección** es la excepción y no se apaga nunca:
+no es contenido del mapa, es la respuesta a lo que se acaba de tocar, y
+quedarse sin él se lee como que la selección no funcionó.
+
+**Debajo van los fondos**, anidados bajo su propia cabecera *Basemaps*:
+curvas de nivel, sombreado, mapas offline y los basemaps web. Son muchos, se
+eligen una vez, y no tienen por qué ocupar media pantalla cada vez que se abre
+el panel. Entre medio aparecen, cuando las hay, las capas de **StraboSpot** y
+las **importadas**, que sí se reordenan con sus flechas.
+
+Un proyecto guardado cuando el dibujo era una sola capa trae una entrada
+`geology`: su visibilidad y su opacidad se aplican a las tres nuevas, que es
+exactamente lo que ese proyecto quería decir.
+
+### La cruz de cerrar
+
+Las cabeceras de los paneles cierran con un **cuadrado rojo y el aspa blanca**,
+más grande y más gruesa que el resto de los iconos. Era la misma `.icon-btn`
+gris y fina que las flechas de orden o el aspa de quitar una capa, y con un dedo
+—o con el sol de frente sobre una tablet— costaba encontrarla y costaba
+acertarle. El color dice «esto cierra» sin leer nada, y el cuadrado da el blanco
+de toque que un glifo suelto no tiene. El grosor del aspa sale de
+`-webkit-text-stroke` sobre el propio carácter, que es lo único que engorda un
+glifo sin cambiarlo por un SVG en diecinueve cabeceras.
 
 ## Basemaps
 
@@ -2113,8 +2184,15 @@ Tres detalles que sí hicieron falta:
   efectivo, no el del catálogo: lo que se abre en QGIS tiene que verse como lo
   que se dejó en la tablet.
 
-Solo son editables los tipos que aparecen en el módulo, que son los que llevan
-ornamento. Los contactos y el dique salen siempre del catálogo.
+El módulo lista **todos** los tipos de línea, agrupados como en la paleta
+—Contactos, Fallas, Pliegues, Diques—, y cada uno enseña los campos que de
+verdad tiene: color y grosor siempre, y los del icono solo donde hay icono. Qué
+campos son no se decide con una lista aparte que habría que mantener a la par,
+sino mirando qué trae la entrada del tipo en `defaultOrnaments()`.
+
+Un proyecto guardado antes de que los contactos fueran editables solo trae los
+seis tipos con ornamento: el resto se completa con el catálogo al abrirlo, así
+que se ve exactamente igual que cuando se guardó.
 
 ## Deshacer y rehacer
 
@@ -2331,6 +2409,92 @@ grupo. La unidad de un polígono sale de los tags del proyecto, igual que en
 Estructuras. Antes se leía una propiedad `type` que ningún dataset real trae, y
 las dos columnas salían vacías siempre.
 
+### Editar lo bajado: adoptar el dataset
+
+Al terminar la descarga el panel **pregunta si se quiere editar** lo que acaba
+de llegar, y hay un botón (*Make these spots editable*) para hacerlo más tarde.
+La pregunta va ahí y no escondida en un menú porque quien acaba de bajar un
+dataset sabe en ese momento si viene a mirarlo o a seguir trabajando sobre él;
+diez minutos después ya no se acuerda de que se podía.
+
+Adoptar es lo mismo que hacer *Editar una capa importada* con un GeoPackage:
+los spots dejan de ser una capa de consulta y pasan a ser elementos del dibujo,
+con todas las herramientas encima —nodos, cortar, unir, reshape, huecos— y
+viajando dentro del proyecto y del GeoPackage. La capa de StraboSpot se retira
+en el mismo paso: mantener las dos cosas pintaría cada falla dos veces, una
+editable y otra no, y al mirar el mapa no habría forma de saber cuál se está
+tocando. Va al historial en un solo paso, así que **deshacer** devuelve el
+dataset a su capa.
+
+Las **observaciones** —muestras y anotaciones— no se adoptan y se quedan en su
+capa: no son geometría cartográfica, y el dibujo no tiene dónde ponerlas sin
+convertirlas en medidas que nadie tomó.
+
+**La simbología ajena se interpreta** (`src/strabo/adopt.js`). No se copia un
+nombre de tipo: se leen las mismas columnas con las que el plugin de QGIS
+categoriza, y se traducen al catálogo de FieldDraw.
+
+| Lo que trae StraboSpot | Entra como |
+|---|---|
+| `geologic structure fault thrust` / `… reverse` | Cabalgamiento, con sus dientes |
+| `… fault normal` / `dextral` / `sinistral` | Falla normal / dextral / sinestral |
+| `geologic structure fault` a secas | Falla indiferenciada |
+| `… fold axial trace anticline` / `syncline` | Antiforme / sinforme |
+| `contact depositional …` | Contacto estratigráfico |
+| `contact intrusive dike` | Dique |
+| `contact intrusive` | Contacto intrusivo |
+| `contact other structural contact` | Contacto estructural |
+| `trace_quality`: `known` / `inferred` / `concealed` | Certeza: observado / inferido / cubierto |
+| Medición planar `bedding` / `foliation` / `fracture` / `fault …` | Estratificación / foliación / diaclasa / plano de falla |
+| Tag `geologic_unit` del proyecto | Unidad geológica del dibujo, creada si no existía |
+
+Las reglas se prueban **en orden** y cada una exige **todas** sus palabras, que
+es lo que distingue `contact intrusive dike` de `contact intrusive` sin
+escribir una expresión. Lo que no case con el vocabulario de StraboSpot pasa
+por el mismo lector de cartas ajenas que ya usa la adopción de GeoPackage, así
+que un dataset con los tipos escritos a mano en castellano —«falla inversa»—
+también se entiende.
+
+Lo que no se hace es **inventar**: una traza que no diga qué es entra como
+contacto estratigráfico —el tipo más neutro del catálogo— y se cuenta aparte,
+para poder avisar de cuántas hay que revisar. Adivinar en silencio produce un
+mapa que parece clasificado y no lo está.
+
+Dos arreglos que hicieron falta para que esto fuera posible, los dos en la
+bajada: la columna `Quality` de líneas y polígonos no existía —la calidad de la
+traza se perdía y todo volvía como observado— y el término escrito a mano de un
+`other` no se leía, así que un contacto estructural —que es como sube sus
+propios contactos FieldDraw— volvía como `contact other` y no había forma de
+saber qué era.
+
+### El color de lo que no se cartografió aquí
+
+Todo lo adoptado se marca con `source: 'strabospot'` y se dibuja **de un solo
+color**, el mismo morado con el que ya se veía en su capa de consulta. Adoptar
+no cambia entonces el aspecto del mapa: cambia lo que se puede hacer con él. Lo
+que el color conserva es algo que si no se pierde para siempre —cuál de estos
+trazos lo caminó uno y cuál viene de la libreta de otra persona— y lo devuelve
+de un vistazo, sin abrir atributos.
+
+El color y el interruptor están en **Símbolos**, al pie del módulo de líneas.
+Apagarlo dibuja lo adoptado con la simbología normal, como cualquier otro
+elemento; apagarlo no borra el color elegido, así que volver a encenderlo
+devuelve el mismo mapa de antes.
+
+Los ornamentos y el patrón de certeza **se conservan**: un cabalgamiento
+importado sigue teniendo sus dientes, y una traza inferida sigue segmentada. Lo
+único que cambia es el color, y eso obliga a tres cosas distintas por dentro:
+
+- Las expresiones de color de traza, relleno y contorno se envuelven en un
+  `case` sobre `source`, que es data-driven y no cuesta una capa nueva.
+- Los ornamentos y los símbolos de rumbo y manteo son **mapas de bits
+  rasterizados ya coloreados**, así que hay una segunda tanda de iconos en el
+  color de lo importado y `icon-image` elige entre las dos con otro `case`.
+  Cambiar el color redibuja solo esa tanda, y solo si de verdad cambió: el
+  selector dispara un evento por píxel de recorrido.
+- La marca viaja con el elemento al proyecto y al GeoPackage. Seis meses
+  después sigue constando qué se caminó y qué se heredó.
+
 ## Subir el dibujo a StraboSpot
 
 Siempre a un dataset **nuevo** del proyecto elegido: `POST /db/datasetspots/{id}`
@@ -2525,7 +2689,8 @@ confiarle el único respaldo de una campaña.
 - ✅ Importación de GeoPackage respetando la simbología QGIS.
 - ✅ Snapping a vértice y segmento, y herramienta Follow trace.
 - ✅ MBTiles y PMTiles, raster y vectorial.
-- ✅ Selección por toque y por lazo rectangular; corte y unión con JSTS.
+- ✅ Selección por toque y por lazo —a mano alzada de fábrica, rectangular desde
+  Ajustes—, que se lleva todo lo que roce; corte y unión con JSTS.
 - ✅ Edición de vértices con edición topológica.
 - ✅ Corte con una línea dibujada o con un elemento existente, sobre la selección.
 - ✅ Unión de líneas no contiguas por sus extremos más próximos.
@@ -2541,6 +2706,8 @@ confiarle el único respaldo de una campaña.
 - ✅ Ornamentos de falla y de pliegue: dientes, tics, medias flechas y flechas
   de eje, con color, tamaño, espaciado y posición editables, y flip por
   elemento (reflejo especular respecto de la traza) en las fallas.
+- ✅ Color y grosor editables en TODO tipo de línea, contactos incluidos, con el
+  módulo agrupado como la paleta y el grosor efectivo también en el QML/SLD.
 - ✅ Confirmación topológica: fusión de vértices y nodado, con tolerancia en metros.
 - ✅ Modos de añadir y borrar vértices en la herramienta Edit Nodes, que se
   abre también desde el menú de propiedades y funciona con el relieve 3D puesto.
@@ -2561,6 +2728,12 @@ confiarle el único respaldo de una campaña.
   las medidas como orientaciones planares, las líneas como trazas y las unidades
   como tags del proyecto—, ver atributos desde Navegar y desde Elegir, filtrar
   por tipo y tamaño de símbolo ajustable.
+- ✅ Adoptar lo bajado de StraboSpot para editarlo, interpretando su simbología
+  —falla inversa a cabalgamiento, calidad de la traza a certeza, tags de unidad
+  a unidades— y pintándolo de un color único, configurable, para distinguirlo
+  de lo cartografiado aquí.
+- ✅ Panel de capas con el dibujo repartido en unidades, trazas y medidas, y los
+  fondos anidados bajo su propia cabecera.
 - ✅ Reshape de polígonos y líneas, sin dependencias.
 - ✅ Botón de GPS para centrar el mapa en la posición propia.
 - ✅ Perfiles topográficos sobre el DEM ya cacheado o sobre Copernicus vía

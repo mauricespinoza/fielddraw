@@ -1,6 +1,7 @@
 import {
   chainLines,
   featuresInBox,
+  featuresInRegion,
   pickFeature,
   pointInPolygon,
   pointInRing,
@@ -657,7 +658,7 @@ console.log('== reshape a través del store ==');
   store.clearSelection();
 }
 
-console.log('== lazo rectangular: solo lo que queda encerrado ==');
+console.log('== lazo rectangular: basta con rozar ==');
 {
   // "Pantalla" y "mundo" coinciden aquí, igual que en el resto del archivo.
   const proj = (c) => ({ x: c[0], y: c[1] });
@@ -680,7 +681,8 @@ console.log('== lazo rectangular: solo lo que queda encerrado ==');
 
   ok('se lleva lo encerrado', ids.includes('dentro') && ids.includes('poli'));
   ok('deja lo de fuera', !ids.includes('fuera'));
-  ok('NO se lleva lo que solo cruza el borde', !ids.includes('a medias'), JSON.stringify(ids));
+  ok('basta con rozar: lo que solo cruza el borde también entra',
+     ids.includes('a medias'), JSON.stringify(ids));
   ok('también se lleva las medidas de rumbo y manteo', ids.includes('medida'));
   ok('pero no las de fuera', !ids.includes('medida lejos'));
   ok('el borde cuenta como dentro',
@@ -689,6 +691,42 @@ console.log('== lazo rectangular: solo lo que queda encerrado ==');
   ok('sin elementos no revienta', featuresInBox(null, caja, proj).length === 0);
   ok('una feature sin geometría se salta',
      featuresInBox([{ properties: { id: 'x' } }], caja, proj).length === 0);
+
+  // Una línea que ATRAVIESA la caja de lado a lado no tiene ningún vértice
+  // dentro: solo la detecta el cruce de segmentos.
+  ok('una línea que cruza de parte a parte, sin vértices dentro, entra',
+     featuresInBox([line('pasante', [[-50, 50], [200, 50]])], caja, proj).length === 1);
+
+  // El lazo chico dentro de una unidad grande: ni vértices dentro ni bordes
+  // cruzados, y aun así es la manera obvia de elegirla.
+  const grande = poly('grande', [[[-500, -500], [500, -500], [500, 500], [-500, 500], [-500, -500]]]);
+  ok('una caja enteramente dentro de un polígono lo elige',
+     featuresInBox([grande], [10, 10, 20, 20], proj).length === 1);
+  ok('pero no elige una línea que pasa lejos',
+     featuresInBox([line('lejos', [[900, 900], [910, 910]])], [10, 10, 20, 20], proj).length === 0);
+
+  // El criterio estricto de antes sigue disponible, y es el que usa `contain`.
+  const estricto = featuresInBox(features, caja, proj, { contain: true });
+  ok('con contain: true vuelve el criterio de encerrar entero',
+     estricto.includes('dentro') && !estricto.includes('a medias'), JSON.stringify(estricto));
+}
+
+console.log('== lazo a mano alzada ==');
+{
+  const proj = (c) => ({ x: c[0], y: c[1] });
+  // Un triángulo dibujado a mano: lo que cae dentro se elige igual que con la
+  // caja, y la forma cóncava deja fuera lo que un rectángulo sí se llevaría.
+  const region = [[0, 0], [100, 0], [0, 100]];
+  const features = [
+    line('dentro', [[10, 10], [20, 20]]),
+    line('en la esquina opuesta', [[80, 80], [95, 95]]),
+  ];
+  const ids = featuresInRegion(features, region, proj);
+  ok('el lazo se lleva lo que encierra', ids.includes('dentro'));
+  ok('y deja fuera lo que queda al otro lado de la diagonal',
+     !ids.includes('en la esquina opuesta'), JSON.stringify(ids));
+  ok('una región con menos de tres puntos no elige nada',
+     featuresInRegion(features, [[0, 0], [1, 1]], proj).length === 0);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v26';
+const VERSION = 'v27';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 const TILES = `fielddraw-tiles-${VERSION}`;
 
@@ -84,6 +84,7 @@ const SHELL = [
   './src/vendorPaths.js',
   './src/version.js',
   './src/vertexEdit.js',
+  './src/strabo/adopt.js',
   './src/strabo/api.js',
   './src/strabo/mapping.js',
   './src/strabo/spots.js',

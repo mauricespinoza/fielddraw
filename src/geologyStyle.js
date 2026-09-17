@@ -1,4 +1,11 @@
-import { CERTAINTIES, LINE_TYPES, POLYGON_TYPES, effectiveLineColor } from './symbology.js';
+import {
+  CERTAINTIES,
+  LINE_TYPES,
+  POLYGON_TYPES,
+  effectiveLineColor,
+  effectiveLineWeight,
+  withImportColor,
+} from './symbology.js';
 
 export const GEOLOGY_SOURCE = 'geology-src';
 export const DRAFT_SOURCE = 'draft-src';
@@ -8,23 +15,34 @@ export const DRAFT_SOURCE = 'draft-src';
  * deja reescribir el de los tipos con ornamento, y mapView reaplica esta
  * expresión igual que hace con el relleno de las unidades.
  */
-export function lineColorExpr(ornaments) {
-  return [
-    'match',
-    ['get', 'type'],
-    ...LINE_TYPES.flatMap((t) => [t.id, effectiveLineColor(t.id, ornaments)]),
-    '#888888',
-  ];
+export function lineColorExpr(ornaments, importStyle) {
+  return withImportColor(
+    [
+      'match',
+      ['get', 'type'],
+      ...LINE_TYPES.flatMap((t) => [t.id, effectiveLineColor(t.id, ornaments)]),
+      '#888888',
+    ],
+    importStyle,
+  );
 }
 
 const defaultLineColorExpr = lineColorExpr(null);
 
-const lineWeightExpr = [
-  'match',
-  ['get', 'type'],
-  ...LINE_TYPES.flatMap((t) => [t.id, t.weight]),
-  1,
-];
+/**
+ * El grosor también es editable, y por el mismo motivo que el color: al
+ * preparar una figura, un contacto que se pierde sobre la ortofoto se arregla
+ * engordándolo, no exportando a QGIS. `weight` del catálogo es solo el valor
+ * de partida.
+ */
+function lineWeightExpr(ornaments) {
+  return [
+    'match',
+    ['get', 'type'],
+    ...LINE_TYPES.flatMap((t) => [t.id, effectiveLineWeight(t.id, ornaments)]),
+    1,
+  ];
+}
 
 /**
  * MapLibre exige que la expresión `zoom` sea entrada directa de un
@@ -37,17 +55,29 @@ function zoomWidth(at) {
 }
 
 const zoomWidthExpr = zoomWidth((v) => v);
-const lineWidthExpr = zoomWidth((v) => ['*', lineWeightExpr, v]);
-const casingWidthExpr = zoomWidth((v) => ['+', ['*', lineWeightExpr, v], 2.4]);
+
+/** Ancho de la traza y de su halo, con los grosores que el usuario haya puesto. */
+export function lineWidthExpr(ornaments) {
+  const peso = lineWeightExpr(ornaments);
+  return zoomWidth((v) => ['*', peso, v]);
+}
+
+export function casingWidthExpr(ornaments) {
+  const peso = lineWeightExpr(ornaments);
+  return zoomWidth((v) => ['+', ['*', peso, v], 2.4]);
+}
 
 /**
  * El color de los polígonos sale de las unidades definidas por el usuario, que
  * cambian en caliente: mapView reescribe estas expresiones cada vez que se
  * edita el módulo de unidades.
  */
-export function unitFillExpr(units) {
+export function unitFillExpr(units, importStyle) {
   const list = units && units.length ? units : POLYGON_TYPES.map((t) => ({ id: t.id, color: t.color }));
-  return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, u.color]), '#999999'];
+  return withImportColor(
+    ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, u.color]), '#999999'],
+    importStyle,
+  );
 }
 
 /**
@@ -66,9 +96,12 @@ export function unitCodeExpr(units) {
   return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, String(u.code || '')]), reserva];
 }
 
-export function unitOutlineExpr(units) {
+export function unitOutlineExpr(units, importStyle) {
   const list = units && units.length ? units : POLYGON_TYPES.map((t) => ({ id: t.id, color: t.color }));
-  return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, shade(u.color)]), '#555555'];
+  return withImportColor(
+    ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, shade(u.color)]), '#555555'],
+    importStyle,
+  );
 }
 
 const fillColorExpr = unitFillExpr(null);
@@ -163,7 +196,7 @@ export function geologyLayers() {
         layout: { 'line-cap': c.cap, 'line-join': 'round' },
         paint: {
           'line-color': '#ffffff',
-          'line-width': casingWidthExpr,
+          'line-width': casingWidthExpr(null),
           'line-opacity': 0.55,
         },
       });
@@ -179,7 +212,7 @@ export function geologyLayers() {
       layout: { 'line-cap': c.cap, 'line-join': 'round' },
       paint: {
         'line-color': defaultLineColorExpr,
-        'line-width': lineWidthExpr,
+        'line-width': lineWidthExpr(null),
         'line-opacity': 1,
         ...(c.dash ? { 'line-dasharray': c.dash } : {}),
       },
@@ -242,11 +275,34 @@ export function geologyLayers() {
 
 export const GEOLOGY_LAYER_IDS = geologyLayers().map((l) => l.id);
 
+/**
+ * El reparto del dibujo en las capas del panel: qué capas de MapLibre son las
+ * unidades y cuáles las trazas. Vive aquí, junto a las capas que nombra, para
+ * que añadir una no obligue a acordarse de clasificarla en mapView.
+ *
+ * El halo de selección va con las unidades —las de más abajo— para que quede
+ * por debajo de todo lo que pueda señalar. Apagarlas no lo apaga: ver
+ * `ALWAYS_VISIBLE` en mapView.
+ */
+export const GEOLOGY_UNIT_LAYER_IDS = GEOLOGY_LAYER_IDS.filter(
+  (id) => id.startsWith('geology-fill') || id.startsWith('geology-outline') ||
+    id === 'geology-selected' || id === 'geology-unit-label',
+);
+
+export const GEOLOGY_TRACE_LAYER_IDS = GEOLOGY_LAYER_IDS.filter(
+  (id) => !GEOLOGY_UNIT_LAYER_IDS.includes(id),
+);
+
 /** La capa de rótulos de unidad, que mapView enciende y filtra. */
 export const UNIT_LABEL_LAYER_ID = 'geology-unit-label';
 
 /** Capas cuyo `line-color` sale del catálogo de tipos de línea. */
 export const GEOLOGY_LINE_LAYER_IDS = CERTAINTIES.map((c) => `geology-line-${c.id}`);
+
+/** Los halos blancos, que solo llevan las continuas (ver arriba por qué). */
+export const GEOLOGY_CASING_LAYER_IDS = CERTAINTIES.filter((c) => !c.dash).map(
+  (c) => `geology-line-casing-${c.id}`,
+);
 
 /** Capas del elemento en construcción: siempre por encima de todo. */
 export function draftLayers() {

@@ -25,7 +25,6 @@ import {
   LINE_TYPES,
   LINE_TYPE_BY_ID,
   ORNAMENT_LIMITS,
-  ORNAMENT_TYPES,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   effectiveLineColor,
@@ -510,9 +509,16 @@ function renderUnits() {
   }
 }
 
-/* ---------- módulo de simbología de ornamentos ---------- */
+/* ---------- módulo de simbología de línea ---------- */
 
+/**
+ * Los campos, en el orden en que se ven. `width` y el color los lleva TODO
+ * tipo de línea —también un contacto, que no tiene ornamento que espaciar—; el
+ * resto solo aparece cuando el tipo trae ese parámetro, que es lo que decide
+ * `defaultOrnaments()` y no una lista aparte que habría que mantener a la par.
+ */
 const SYMB_FIELDS = [
+  { key: 'width', label: 'Width', fmt: (v) => `${v.toFixed(2)}×` },
   { key: 'size', label: 'Size', fmt: (v) => `${v.toFixed(2)}×` },
   { key: 'spacing', label: 'Spacing', fmt: (v) => `${v} px` },
   { key: 'offset', label: 'Position', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
@@ -571,26 +577,43 @@ function renderSymbology() {
   const { ornaments } = store.getState();
   list.replaceChildren();
 
-  for (const type of ORNAMENT_TYPES) {
-    const meta = LINE_TYPE_BY_ID.get(type);
-    const s = ornaments[type];
-    if (!meta || !s) continue;
+  // Agrupadas como en la paleta —Contactos, Fallas, Pliegues, Diques— porque
+  // ahora están las once y una lista plana obliga a leerla entera para dar con
+  // un contacto.
+  for (const grupo of LINE_GROUPS) {
+    const tipos = LINE_TYPES.filter((t) => t.group === grupo);
+    if (tipos.length === 0) continue;
 
-    const li = document.createElement('li');
-    li.className = 'symb-row';
+    const cabecera = document.createElement('li');
+    cabecera.className = 'symb-group';
+    cabecera.textContent = grupo;
+    list.appendChild(cabecera);
 
-    const head = document.createElement('div');
-    head.className = 'symb-head';
-    const name = document.createElement('strong');
-    name.textContent = meta.label;
-    head.append(symbColor(type, effectiveLineColor(type, ornaments), meta.label), name);
-    li.appendChild(head);
+    for (const meta of tipos) {
+      const type = meta.id;
+      const s = ornaments[type];
+      if (!s) continue;
 
-    // El símbolo de un pliegue va a caballo del eje: desplazarlo hacia un lado
-    // rompe lo que significa, así que ese deslizador ni se ofrece.
-    const fields = isObservedOnly(type) ? SYMB_FIELDS.filter((f) => f.key !== 'offset') : SYMB_FIELDS;
-    for (const f of fields) li.appendChild(symbField(type, f, s[f.key]));
-    list.appendChild(li);
+      const li = document.createElement('li');
+      li.className = 'symb-row';
+
+      const head = document.createElement('div');
+      head.className = 'symb-head';
+      const name = document.createElement('strong');
+      name.textContent = meta.label;
+      head.append(symbColor(type, effectiveLineColor(type, ornaments), meta.label), name);
+      li.appendChild(head);
+
+      // Solo los campos que el tipo tiene: un contacto lleva color y grosor, y
+      // nada más. El símbolo de un pliegue va además a caballo del eje, así
+      // que desplazarlo hacia un lado rompe lo que significa y ese deslizador
+      // ni se ofrece.
+      const fields = SYMB_FIELDS.filter(
+        (f) => f.key in s && !(f.key === 'offset' && isObservedOnly(type)),
+      );
+      for (const f of fields) li.appendChild(symbField(type, f, s[f.key]));
+      list.appendChild(li);
+    }
   }
 }
 
@@ -642,17 +665,27 @@ function layerRow(layer) {
     );
     move.appendChild(del);
   }
-  const up = document.createElement('button');
-  up.className = 'icon-btn';
-  up.textContent = '▲';
-  up.setAttribute('aria-label', `Move ${layer.label} up`);
-  up.addEventListener('click', () => store.moveLayer(layer.id, -1));
-  const down = document.createElement('button');
-  down.className = 'icon-btn';
-  down.textContent = '▼';
-  down.setAttribute('aria-label', `Move ${layer.label} down`);
-  down.addEventListener('click', () => store.moveLayer(layer.id, 1));
-  move.append(up, down);
+  /*
+   * Las tres capas del dibujo no se reordenan entre sí: unidades debajo,
+   * trazas encima, medidas al final. No es una preferencia — cualquier otro
+   * orden esconde las trazas bajo el relleno de las unidades.
+   */
+  const fijo = store.DRAWING_KINDS.has(layer.kind);
+  let up = null;
+  let down = null;
+  if (!fijo) {
+    up = document.createElement('button');
+    up.className = 'icon-btn';
+    up.textContent = '▲';
+    up.setAttribute('aria-label', `Move ${layer.label} up`);
+    up.addEventListener('click', () => store.moveLayer(layer.id, -1));
+    down = document.createElement('button');
+    down.className = 'icon-btn';
+    down.textContent = '▼';
+    down.setAttribute('aria-label', `Move ${layer.label} down`);
+    down.addEventListener('click', () => store.moveLayer(layer.id, 1));
+    move.append(up, down);
+  }
 
   head.append(toggle, move);
 
@@ -678,6 +711,34 @@ function layerRow(layer) {
   return { li, cb, range, pct, up, down };
 }
 
+/**
+ * CÓMO SE AGRUPA EL PANEL.
+ *
+ * El dibujo propio primero, ya repartido en unidades, trazas y medidas —que es
+ * lo que uno enciende y apaga mientras cartografía—, después lo que viene de
+ * fuera, y al final los fondos, anidados bajo su propia cabecera: son muchos,
+ * se eligen una vez y no tienen por qué ocupar media pantalla cada vez que se
+ * abre el panel.
+ *
+ * `order` existe solo para el dibujo: en el mapa las unidades van DEBAJO, así
+ * que en un panel que lista de arriba hacia abajo saldrían las últimas, y
+ * nombrarlas en el orden en que se piensa el mapa —unidades, fallas, medidas—
+ * se lee mejor que nombrarlas en el orden en que se pintan.
+ */
+const LAYER_GROUPS = [
+  { title: null, kinds: ['units', 'faults', 'dips'], order: ['units', 'faults', 'dips'] },
+  { title: 'StraboSpot', kinds: ['strabo'] },
+  { title: 'Imported layers', kinds: ['imported'] },
+  { title: 'Basemaps', kinds: ['contours', 'hillshade', 'tiles', 'basemap'], nested: true },
+];
+
+function groupHeader(title) {
+  const li = document.createElement('li');
+  li.className = 'layer-group';
+  li.textContent = title;
+  return li;
+}
+
 function renderLayers() {
   const list = $('layer-list');
   const layers = store.getState().layers;
@@ -688,14 +749,47 @@ function renderLayers() {
     if (!layerRows.has(l.id)) layerRows.set(l.id, layerRow(l));
   }
 
-  // Reordenar sin recrear: recrear mataría el arrastre de un slider en curso.
-  const desired = layers.map((l) => layerRows.get(l.id).li);
-  const current = Array.from(list.children);
-  const sameOrder =
-    current.length === desired.length && desired.every((el, i) => current[i] === el);
-  if (!sameOrder) list.replaceChildren(...desired);
+  const desired = [];
+  for (const g of LAYER_GROUPS) {
+    let suyas = layers.filter((l) => g.kinds.includes(l.kind));
+    if (suyas.length === 0) continue;
+    if (g.order) {
+      suyas = g.order.map((k) => suyas.find((l) => l.kind === k)).filter(Boolean);
+    }
+    if (g.title) desired.push(groupHeader(g.title));
+    const filas = suyas.map((l) => layerRows.get(l.id).li);
+    if (g.nested) {
+      // Anidado de verdad: una lista dentro de la lista, sangrada bajo su
+      // cabecera, para que se vea que los fondos son un conjunto aparte.
+      const nest = document.createElement('li');
+      nest.className = 'layer-nest-host';
+      const ul = document.createElement('ul');
+      ul.className = 'layer-nest';
+      ul.append(...filas);
+      nest.appendChild(ul);
+      desired.push(nest);
+    } else {
+      desired.push(...filas);
+    }
+  }
 
-  layers.forEach((l, i) => {
+  /*
+   * Reordenar sin recrear: recrear mataría el arrastre de un slider en curso.
+   * La comparación mira las FILAS y no los envoltorios —las cabeceras y el
+   * <li> que anida los fondos se crean nuevos en cada pasada—, así que se
+   * compara la lista de filas ya cacheadas, que es lo único que puede cambiar.
+   */
+  const filasDe = (nodo) =>
+    nodo.classList.contains('layer-nest-host') ? [...nodo.firstChild.children] : [nodo];
+  const actuales = [...list.children].flatMap(filasDe);
+  const buscadas = desired.flatMap(filasDe);
+  const mismoOrden =
+    actuales.length === buscadas.length &&
+    list.children.length === desired.length &&
+    buscadas.every((el, i) => actuales[i] === el);
+  if (!mismoOrden) list.replaceChildren(...desired);
+
+  layers.forEach((l) => {
     const row = layerRows.get(l.id);
     row.li.classList.toggle('off', !l.visible);
     if (row.cb.checked !== l.visible) row.cb.checked = l.visible;
@@ -703,8 +797,10 @@ function renderLayers() {
       row.range.value = String(l.opacity);
       row.pct.textContent = `${Math.round(l.opacity * 100)}%`;
     }
-    row.up.disabled = i === 0;
-    row.down.disabled = i === layers.length - 1;
+    // El dibujo no lleva flechas; el resto se queda sin la que no puede usar.
+    const i = layers.indexOf(l);
+    if (row.up) row.up.disabled = i === 0;
+    if (row.down) row.down.disabled = i === layers.length - 1;
   });
 }
 
@@ -2743,6 +2839,28 @@ function syncStructureControls() {
   $('structure-labels').checked = st.showLabels;
 }
 
+/**
+ * Color único de lo traído de StraboSpot. La casilla y el selector van juntos:
+ * apagarla no borra el color elegido, solo deja de aplicarlo, así que volver a
+ * encenderla devuelve el mismo mapa de antes.
+ */
+function syncImportControls() {
+  const st = store.getState().importStyle;
+  $('import-uniform').checked = st.uniform;
+  const color = $('import-color');
+  if (document.activeElement !== color) color.value = st.color;
+  color.disabled = !st.uniform;
+}
+
+function wireImportControls() {
+  $('import-uniform').addEventListener('change', (e) =>
+    store.setImportStyle({ uniform: e.target.checked }),
+  );
+  $('import-color').addEventListener('input', (e) =>
+    store.setImportStyle({ color: e.target.value }),
+  );
+}
+
 function wireStructureControls() {
   $('structure-size').addEventListener('input', (e) =>
     store.setStructureStyle({ size: Number(e.target.value) }),
@@ -3490,7 +3608,13 @@ function measurementSection(body, medida, reabrir) {
    */
   const met = METHOD_BY_ID.get(p.method);
   const cal = section(body, 'Quality');
-  measureRow(cal, 'Method', met ? met.label : p.method === 'edited' ? 'Edited by hand' : p.method);
+  // Los dos métodos que no salen del catálogo: una medida retocada a mano y una
+  // adoptada de StraboSpot, que se tomó con brújula pero no aquí.
+  const OTROS_METODOS = {
+    edited: 'Edited by hand',
+    strabospot: 'Field compass, imported from StraboSpot',
+  };
+  measureRow(cal, 'Method', met ? met.label : OTROS_METODOS[p.method] || p.method);
   measureRow(cal, 'Dip direction', `${Math.round(p.dipAzimuth ?? 0)}° (${quadrant(p.dipAzimuth)})`);
 
   if (DEM_METHODS.has(p.method)) {
@@ -3886,9 +4010,12 @@ function renderStatus() {
           : `Draw along the trace of the ${que} · every node is sampled on the DEM`;
     }
   } else if (s.tool === 'select') {
+    // El arrastre es el lazo, no el desplazamiento: decirlo al revés mandaba a
+    // la gente a buscar una herramienta de selección múltiple que ya tenía.
+    const gesto = s.selectMode === 'rect' ? 'drag a rectangle' : 'draw a lasso';
     $('status-text').textContent = s.selection.length
-      ? `${s.selection.length} selected · Shift+click adds · right-click opens the menu · drag pans`
-      : 'Click a feature to select it · Shift+click selects several · drag pans the map';
+      ? `${s.selection.length} selected · ${gesto} or Shift+click to add · right-click opens the menu`
+      : `Tap a feature to select it · ${gesto} around several · touching them is enough`;
   } else if (s.tool === 'vertices') {
     const base =
       s.vertexMode === 'add'
@@ -3995,7 +4122,7 @@ const SETTING_INPUTS = [
 ];
 
 /** Ajustes que se ven en un grupo de radios y no en un control con valor. */
-const RADIO_SETTING_KEYS = ['freehandMode', 'cutSource', 'profileSource'];
+const RADIO_SETTING_KEYS = ['freehandMode', 'cutSource', 'profileSource', 'selectMode'];
 
 function syncSettingsUI() {
   const s = store.getState();
@@ -4013,6 +4140,7 @@ function syncSettingsUI() {
   }
   $(s.freehandMode === 'drag' ? 'fh-drag' : 'fh-hold').checked = true;
   $(s.cutSource === 'feature' ? 'cut-feature' : 'cut-draw').checked = true;
+  $(s.selectMode === 'rect' ? 'sel-rect' : 'sel-lasso').checked = true;
   // La tercera opción solo existe si hay un DEM propio cargado: ofrecerla
   // vacía sería un botón que no hace nada.
   const propio = !!s.demSet;
@@ -4107,8 +4235,9 @@ export function initUI() {
   );
   $('btn-reset-symbology').addEventListener('click', () => {
     store.resetOrnaments();
-    showBanner('Fault symbology reset to defaults.', 'info');
+    showBanner('Line symbology reset to defaults.', 'info');
   });
+  wireImportControls();
 
   $('btn-project').addEventListener('click', () => togglePanel('project-menu'));
   $('btn-close-project').addEventListener('click', () => $('project-menu').classList.add('hidden'));
@@ -4201,6 +4330,8 @@ export function initUI() {
   $('opt-topo').addEventListener('change', (e) => store.setTopoEdit(e.target.checked));
   $('cut-draw').addEventListener('change', () => store.setCutSource('draw'));
   $('cut-feature').addEventListener('change', () => store.setCutSource('feature'));
+  $('sel-lasso').addEventListener('change', () => store.setSelectMode('lasso'));
+  $('sel-rect').addEventListener('change', () => store.setSelectMode('rect'));
   $('opt-snap-tol').addEventListener('input', (e) => {
     const v = Number(e.target.value);
     $('snap-tol-value').textContent = `${v} px`;
@@ -4314,6 +4445,7 @@ export function initUI() {
   renderLayers();
   renderUnits();
   renderSymbology();
+  syncImportControls();
   renderToolbar();
   renderStatus();
   syncSettingsUI();
@@ -4335,6 +4467,7 @@ export function initUI() {
     }
     if (store.changed('units') || store.changed('unitLabels')) renderUnits();
     if (store.changed('ornaments')) renderSymbology();
+    if (store.changed('importStyle')) syncImportControls();
     if (store.changed('layers')) renderLayers();
     // Abrir un proyecto reescribe los ajustes: los controles tienen que
     // reflejarlo, o mostrarían valores que ya no son los que rigen.

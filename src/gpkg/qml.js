@@ -3,6 +3,7 @@ import {
   LINE_TYPE_BY_ID,
   POLYGON_TYPE_BY_ID,
   effectiveLineColor,
+  effectiveLineWeight,
 } from '../symbology.js';
 
 /**
@@ -111,8 +112,7 @@ export function buildLineQML(combos, ornaments) {
     geometryType: 1,
     symbolType: 'line',
     symbolFor: (c) => {
-      const t = LINE_TYPE_BY_ID.get(c.type);
-      const widthMm = (0.5 * (t ? t.weight : 1)).toFixed(2);
+      const widthMm = (0.5 * effectiveLineWeight(c.type, ornaments)).toFixed(2);
       return simpleLineLayer(
         effectiveLineColor(c.type, ornaments),
         widthMm,
@@ -369,12 +369,11 @@ export function buildLineSLD(combos, ornaments) {
   return sldDocument(
     'geol_lines',
     sldRules(combos, (c) => {
-      const t = LINE_TYPE_BY_ID.get(c.type);
       const dash = SLD_DASH[c.certainty];
       return `        <se:LineSymbolizer>
           <se:Stroke>
             <se:SvgParameter name="stroke">${effectiveLineColor(c.type, ornaments)}</se:SvgParameter>
-            <se:SvgParameter name="stroke-width">${(2 * (t ? t.weight : 1)).toFixed(2)}</se:SvgParameter>
+            <se:SvgParameter name="stroke-width">${(2 * effectiveLineWeight(c.type, ornaments)).toFixed(2)}</se:SvgParameter>
             <se:SvgParameter name="stroke-linecap">round</se:SvgParameter>${
               dash ? `\n            <se:SvgParameter name="stroke-dasharray">${dash}</se:SvgParameter>` : ''
             }

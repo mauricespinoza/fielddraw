@@ -292,7 +292,9 @@ export function rowsToGeoJSON(rows) {
  * Líneas y polígonos de un dataset, con las columnas que usa el plugin para
  * esas capas. Se devuelven como GeoJSON tal cual: la geometría ya viene bien.
  */
-export const LINEAS_POLIGONOS_COLUMNS = ['Name', 'Date', 'Unit', 'Notes', 'Type', 'Field', 'Geologist'];
+export const LINEAS_POLIGONOS_COLUMNS = [
+  'Name', 'Date', 'Unit', 'Notes', 'Type', 'Quality', 'Field', 'Geologist',
+];
 
 /** Etiquetas legibles de los valores de `trace`; las claves son lo que se guarda. */
 const TRACE_LABELS = {
@@ -314,6 +316,23 @@ const TRACE_LABELS = {
 };
 
 const label = (v) => (v ? TRACE_LABELS[v] || String(v).replace(/_/g, ' ') : '');
+
+/**
+ * Calidad declarada de una traza o de una superficie: `known`, `inferred` o
+ * `concealed`. Es lo que decide el patrón de línea en StraboSpot y, al
+ * adoptarla, el grado de certeza en FieldDraw — sin esta columna la certeza se
+ * perdía en la bajada y todo volvía como observado.
+ */
+export function featureQuality(props) {
+  const p = props || {};
+  const t = p.trace;
+  if (t && typeof t === 'object' && t.trace_quality) return String(t.trace_quality);
+  const s = p.surface_feature;
+  if (s && typeof s === 'object' && s.surface_feature_quality) {
+    return String(s.surface_feature_quality);
+  }
+  return '';
+}
 
 /**
  * Columna `Type` de una línea o un polígono.
@@ -338,6 +357,10 @@ export function featureTypeLabel(props) {
       label(t.fold_type),
       label(t.contact_type),
       label(t.depositional_contact_type || t.intrusive_contact_type || t.metamorphic_contact_type),
+      // El término escrito a mano cuando el formulario ofrece «other». Sin él,
+      // un contacto estructural —que es como sube FieldDraw los suyos— vuelve
+      // como «contact other» y no hay forma de saber qué era.
+      label(t.other_contact_type || t.other_structure_type || t.other_other_feature),
     ].filter(Boolean);
     if (partes.length) return partes.join(' ');
   }
@@ -365,6 +388,7 @@ export function buildLineasPoligonos(features, { field = '', geologist = '', spo
           Unit: tags.length ? tags[0] : '',
           Notes: p.notes || '',
           Type: featureTypeLabel(p),
+          Quality: featureQuality(p),
           Field: field,
           Geologist: geologist,
         },

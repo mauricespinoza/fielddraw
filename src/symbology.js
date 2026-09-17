@@ -154,12 +154,20 @@ export const POLYGON_TYPE_BY_ID = new Map(POLYGON_TYPES.map((t) => [t.id, t]));
 export const CERTAINTY_BY_ID = new Map(CERTAINTIES.map((c) => [c.id, c]));
 
 /**
- * Parámetros de los ornamentos, editables desde el módulo de simbología.
+ * Parámetros de la simbología de línea, editables desde su módulo.
+ *
+ * Los lleva TODO tipo de línea, tenga ornamento o no: un contacto no tiene
+ * dientes que espaciar, pero sí color y grosor, y esos dos son justamente lo
+ * que se retoca al preparar una figura —un contacto fino y negro se pierde
+ * sobre una ortofoto oscura, y engordarlo no debería obligar a exportar a
+ * QGIS—. Los tipos con ornamento añaden encima los campos del icono.
  *
  * - `color`: color del trazo Y de su ornamento. Sale del catálogo de arriba y
  *   se puede cambiar; es lo único del catálogo que el usuario reescribe, y por
  *   eso vive aquí, junto al resto de la simbología que ya se guarda en
  *   localStorage y viaja dentro del proyecto.
+ * - `width`: factor de grosor de la traza. Parte del `weight` del catálogo, así
+ *   que 1 no es «un píxel» sino «el grosor nominal de este tipo».
  * - `size`: escala del icono (1 = tamaño nominal del dibujo en canvas).
  * - `spacing`: separación entre iconos a lo largo de la traza, en px.
  * - `offset`: desplazamiento perpendicular respecto de la traza, en px. Es
@@ -191,22 +199,32 @@ export const FLIPPABLE_ORNAMENT_TYPES = [
   'sinistral-fault',
 ];
 
+/** Todos los tipos que el módulo de simbología deja tocar: o sea, todos. */
+export const LINE_STYLE_TYPES = LINE_TYPES.map((t) => t.id);
+
+/** Campos del icono; solo los llevan los tipos con ornamento. */
+const ORNAMENT_FIELDS = {
+  'thrust-fault': { size: 1, spacing: 26, offset: -4.5, minzoom: 11 },
+  'normal-fault': { size: 1, spacing: 30, offset: -4.5, minzoom: 11 },
+  'dextral-fault': { size: 1, spacing: 80, offset: 0, minzoom: 11 },
+  'sinistral-fault': { size: 1, spacing: 80, offset: 0, minzoom: 11 },
+  // Los pliegues van más espaciados: el símbolo es alto, y una fila apretada
+  // sobre el eje se lee como una banda y no como un pliegue.
+  antiform: { size: 1, spacing: 64, offset: 0, minzoom: 11 },
+  synform: { size: 1, spacing: 64, offset: 0, minzoom: 11 },
+};
+
 export function defaultOrnaments() {
-  const color = (id) => LINE_TYPE_BY_ID.get(id).color;
-  return {
-    'thrust-fault': { color: color('thrust-fault'), size: 1, spacing: 26, offset: -4.5, minzoom: 11 },
-    'normal-fault': { color: color('normal-fault'), size: 1, spacing: 30, offset: -4.5, minzoom: 11 },
-    'dextral-fault': { color: color('dextral-fault'), size: 1, spacing: 80, offset: 0, minzoom: 11 },
-    'sinistral-fault': { color: color('sinistral-fault'), size: 1, spacing: 80, offset: 0, minzoom: 11 },
-    // Los pliegues van más espaciados: el símbolo es alto, y una fila apretada
-    // sobre el eje se lee como una banda y no como un pliegue.
-    antiform: { color: FOLD_COLOR, size: 1, spacing: 64, offset: 0, minzoom: 11 },
-    synform: { color: FOLD_COLOR, size: 1, spacing: 64, offset: 0, minzoom: 11 },
-  };
+  const out = {};
+  for (const t of LINE_TYPES) {
+    out[t.id] = { color: t.color, width: t.weight, ...(ORNAMENT_FIELDS[t.id] || {}) };
+  }
+  return out;
 }
 
 /** Rango admitido de cada parámetro numérico; lo usan la UI y la carga de proyectos. */
 export const ORNAMENT_LIMITS = {
+  width: { min: 0.3, max: 4, step: 0.05 },
   size: { min: 0.4, max: 2.5, step: 0.05 },
   spacing: { min: 10, max: 200, step: 2 },
   offset: { min: -14, max: 14, step: 0.5 },
@@ -220,14 +238,24 @@ export const ORNAMENT_LIMITS = {
  */
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
-/** Normaliza un objeto de ornamentos venido de un proyecto o de localStorage. */
+/**
+ * Normaliza un objeto de simbología de línea venido de un proyecto o de
+ * localStorage. Un proyecto anterior a que los contactos fueran editables solo
+ * trae los seis tipos con ornamento; el resto se completa con el catálogo, así
+ * que abrirlo no cambia cómo se ve.
+ *
+ * Solo se acepta lo que el tipo REALMENTE tiene: un espaciado escrito sobre un
+ * contacto no significa nada, y guardarlo dejaría un campo fantasma en el
+ * proyecto que nadie lee.
+ */
 export function sanitizeOrnaments(raw) {
   const out = defaultOrnaments();
   if (!raw || typeof raw !== 'object') return out;
-  for (const type of ORNAMENT_TYPES) {
+  for (const type of LINE_STYLE_TYPES) {
     const src = raw[type];
     if (!src || typeof src !== 'object') continue;
     for (const [key, lim] of Object.entries(ORNAMENT_LIMITS)) {
+      if (!(key in out[type])) continue;
       const v = Number(src[key]);
       if (Number.isFinite(v)) out[type][key] = Math.min(lim.max, Math.max(lim.min, v));
     }
@@ -236,6 +264,55 @@ export function sanitizeOrnaments(raw) {
     }
   }
   return out;
+}
+
+/* ---------- lo que no se dibujó aquí ---------- */
+
+/**
+ * Marca de procedencia de un elemento adoptado. Va en `properties.source` y
+ * viaja con el elemento: en el proyecto, en el GeoPackage y en la vuelta a
+ * StraboSpot.
+ */
+export const STRABO_SOURCE = 'strabospot';
+
+/**
+ * Color único de lo traído de StraboSpot.
+ *
+ * Al adoptar un dataset, sus contactos y sus fallas pasan a ser elementos del
+ * dibujo como cualquier otro, y ahí se pierde algo que importa: cuál de estos
+ * trazos lo caminó uno y cuál viene de la libreta de otra persona. Pintarlos
+ * todos de un color propio lo devuelve de un vistazo, sin abrir atributos y
+ * sin renunciar a editarlos.
+ *
+ * Es el mismo morado con el que ya se dibujan las capas de StraboSpot en
+ * solo lectura, así que adoptar no cambia el aspecto del mapa: cambia lo que
+ * se puede hacer con él.
+ */
+export function defaultImportStyle() {
+  return { uniform: true, color: '#7e57c2' };
+}
+
+export function sanitizeImportStyle(raw) {
+  const out = defaultImportStyle();
+  if (!raw || typeof raw !== 'object') return out;
+  if (typeof raw.uniform === 'boolean') out.uniform = raw.uniform;
+  if (typeof raw.color === 'string' && HEX_COLOR.test(raw.color.trim())) {
+    out.color = raw.color.trim().toLowerCase();
+  }
+  return out;
+}
+
+/** Condición de MapLibre «este elemento vino de StraboSpot». */
+export const IMPORTED_FILTER = ['==', ['get', 'source'], STRABO_SOURCE];
+
+/**
+ * Envuelve una expresión de color para que lo importado salga del color único.
+ * Con `uniform: false` devuelve la expresión tal cual: el usuario decidió que
+ * quiere verlo con la simbología normal.
+ */
+export function withImportColor(expr, importStyle) {
+  if (!importStyle || !importStyle.uniform) return expr;
+  return ['case', IMPORTED_FILTER, importStyle.color, expr];
 }
 
 /**
@@ -255,4 +332,17 @@ export function lineColorMap(ornaments) {
   const out = {};
   for (const t of LINE_TYPES) out[t.id] = effectiveLineColor(t.id, ornaments);
   return out;
+}
+
+/**
+ * Grosor con el que se dibuja un tipo de línea: el que el usuario haya puesto,
+ * o el `weight` del catálogo. Es un FACTOR sobre la rampa de zoom, no un ancho
+ * en píxeles: así el mismo ajuste vale a escala regional y a escala de detalle.
+ */
+export function effectiveLineWeight(type, ornaments) {
+  const o = ornaments && ornaments[type];
+  const v = o && Number(o.width);
+  if (Number.isFinite(v) && v > 0) return v;
+  const t = LINE_TYPE_BY_ID.get(type);
+  return t ? t.weight : 1;
 }

@@ -13,12 +13,14 @@ import {
 import { openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedFeatures,
+  loadSavedImportStyle,
   loadSavedOpenTopoKey,
   loadSavedOrnaments,
   loadSavedStraboStyle,
   loadSavedStructureStyle,
   loadSavedUnits,
   saveFeatures,
+  saveImportStyle,
   saveOrnaments,
   saveStraboStyle,
   saveStructureStyle,
@@ -58,6 +60,8 @@ const savedStructureStyle = loadSavedStructureStyle();
 if (savedStructureStyle) store.setStructureStyle(savedStructureStyle);
 const savedStraboStyle = loadSavedStraboStyle();
 if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
+const savedImportStyle = loadSavedImportStyle();
+if (savedImportStyle) store.setImportStyle(savedImportStyle);
 // La clave de OpenTopography es del dispositivo, no del proyecto: se recupera
 // aquí y no se toca al abrir un .fdproj.
 const savedOpenTopoKey = loadSavedOpenTopoKey();
@@ -72,6 +76,7 @@ store.subscribe(() => {
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
   if (store.changed('structureStyle')) saveStructureStyle(store.getState().structureStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
+  if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);

@@ -29,6 +29,7 @@ export function serializeProject(name = '') {
     units: st.units,
     ornaments: st.ornaments,
     structureStyle: st.structureStyle,
+    importStyle: st.importStyle,
     settings: store.currentSettings(),
     layers: store.currentLayerState(),
   };
@@ -94,6 +95,7 @@ export function parseProject(text) {
       units: Array.isArray(raw.units) ? raw.units : null,
       ornaments: raw.ornaments || null,
       structureStyle: raw.structureStyle || null,
+      importStyle: raw.importStyle || null,
       settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
       layers: Array.isArray(raw.layers) ? raw.layers : null,
     },

@@ -89,6 +89,29 @@ body,
   border-radius: 2px;
 }
 
+/*
+ * Lazo a mano alzada. Va en SVG y no en canvas porque es una forma, no una
+ * imagen: se repinta cambiando un atributo `points` y no cuesta un frame.
+ * Cubre el mapa entero y no captura el puntero — el gesto lo está atendiendo
+ * el controlador de dibujo.
+ */
+.lasso-free {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.lasso-free polygon {
+  fill: rgba(45, 212, 191, 0.12);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+}
+
 /* Marcador de enganche, en magenta como el de QGIS: cruz sobre segmento,
    cuadrado sobre vértice. */
 .snap-marker {
@@ -744,6 +767,50 @@ body,
   cursor: default;
 }
 
+/*
+ * LA CRUZ DE CERRAR UN PANEL.
+ *
+ * Era la misma `.icon-btn` gris y fina que las flechas de orden o el aspa de
+ * quitar una capa, y con un dedo —o con el sol de frente sobre una tablet—
+ * costaba encontrarla y costaba acertarle. Ahora es un cuadrado rojo con el
+ * aspa blanca: el color dice «esto cierra» sin leer nada, y el cuadrado da el
+ * blanco de toque que un glifo suelto no tiene.
+ *
+ * El grosor del aspa se consigue con `-webkit-text-stroke` sobre el propio
+ * glifo, que es lo único que engorda un carácter sin cambiarlo por un SVG en
+ * diecinueve cabeceras. Donde no esté soportado se queda el `font-weight`, que
+ * ya lo deja bastante más marcado que antes.
+ */
+.icon-btn.close-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 6px;
+  background: #d32f2f;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 800;
+  -webkit-text-stroke: 1.1px currentColor;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.icon-btn.close-x:hover {
+  background: #e53935;
+}
+
+.icon-btn.close-x:active {
+  background: #b71c1c;
+}
+
+.icon-btn.close-x:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
 /* ---------- panel de capas ---------- */
 .layer-panel {
   position: absolute;
@@ -806,6 +873,29 @@ body,
 
 .layer-panel li.off {
   opacity: 0.5;
+}
+
+/* Cabecera de grupo del panel de capas: no es una capa, así que no lleva el
+   fondo ni el relleno de una fila. */
+.layer-panel li.layer-group {
+  padding: 10px 2px 0;
+  background: none;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Los fondos, anidados bajo su cabecera: sangrados y con una guía a la
+   izquierda para que se lea como un conjunto y no como más capas sueltas. */
+.layer-panel li.layer-nest-host {
+  padding: 0;
+  background: none;
+}
+
+.layer-panel ul.layer-nest {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
 }
 
 .layer-head {
@@ -1126,7 +1216,24 @@ input[type='radio'] {
   margin: 12px 0;
 }
 
-/* ---------- simbología de ornamentos ---------- */
+/* ---------- simbología de línea ---------- */
+
+/* Cabecera de grupo: Contactos, Fallas, Pliegues, Diques. Con los once tipos
+   en la lista, sin ellas hay que leerla entera para dar con un contacto. */
+.symb-group {
+  background: none;
+  padding: 0 2px;
+  margin-top: 14px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.symb-group:first-child {
+  margin-top: 0;
+}
+
 .symb-row {
   display: flex;
   flex-direction: column;

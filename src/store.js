@@ -1,12 +1,15 @@
 import { BASEMAPS } from './basemaps.js';
 import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
 import { adoptLayer } from './adopt.js';
+import { adoptStrabo } from './strabo/adopt.js';
 import {
   FLIPPABLE_ORNAMENT_TYPES,
   POLYGON_TYPES,
   certaintyFor,
+  defaultImportStyle,
   defaultOrnaments,
   defaultStructureStyle,
+  sanitizeImportStyle,
   sanitizeOrnaments,
   sanitizeStructureStyle,
 } from './symbology.js';
@@ -37,12 +40,43 @@ function newId() {
 }
 
 /**
+ * Las tres capas en que se reparte el dibujo propio.
+ *
+ * Antes era una sola —«Geology (drawing)»— y eso dejaba el panel de capas sin
+ * nada que ofrecer: o se veía el dibujo entero o no se veía nada. Mirar los
+ * contactos sin la mancha de las unidades encima, o quitar de en medio los
+ * cientos de símbolos de rumbo y manteo para leer la traza que hay debajo, es
+ * lo que uno hace todo el rato en QGIS, y aquí no se podía.
+ *
+ * El ORDEN DE PINTADO entre las tres no se negocia y por eso no llevan flechas
+ * en el panel: las unidades son manchas de fondo, las trazas van encima de
+ * ellas o no se leen, y las medidas encima de todo porque son puntos chicos.
+ * Cualquier otro orden produce un mapa peor, no un mapa distinto.
+ */
+export const DRAWING_LAYERS = [
+  { id: 'geology-dips', kind: 'dips', label: 'Dips (measurements)' },
+  { id: 'geology-faults', kind: 'faults', label: 'Faults, contacts & folds' },
+  { id: 'geology-units', kind: 'units', label: 'Units (polygons)' },
+];
+
+export const DRAWING_KINDS = new Set(DRAWING_LAYERS.map((l) => l.kind));
+
+/** Dónde entra una capa nueva: justo debajo del dibujo propio, sin taparlo. */
+function belowDrawing(layers) {
+  let at = 0;
+  layers.forEach((l, i) => {
+    if (DRAWING_KINDS.has(l.kind)) at = i + 1;
+  });
+  return at;
+}
+
+/**
  * El array va de arriba hacia abajo tal como se ve en el panel: el índice 0 se
  * dibuja encima de todo. MapLibre pinta al revés, así que mapView lo invierte.
  */
 function defaultLayers() {
   return [
-    { id: 'geology', kind: 'geology', label: 'Geology (drawing)', visible: true, opacity: 1 },
+    ...DRAWING_LAYERS.map((l) => ({ ...l, visible: true, opacity: 1 })),
     { id: 'contours', kind: 'contours', label: 'Contour lines', visible: true, opacity: 0.85 },
     // Sombreado calculado del mismo DEM que las curvas. Apagado por omisión:
     // sobre imagen satelital compite con el relieve que ya se ve, y encendido
@@ -89,10 +123,22 @@ let state = {
   topoTolerance: 5,
   /** Herramienta Edit Nodes: 'move' | 'add' | 'delete'. */
   vertexMode: 'move',
+  /**
+   * Forma del lazo de Elegir: 'lasso' es el trazo a mano alzada y 'rect' el
+   * rectángulo de siempre. A mano alzada de fábrica: en terreno lo que se
+   * quiere elegir es un grupo de trazos de un contacto, no lo que cabe en una
+   * caja, y rodearlos con el dedo es el gesto directo.
+   */
+  selectMode: 'lasso',
   /** Cortar dibujando una línea, o usando un elemento que ya existe. */
   cutSource: 'draw',
-  /** Parámetros de los ornamentos de falla (tamaño, espaciado, posición). */
+  /** Simbología de línea: color y grosor de todos, ornamento de los que lo llevan. */
   ornaments: defaultOrnaments(),
+  /**
+   * Cómo se pinta lo adoptado desde StraboSpot: de un color único, para
+   * distinguirlo de lo cartografiado aquí, o con la simbología normal.
+   */
+  importStyle: defaultImportStyle(),
 
   /*
    * Escala de trabajo.
@@ -515,6 +561,8 @@ export const setCutSource = (cutSource) => set({ cutSource });
 export const setSnapTolerance = (snapTolerance) => set({ snapTolerance });
 export const setTraceTolerance = (traceTolerance) => set({ traceTolerance });
 export const setVertexMode = (vertexMode) => set({ vertexMode });
+export const setSelectMode = (selectMode) =>
+  set({ selectMode: selectMode === 'rect' ? 'rect' : 'lasso' });
 
 /* ---------- simbología de ornamentos ---------- */
 
@@ -526,6 +574,11 @@ export function setOrnament(type, patch) {
 
 export function setOrnaments(ornaments) {
   set({ ornaments: sanitizeOrnaments(ornaments) });
+}
+
+/** Fusiona un cambio parcial (color, interruptor) o un objeto completo. */
+export function setImportStyle(patch) {
+  set({ importStyle: sanitizeImportStyle({ ...state.importStyle, ...patch }) });
 }
 
 export function resetOrnaments() {
@@ -1397,6 +1450,7 @@ export const SETTING_KEYS = [
   'topoEdit',
   'topoTolerance',
   'cutSource',
+  'selectMode',
   'measureMethod',
   'measureType',
   'measureOverturned',
@@ -1430,7 +1484,7 @@ export function currentSettings() {
 
 /** Visibilidad y opacidad de las capas propias, sin lo importado en la sesión. */
 export function currentLayerState() {
-  const propias = new Set(['geology', 'contours', 'hillshade', 'basemap']);
+  const propias = new Set([...DRAWING_KINDS, 'contours', 'hillshade', 'basemap']);
   return state.layers
     .filter((l) => propias.has(l.kind))
     .map((l) => ({ id: l.id, visible: l.visible, opacity: l.opacity }));
@@ -1441,7 +1495,15 @@ export function currentLayerState() {
  * repinten una vez. El historial se corta: deshacer no debe llevar de vuelta al
  * proyecto anterior.
  */
-export function loadProject({ features, units, ornaments, structureStyle, settings, layers } = {}) {
+export function loadProject({
+  features,
+  units,
+  ornaments,
+  structureStyle,
+  importStyle,
+  settings,
+  layers,
+} = {}) {
   resetHistory();
   const patch = {
     features: Array.isArray(features) ? features : [],
@@ -1455,6 +1517,7 @@ export function loadProject({ features, units, ornaments, structureStyle, settin
   if (Array.isArray(units) && units.length) patch.units = units;
   if (ornaments) patch.ornaments = sanitizeOrnaments(ornaments);
   if (structureStyle) patch.structureStyle = sanitizeStructureStyle(structureStyle);
+  if (importStyle) patch.importStyle = sanitizeImportStyle(importStyle);
   if (settings) {
     for (const k of SETTING_KEYS) {
       if (settings[k] !== undefined) patch[k] = settings[k];
@@ -1469,6 +1532,11 @@ export function loadProject({ features, units, ornaments, structureStyle, settin
   }
   if (Array.isArray(layers) && layers.length) {
     const saved = new Map(layers.map((l) => [l.id, l]));
+    // Un proyecto anterior al reparto del dibujo guarda una sola capa
+    // «geology»: su visibilidad y su opacidad valen para las tres nuevas, que
+    // es exactamente lo que ese proyecto quería decir.
+    const viejo = saved.get('geology');
+    if (viejo) for (const l of DRAWING_LAYERS) if (!saved.has(l.id)) saved.set(l.id, viejo);
     patch.layers = state.layers.map((l) => {
       const s = saved.get(l.id);
       if (!s) return l;
@@ -1501,7 +1569,7 @@ export function setLayerOpacity(id, opacity) {
 export function setStraboData(data) {
   const layers = state.layers.filter((l) => l.kind !== 'strabo');
   if (data) {
-    const at = layers.findIndex((l) => l.kind === 'geology') + 1;
+    const at = belowDrawing(layers);
     layers.splice(at, 0, {
       id: 'strabo',
       kind: 'strabo',
@@ -1518,6 +1586,47 @@ export function setStraboData(data) {
 
 export function clearStraboData() {
   setStraboData(null);
+}
+
+/**
+ * Pasa el dataset de StraboSpot al dibujo, donde sí se puede editar.
+ *
+ * Lo adoptado DEJA de estar en la capa de consulta: mantener las dos cosas
+ * pintaría cada falla dos veces, una editable y otra no, y al mirar el mapa no
+ * habría forma de saber cuál se está tocando. Las observaciones —muestras y
+ * anotaciones— se quedan donde estaban: no son geometría cartográfica y el
+ * dibujo no tiene dónde ponerlas sin convertirlas en algo que no son.
+ *
+ * Va al historial en un solo paso, así que deshacer devuelve exactamente el
+ * estado anterior, capa de StraboSpot incluida.
+ *
+ * @returns {{features, units, warnings, stats}|null} null si no hay datos
+ */
+export function adoptStraboData() {
+  const data = state.strabo;
+  if (!data) return null;
+
+  const r = adoptStrabo(data, { units: state.units, newId });
+  if (r.features.length === 0) return r;
+
+  pushHistorySnapshot(snapshotOf(['features', 'units', 'strabo', 'layers']));
+
+  const vacia = { type: 'FeatureCollection', features: [] };
+  const quedanObs = !!(data.observacion && data.observacion.features.length);
+  const resto = quedanObs
+    ? { ...data, estructuras: vacia, lineas: vacia }
+    : null;
+
+  set({
+    features: [...state.features, ...r.features],
+    units: r.units,
+    strabo: resto,
+    layers: resto ? state.layers : state.layers.filter((l) => l.kind !== 'strabo'),
+    // La selección apuntaba al dibujo anterior; dejarla sería señalar cosas
+    // que ya no son las que se está mirando.
+    selection: [],
+  });
+  return r;
 }
 
 /** Fusiona un cambio parcial (deslizador) o un objeto completo (localStorage). */
@@ -1549,7 +1658,7 @@ export function addImportedLayers(list) {
     visible: true,
     opacity: 1,
   }));
-  const at = state.layers.findIndex((l) => l.kind === 'geology') + 1;
+  const at = belowDrawing(state.layers);
   const layers = state.layers.slice();
   layers.splice(at, 0, ...entries);
   set({ imported: [...state.imported, ...added], layers });
