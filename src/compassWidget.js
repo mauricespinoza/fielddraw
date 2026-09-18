@@ -37,7 +37,6 @@ const el = (name, attrs = {}) => {
 const PAPEL = '#f2f5f8';
 const TINTA = '#1b2430';
 const TENUE = '#5b6876';
-const RUMBO = '#0b5cad';
 const MANTEO = '#c2410c';
 
 /** Cuadrante del acimut, que es como se dicta en terreno. */
@@ -113,20 +112,33 @@ export function buildCompass(svg, { size = 240 } = {}) {
   }
   svg.appendChild(g);
 
+  /*
+   * UNA AGUJA DE BRÚJULA, NO EL SÍMBOLO DE RUMBO Y MANTEO DEL MAPA.
+   *
+   * La versión anterior dibujaba literalmente ese símbolo —un trazo largo de
+   * rumbo con un tic corto de manteo a un lado— porque es el mismo dato, pero
+   * sobre un disco graduado con los cuatro cardinales eso se lee como un
+   * error: parece un compás mal calibrado, no una brújula. Esto en cambio es
+   * un rombo alargado partido en dos mitades de color —la punta clara
+   * apuntando a favor del manteo, la cola oscura al lado contrario—, que es
+   * literalmente cómo se ve la aguja de cualquier brújula de geólogo. Gira
+   * por `dipAzimuth` y no por el rumbo: es la única de las dos direcciones
+   * que apunta a un lado sin ambigüedad —el rumbo por sí solo es una recta,
+   * no una flecha— y es la que de verdad se quiere leer de un vistazo.
+   */
   const needle = el('g', { class: 'compass-needle', visibility: 'hidden' });
-  // El trazo largo es el rumbo; el tic corto sale hacia la DERECHA del rumbo,
-  // que es donde cae el manteo por la regla de la mano derecha. Quien lee el
-  // símbolo en el mapa lee exactamente lo mismo aquí.
-  const strikeLine = el('line', {
-    x1: cx, y1: cy - R + 10, x2: cx, y2: cy + R - 10,
-    stroke: RUMBO, 'stroke-width': 4, 'stroke-linecap': 'round',
+  const L = R - 14; // qué tan larga es la aguja
+  const W = 9; // medio ancho en el centro, donde el rombo es más ancho
+  const cola = el('polygon', {
+    points: `${cx},${cy + L} ${cx + W},${cy} ${cx - W},${cy}`,
+    fill: TINTA, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
   });
-  const dipTick = el('line', {
-    x1: cx, y1: cy, x2: cx + 22, y2: cy,
-    stroke: MANTEO, 'stroke-width': 4.5, 'stroke-linecap': 'round',
+  const punta = el('polygon', {
+    points: `${cx},${cy - L} ${cx + W},${cy} ${cx - W},${cy}`,
+    fill: MANTEO, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
   });
-  const hub = el('circle', { cx, cy, r: 4, fill: TINTA });
-  needle.append(strikeLine, dipTick, hub);
+  const hub = el('circle', { cx, cy, r: 4, fill: PAPEL, stroke: TINTA, 'stroke-width': 1.4 });
+  needle.append(cola, punta, hub);
   svg.appendChild(needle);
 
   const label = el('text', {
@@ -160,9 +172,13 @@ export function buildCompass(svg, { size = 240 } = {}) {
       return;
     }
     needle.setAttribute('visibility', 'visible');
-    // La aguja gira con el rumbo: `g` ya está fijo, así que basta rotar el
-    // grupo entero alrededor del centro.
-    needle.setAttribute('transform', `rotate(${reading.strike} ${cx} ${cy})`);
+    // La aguja gira con la dirección de manteo, no con el rumbo: es la única
+    // de las dos que apunta a un lado sin ambigüedad, así que es lo que tiene
+    // que leerse de un vistazo como en cualquier brújula real. Sin manteo
+    // medido (`dipAzimuth` ausente) no hay a dónde apuntar y se usa el rumbo
+    // + 90° por defecto, la misma convención que usa el resto de la app.
+    const az = Number.isFinite(reading.dipAzimuth) ? reading.dipAzimuth : reading.strike + 90;
+    needle.setAttribute('transform', `rotate(${az} ${cx} ${cy})`);
     const strike = String(Math.round(reading.strike) % 360).padStart(3, '0');
     label.textContent = `${strike}/${Math.round(reading.dip)}`;
 
@@ -171,8 +187,8 @@ export function buildCompass(svg, { size = 240 } = {}) {
       trozos.push(`±${Math.round(reading.strikeSd * 10) / 10}° / ±${Math.round(reading.dipSd * 10) / 10}°`);
     }
     // Hacia dónde cae el manteo: es lo primero que se comprueba de una medida
-    // en la libreta, y con la sola cifra de rumbo RHR hay que deducirlo.
-    const az = Number.isFinite(reading.dipAzimuth) ? reading.dipAzimuth : reading.strike + 90;
+    // en la libreta, y con la sola cifra de rumbo RHR hay que deducirlo. Es
+    // el mismo `az` que ya orientó la aguja, arriba.
     if (reading.dip > 0.5) trozos.push(`dips ${cuadrante(az)}`);
     sub.textContent = trozos.join(' · ');
   }

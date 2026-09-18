@@ -229,15 +229,6 @@ let state = {
    * `deviceOrientation.js`).
    */
   deviceReading: null,
-  /**
-   * Id de la última medida recién creada, cualquiera sea el método. Es una
-   * SEÑAL, no un dato: existe para que la interfaz sepa distinguir "acaba de
-   * nacer una medida" de "alguien seleccionó una que ya estaba", que es lo
-   * que decide si se abre solo el cuadro de tipo y unidad. Antes eso se
-   * deducía de `tool === 'measure'`, y dejó de servir en cuanto crear una
-   * medida pasa a devolver la herramienta a Elegir.
-   */
-  justMeasured: null,
   /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
   structureStyle: defaultStructureStyle(),
 
@@ -673,34 +664,13 @@ export function addVertex(p) {
     // que puede estar lejos de donde el teléfono está apoyado contra la roca.
     if (state.measureMethod === 'device') return;
 
-    // Digitalizar desde el mapa: los dos primeros toques marcan la traza del
-    // rumbo. Puesto el segundo, se pasa de una vez a la fase de AJUSTE del
-    // manteo (`digitize-dip`): ya no se resuelve con un toque más sino
-    // arrastrando, tantas veces como haga falta, y se resuelve en
-    // `beginDigitizeDrag`/`moveDigitizeDrag`/`endDigitizeDrag` de
-    // `mapView.js`. `reading` empieza en `null` — todavía no hay ningún
-    // manteo que congelar, solo la traza y una guía vertical de referencia
-    // que el mapa dibuja sin que el store tenga que saber nada de ella.
-    if (state.measureMethod === 'digitize') {
-      const draft = state.draft && state.draft.kind === 'digitize-strike' ? state.draft : { kind: 'digitize-strike', coords: [] };
-      if (draft.coords.length >= 2) return; // ya se pasó a digitize-dip; no debería llegar aquí
-      const coords = [...draft.coords, p];
-      if (coords.length === 2) {
-        const [p1, p2] = coords;
-        set({
-          draft: {
-            kind: 'digitize-dip',
-            coords,
-            mid: lngLatMidpoint(p1, p2),
-            strike: geoAzimuth(p1, p2),
-            reading: null,
-          },
-        });
-        return;
-      }
-      set({ draft: { ...draft, coords } });
-      return;
-    }
+    // Digitalizar desde el mapa: la traza de rumbo se dibuja con UN
+    // arrastre, no con dos toques —lo resuelve `beginStrikeDrag`/
+    // `moveStrikeDrag`/`endStrikeDrag` en `mapView.js`, que llama a
+    // `startDigitizeDip` al soltar—, así que un toque suelto aquí no tiene
+    // nada que hacer: se ignora en vez de malinterpretarlo como un punto de
+    // un plano de tres puntos.
+    if (state.measureMethod === 'digitize') return;
 
     const draft = state.draft && state.draft.kind === 'plane' ? state.draft : { kind: 'plane', coords: [] };
     const coords = [...draft.coords, p];
@@ -751,11 +721,11 @@ export function appendStroke(pts) {
 
 export function undoVertex() {
   if (!state.draft) return;
-  // La fase de ajuste del manteo no tiene "un vértice más" que quitar —sus
-  // dos coordenadas son fijas, la traza de rumbo entera— así que deshacer
-  // aquí vuelve a pedir el segundo punto de esa traza, no recorta la lista.
+  // La fase de ajuste del manteo no tiene "un vértice más" que quitar: la
+  // traza de rumbo se dibujó entera de un solo arrastre, así que deshacer
+  // aquí descarta el intento completo, igual que Discard.
   if (state.draft.kind === 'digitize-dip') {
-    set({ draft: { kind: 'digitize-strike', coords: state.draft.coords.slice(0, 1) } });
+    set({ draft: null });
     return;
   }
   const coords = state.draft.coords.slice(0, -1);
@@ -767,16 +737,41 @@ export function cancelDraft() {
 }
 
 /**
- * Congela la lectura del método Digitize tras soltar un arrastre: el manteo
- * y su dirección quedan guardados en el borrador, listos para que `Done`
- * —`finishDraft()`— los convierta en la medida, o para que un nuevo arrastre
- * los vuelva a corregir. El rumbo no cambia aquí: lo fijan los dos puntos de
- * la traza, ya puestos.
+ * Abre la fase de AJUSTE del manteo del método Digitize, con la traza de
+ * rumbo ya dibujada de un solo arrastre en el mapa (ver `beginStrikeDrag` en
+ * `mapView.js`). `reading` empieza en `null`: todavía no hay ningún manteo
+ * que congelar, solo la traza y una guía vertical de referencia que el mapa
+ * dibuja sin que el store tenga que saber nada de ella.
  */
-export function setDigitizeDipReading(reading) {
+export function startDigitizeDip(p1, p2) {
+  set({
+    draft: {
+      kind: 'digitize-dip',
+      coords: [p1, p2],
+      mid: lngLatMidpoint(p1, p2),
+      strike: geoAzimuth(p1, p2),
+      reading: null,
+    },
+  });
+}
+
+/**
+ * Congela la lectura del método Digitize tras soltar un arrastre: el manteo,
+ * su dirección y el rumbo quedan guardados en el borrador, listos para que
+ * `Done` —`finishDraft()`— los convierta en la medida, o para que un nuevo
+ * arrastre los vuelva a corregir.
+ *
+ * El RUMBO viaja aquí y no se queda fijo desde `startDigitizeDip`: arrastrar
+ * al lado opuesto del que ya se había elegido no es un manteo con la misma
+ * traza, es la MISMA traza leída con la regla de la mano derecha volteada
+ * 180° —`resolveDipSide` en `structure.js` hace esa cuenta—, y guardar el
+ * rumbo viejo con el manteo nuevo rompería la relación `dipAzimuth = rumbo +
+ * 90` que el resto de la app da por cierta siempre.
+ */
+export function setDigitizeDipReading({ strike, dip, dipAzimuth }) {
   const d = state.draft;
   if (!d || d.kind !== 'digitize-dip') return;
-  set({ draft: { ...d, reading } });
+  set({ draft: { ...d, strike, reading: { dip, dipAzimuth } } });
 }
 
 export function finishDraft() {
@@ -1206,15 +1201,16 @@ export function createMeasurement({
    * Colocada la medida, la herramienta vuelve a ELEGIR.
    *
    * Un rumbo y manteo se toma de uno en uno y se confirma de uno en uno: lo
-   * que sigue a colocarlo es mirar qué quedó y corregirle el tipo o la
-   * unidad, no colocar otro a ciegas. Dejando puesta la herramienta de medir,
-   * el siguiente toque en el mapa creaba una medida más —normalmente sin
-   * querer, al ir a tocar la que se acababa de poner— y encima mantenía a la
-   * vista la paleta de Surface, que pregunta lo mismo que el cuadro de tipo y
-   * unidad que se abre al crearla: dos sitios para contestar lo mismo.
+   * que sigue a colocarlo es mirar qué quedó, no colocar otro a ciegas.
+   * Dejando puesta la herramienta de medir, el siguiente toque en el mapa
+   * creaba una medida más —normalmente sin querer, al ir a tocar la que se
+   * acababa de poner—. El tipo de superficie y la unidad ya se eligieron en
+   * la paleta ANTES de tocar el mapa; corregirlos después, si hace falta, es
+   * cosa del menú de propiedades (mantener pulsado), no de un cuadro que
+   * los vuelva a preguntar.
    *
    * `selection` queda en la medida nueva, así que Elegir la muestra ya
-   * seleccionada y el cuadro de tipo y unidad opera sobre ella.
+   * seleccionada.
    */
   set({
     features: [...state.features, feature],
@@ -1222,7 +1218,6 @@ export function createMeasurement({
     selection: [id],
     pendingPlane: null,
     tool: 'select',
-    justMeasured: id,
   });
   return feature;
 }

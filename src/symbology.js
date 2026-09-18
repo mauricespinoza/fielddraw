@@ -63,19 +63,23 @@ export const POLYGON_TYPES = [
 /**
  * Superficies planares que se miden con rumbo y manteo.
  *
- * Deliberadamente corta: son las cuatro que se anotan en una jornada normal de
+ * Deliberadamente corta: son las que se anotan en una jornada normal de
  * cartografía. Cada una lleva su color porque en un afloramiento con
  * estratificación y foliación superpuestas hay que distinguirlas de un vistazo,
  * y el símbolo de ambas es el mismo trazo con su tic.
+ *
+ * El margen de un dique NO es una de ellas: un dique es un CUERPO, no una
+ * superficie suelta, y ya se cartografía como tal —con su propia traza en
+ * `LINE_TYPES` y, si hace falta rellenarlo, su propia unidad en
+ * `POLYGON_TYPES`—. Tratarlo además como un quinto tipo de medida puntual
+ * duplicaba la pregunta: "¿qué es esto?" ya la contesta la traza o el
+ * polígono que se dibuja, y no hace falta volver a contestarla en cada punto.
  */
 export const STRUCTURE_TYPES = [
   { id: 'bedding', short: 'S₀', label: 'Bedding', color: '#212121' },
   { id: 'foliation', short: 'S₁', label: 'Foliation / cleavage', color: '#2E7D32' },
   { id: 'joint', short: 'Jnt', label: 'Joint', color: '#1565C0' },
   { id: 'fault-plane', short: 'Flt', label: 'Fault plane', color: '#D32F2F' },
-  // Mismo rojo que la traza de un dique (DIKE_COLOR): son cuerpos, no límites,
-  // y el margen medido tiene que saltar igual que su traza.
-  { id: 'dike', short: 'Dyke', label: 'Dyke margin', color: DIKE_COLOR },
 ];
 
 export const STRUCTURE_TYPE_BY_ID = new Map(STRUCTURE_TYPES.map((t) => [t.id, t]));

@@ -247,6 +247,50 @@ console.log('== geometría geográfica de Digitize ==');
   ok('distancia positiva entre dos puntos distintos', S.geoDistance([-71.4, -37.2], [-71.39, -37.2]) > 0);
 }
 
+console.log('== qué lado se arrastró (Digitize) ==');
+
+// Arrastrar hacia el candidato A (rumboBase + 90) no toca el rumbo.
+{
+  const r = S.resolveDipSide(40, 130); // candA = 130
+  ok('lado A: el rumbo no cambia', r.strike === 40);
+  ok('lado A: dipAzimuth es el candidato A', r.dipAzimuth === 130);
+}
+
+// Arrastrar hacia el candidato B (rumboBase + 270) voltea el rumbo 180°: es
+// la MISMA traza, leída con la convención de la mano derecha al revés.
+{
+  const r = S.resolveDipSide(40, 310); // candB = 310
+  ok('lado B: el rumbo se voltea 180°', r.strike === 220);
+  ok('lado B: dipAzimuth es el candidato B', r.dipAzimuth === 310);
+}
+
+// La invariante que el resto de la app da por cierta siempre, en cualquier
+// rumbo base y cualquier lado.
+{
+  for (const strikeBase of [0, 40, 90, 179, 271, 359]) {
+    for (const dragAzimuth of [strikeBase + 91, strikeBase - 91, strikeBase + 200]) {
+      const r = S.resolveDipSide(strikeBase, ((dragAzimuth % 360) + 360) % 360);
+      ok(`dipAzimuth = rumbo + 90 (base ${strikeBase}, arrastre ${dragAzimuth})`,
+        cerca(((r.dipAzimuth - r.strike + 720) % 360), 90, 1e-6),
+        `strike=${r.strike} dipAzimuth=${r.dipAzimuth}`);
+    }
+  }
+}
+
+// Arrastrar EXACTAMENTE hacia uno de los dos candidatos siempre elige ESE
+// lado, sea cual sea el rumbo base — no hay ningún ángulo donde el criterio
+// de "más cerca" se equivoque de lado.
+{
+  for (const strikeBase of [0, 17, 123, 250, 359]) {
+    const candA = ((strikeBase + 90) % 360 + 360) % 360;
+    const candB = ((strikeBase + 270) % 360 + 360) % 360;
+    ok(`hacia el propio candidato A (base ${strikeBase})`,
+      S.resolveDipSide(strikeBase, candA).dipAzimuth === candA);
+    ok(`hacia el propio candidato B (base ${strikeBase})`,
+      S.resolveDipSide(strikeBase, candB).dipAzimuth === candB);
+  }
+}
+
 console.log('== flujo en el store ==');
 const store = await import(BASE + 'store.js');
 
@@ -266,14 +310,11 @@ store.addVertex([-71.4, -37.2]);
   ok('deriva la dirección de manteo', p.dipAzimuth === 210);
   ok('queda seleccionada para poder corregirla', store.getState().selection[0] === p.id);
   ok('no deja borrador abierto', store.getState().draft === null);
-  /*
-   * Colocada la medida, la herramienta vuelve a Elegir: el siguiente toque en
-   * el mapa ya no crea otra sin querer, y el cuadro de tipo y unidad queda
-   * como el único sitio donde se pregunta qué es lo que se acaba de medir.
-   */
+  // Colocada la medida, la herramienta vuelve a Elegir: el siguiente toque en
+  // el mapa ya no crea otra sin querer. El tipo y la unidad ya se eligieron
+  // en la paleta antes de tocar el mapa, así que no hace falta preguntarlos
+  // otra vez.
   ok('la herramienta vuelve a Elegir', store.getState().tool === 'select');
-  ok('y lo anuncia para que la interfaz abra el cuadro de tipo y unidad',
-    store.getState().justMeasured === p.id);
 }
 
 // El rumbo y el manteo tienen dominio propio: 400° y 120° no existen.
@@ -322,22 +363,27 @@ store.addVertex([-71.39, -37.2]);
 store.finishDraft();
 ok('dos nodos no producen medida', store.getState().pendingPlane === null);
 
-// --- digitalizar desde el mapa: dos toques, luego arrastrar (y arrastrar de
-// nuevo) para congelar el manteo, y solo Done lo convierte en medida ---
+// --- digitalizar desde el mapa: UN arrastre dibuja la traza de rumbo (ya no
+// dos toques), luego arrastrar (y arrastrar de nuevo) congela el manteo, y
+// solo Done lo convierte en medida ---
 store.clearFeatures();
 store.setTool('measure');
 store.setMeasureMethod('digitize');
+
+// Un toque suelto ya no hace nada: la traza se dibuja arrastrando
+// (`beginStrikeDrag`/`endStrikeDrag` en mapView.js llaman a
+// `startDigitizeDip` al soltar), y `addVertex` es la puerta de los TOQUES.
 store.addVertex([-71.4, -37.2]);
-ok('primer toque: sigue en digitize-strike', store.getState().draft.kind === 'digitize-strike');
-ok('con un solo punto', store.getState().draft.coords.length === 1);
-store.addVertex([-71.39, -37.2]);
+ok('un toque suelto no abre ningún borrador', store.getState().draft === null);
+
+// Traza E-W (mismo lat, lng distinto): el rumbo geográfico real es 90°, y
+// el punto medio el promedio simple de las dos coordenadas.
+store.startDigitizeDip([-71.4, -37.2], [-71.39, -37.2]);
 {
   const d = store.getState().draft;
-  ok('el segundo toque pasa de una vez a la fase de ajuste', d.kind === 'digitize-dip');
+  ok('el arrastre abre de una vez la fase de ajuste', d.kind === 'digitize-dip');
   ok('con las dos puntas de la traza', d.coords.length === 2);
   ok('todavía sin ninguna lectura', d.reading === null);
-  // Traza E-W (mismo lat, lng distinto): el rumbo geográfico real es 90°, y
-  // el punto medio el promedio simple de las dos coordenadas.
   ok('el rumbo ya queda fijo por los dos puntos', cerca(d.strike, 90, 0.5), `${d.strike}`);
   ok('y el punto medio también', cerca(d.mid[0], -71.395) && cerca(d.mid[1], -37.2));
 }
@@ -349,22 +395,19 @@ ok('y descarta el intento entero', store.getState().draft === null);
 
 // Se rehace la traza para lo que sigue.
 store.setTool('measure');
-store.addVertex([-71.4, -37.2]);
-store.addVertex([-71.39, -37.2]);
+store.startDigitizeDip([-71.4, -37.2], [-71.39, -37.2]);
 
-// Deshacer en esta fase no recorta coordenadas —son fijas, las dos puntas de
-// la traza— sino que vuelve a pedir el segundo punto.
+// Deshacer en esta fase no recorta coordenadas —la traza se dibujó entera de
+// un solo arrastre, no hay "un punto menos" que pedir— sino que descarta el
+// intento completo, igual que Discard.
 store.undoVertex();
-{
-  const d = store.getState().draft;
-  ok('deshacer vuelve a digitize-strike', d.kind === 'digitize-strike');
-  ok('con el primer punto puesto', d.coords.length === 1);
-}
-store.addVertex([-71.39, -37.2]);
+ok('deshacer en esta fase descarta el intento entero', store.getState().draft === null);
+store.startDigitizeDip([-71.4, -37.2], [-71.39, -37.2]);
 
 // Un arrastre soltado congela la lectura en el borrador, sin crear nada
-// todavía: es la diferencia con el diseño de un solo gesto.
-store.setDigitizeDipReading({ dip: 42, dipAzimuth: 90 });
+// todavía: es la diferencia con el diseño de un solo gesto. Arrastrando hacia
+// el lado A (candA = rumbo + 90 = 180°) el rumbo no cambia.
+store.setDigitizeDipReading({ strike: 90, dip: 42, dipAzimuth: 180 });
 {
   const d = store.getState().draft;
   ok('la lectura queda congelada en el borrador', d.reading && d.reading.dip === 42);
@@ -372,20 +415,29 @@ store.setDigitizeDipReading({ dip: 42, dipAzimuth: 90 });
 }
 
 // Se puede volver a arrastrar cuantas veces haga falta: la última lectura es
-// la que cuenta.
-store.setDigitizeDipReading({ dip: 67, dipAzimuth: 270 });
-ok('un segundo arrastre reemplaza la lectura', store.getState().draft.reading.dip === 67);
+// la que cuenta. Esta vez hacia el lado B (candB = rumbo + 270 = 0°): por la
+// regla de la mano derecha eso es EL MISMO plano con el rumbo volteado 180°
+// (`resolveDipSide`), y `setDigitizeDipReading` lo guarda ya volteado.
+store.setDigitizeDipReading({ strike: 270, dip: 67, dipAzimuth: 0 });
+{
+  const d = store.getState().draft;
+  ok('un segundo arrastre reemplaza la lectura', d.reading.dip === 67);
+  ok('...y el rumbo que lo acompaña', d.strike === 270);
+}
 
-// Ahora sí: Done crea la medida con el rumbo de la traza y el manteo
-// congelado, en el punto medio de los dos toques.
+// Ahora sí: Done crea la medida con el rumbo y el manteo de la última
+// lectura congelada, en el punto medio de los dos extremos de la traza.
 store.finishDraft();
 {
   const fs = store.getState().features;
   ok('Done crea la medida', fs.length === 1);
   const p = fs[0].properties;
-  ok('con el rumbo de la traza', cerca(p.strike, 90, 0.5), `${p.strike}`);
+  ok('con el rumbo de la última lectura, no el de la traza sin más', p.strike === 270);
   ok('y el manteo de la última lectura congelada', p.dip === 67);
-  ok('la dirección de manteo también es la congelada', p.dipAzimuth === 270);
+  ok('la dirección de manteo también es la congelada', p.dipAzimuth === 0);
+  // La relación que el resto de la app da por cierta siempre.
+  ok('dipAzimuth = strike + 90, por la regla de la mano derecha',
+    S.norm360(p.dipAzimuth) === S.norm360(p.strike + 90));
   ok('el método queda declarado', p.method === 'digitize');
   ok('vuelve a Elegir, como cualquier otra medida', store.getState().tool === 'select');
 }
@@ -397,9 +449,8 @@ store.finishDraft();
 // Cancelar en cualquier momento descarta todo: no queda ni la traza.
 store.clearFeatures();
 store.setTool('measure');
-store.addVertex([-71.4, -37.2]);
-store.addVertex([-71.39, -37.2]);
-store.setDigitizeDipReading({ dip: 30, dipAzimuth: 90 });
+store.startDigitizeDip([-71.4, -37.2], [-71.39, -37.2]);
+store.setDigitizeDipReading({ strike: 90, dip: 30, dipAzimuth: 180 });
 store.cancelDraft();
 ok('cancelar no crea ninguna medida', store.getState().features.length === 0);
 ok('y no deja nada del intento', store.getState().draft === null);
@@ -407,7 +458,7 @@ ok('y no deja nada del intento', store.getState().draft === null);
 // `setDigitizeDipReading` no hace nada fuera de la fase de ajuste: no hay
 // ninguna traza sobre la que congelar un manteo.
 store.setMeasureMethod('manual');
-store.setDigitizeDipReading({ dip: 10, dipAzimuth: 10 });
+store.setDigitizeDipReading({ strike: 0, dip: 10, dipAzimuth: 90 });
 ok('sin borrador de digitize-dip, no pasa nada', store.getState().draft === null);
 
 // --- editar a mano invalida la incertidumbre del ajuste ---

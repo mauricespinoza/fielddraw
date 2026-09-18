@@ -1349,31 +1349,36 @@ paleta:
 | **Tres puntos** | tres toques sobre la misma superficie | el problema clásico: tres cotas del DEM definen un plano exacto |
 | **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
 | **Device** | apoyar el dorso del teléfono contra la roca y pulsar *Add measurement* | los sensores del propio teléfono, promediados mientras está apoyado; la medida se ancla en la posición del GPS |
-| **Digitize** | dos toques sobre la traza del rumbo, luego arrastrar —tantas veces como haga falta— hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
+| **Digitize** | UN arrastre dibuja la traza del rumbo, luego arrastrar —tantas veces como haga falta— hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
 
 ### Colocada la medida, la herramienta vuelve a Elegir
 
 Cualquiera sea el método, en cuanto la medida existe la herramienta pasa a
-**Select** con la medida nueva seleccionada, y se abre **al pie de la pantalla**
-un cuadro con lo único que hay que confirmar en el acto: el tipo de superficie y
-la unidad. Encabeza con el rumbo y el manteo recién anotados.
+**Select** con la medida nueva seleccionada, para poder mirarla y corregirla sin
+crear otra sin querer con el toque siguiente. El tipo de superficie y la unidad
+NO se vuelven a preguntar al colocarla: ya se eligieron en la paleta de *Dip*
+antes de tocar el mapa, y un cuadro que los repitiera apenas nace la medida
+sería la misma pregunta dos veces, no dos preguntas distintas. Corregirlos
+después de verla puesta —o cualquier otro número— es cosa del menú de
+propiedades de siempre: mantener pulsado sobre la medida.
 
-Las dos cosas son deliberadas y responden a lo mismo. Con la herramienta puesta,
-el toque siguiente —normalmente el de ir a tocar la medida que se acaba de
-colocar— creaba otra sin querer; y mientras la paleta de *Dip* seguía a la
-vista, el tipo de superficie se preguntaba en **dos sitios a la vez**, la paleta
-y el cuadro, sin que nada dijera cuál mandaba. Al pie, además, se contesta con
-el pulgar sin soltar el teléfono, que es la mano que acaba de colocar el punto.
+### Digitize: un arrastre dibuja, otro mantea, y soltar congela sin guardar
 
-### Digitize: arrastrar congela, no guarda
+La traza de rumbo se dibuja con **un solo arrastre**: el punto donde baja el
+dedo es el primer extremo, y el gesto entero —sin soltar— la traza, como se
+dibuja una línea con una regla. Soltar fija el segundo extremo y pasa de una
+vez a la fase del manteo.
 
-Puestos los dos toques que marcan la traza del rumbo, el mapa muestra un
-**palito vertical de guía** —el manteo de partida, 90°, hacia un lado
-cualquiera— junto con el aviso de que hay que arrastrar para convertirlo en un
-dato de verdad. Arrastrar hacia uno u otro lado del palito fija la dirección
-del manteo por hacia dónde se tira, y su magnitud por cuánto: un número grande
-en pantalla lo dice en vivo mientras dura el gesto, para que se lea sin que el
-dedo tape la barra de estado.
+Ahí el mapa muestra un **palito vertical de guía** —el manteo de partida, 90°,
+hacia un lado cualquiera— junto con el aviso de que hay que arrastrar para
+convertirlo en un dato de verdad. Arrastrar hacia uno u otro lado del palito
+fija la dirección del manteo por hacia dónde se tira, y su magnitud por cuánto:
+un número grande en pantalla lo dice en vivo mientras dura el gesto, para que
+se lea sin que el dedo tape la barra de estado. El palito dibujado es
+**siempre ortogonal al rumbo**, arrastre el dedo como arrastre: lo que cambia
+con la posición exacta del dedo es cuánto se aleja del centro —la magnitud—, no
+el ángulo del trazo, que sale de la dirección de manteo ya resuelta y no de
+dónde cae la punta del dedo.
 
 Soltar el dedo **congela** esa lectura, no la guarda: es la diferencia con el
 diseño anterior, de un solo arrastre que decidía todo de golpe. Con la lectura
@@ -1385,7 +1390,12 @@ descarta el intento entero, traza incluida.
 Se usa la **regla de la mano derecha**: el manteo cae 90° en sentido horario
 desde el rumbo. Es la misma convención con la que ya se rotan por `Strike` los
 símbolos importados de StraboSpot, así que un afloramiento propio y uno ajeno
-se leen igual, aquí y en QGIS.
+se leen igual, aquí y en QGIS. Una traza de rumbo por sí sola es una recta sin
+sentido —"rumbo 040" y "rumbo 220" son la misma línea— así que arrastrar al
+lado que ya no es el elegido no es "otro rumbo": es el MISMO plano leído con la
+convención volteada 180°, y el rumbo que se guarda se voltea con él para que
+`dipAzimuth = rumbo + 90` siga cumpliéndose siempre, como en cualquier otro
+método de esta herramienta.
 
 El símbolo cambia solo según el manteo: por debajo de 3°, el de **horizontal**
 —círculo con cruz, sin tic— porque un manteo tan bajo medido sobre un DEM de
@@ -1498,6 +1508,23 @@ desviación vale `1/sen(manteo)` grados de rumbo. Por eso el rumbo de una
 superficie tumbada se reporta mucho menos preciso aunque el teléfono no se haya
 movido: no es ruido, es que **no está definido**, y la cifra tiene que decirlo.
 
+#### Cuánto hay que esperar, y por qué
+
+La dispersión que decide si la lectura está lista se mide sobre TODA una
+ventana móvil de muestras, así que lo que de verdad fija cuánto hay que
+sostener el teléfono quieto es el **largo de esa ventana**, no cuántas muestras
+hacen falta: el sensor entrega de sobra las que se piden en una fracción de
+cualquier ventana razonable, y una sola muestra ruidosa de mientras el teléfono
+todavía se acomodaba contra la roca mantiene la tanda "no lista" hasta que esa
+muestra vieja se cae de la ventana. La ventana dura un segundo —bajó de los dos
+de antes— sin aflojar el umbral de 4°: no se acepta como buena una lectura más
+ruidosa, solo se exige esa misma quietud durante menos tiempo. El costo real es
+que una ventana más corta perdona algo más una pausa breve a media sacudida —con
+dos segundos, medio segundo de pausa en medio de un ajuste no alcanzaba a
+limpiar la ventana de las muestras ruidosas de alrededor; con uno, podría— pero
+sigue siendo mucho más que lo que tarda en asentarse físicamente un teléfono
+contra una roca.
+
 ### El estereograma
 
 **Red de Schmidt** —equiareal, hemisferio inferior— de las medidas
@@ -1517,6 +1544,18 @@ agrupa solo donde el afloramiento tiene una fábrica, y el **ciclograma**, que e
 lo que se mira con cinco, cuando lo que interesa es dónde se cortan dos planos o
 qué cinturón describen. Ninguna de las dos sustituye a la otra.
 
+Una tercera casilla, **Mean vector**, promedia los polos que se están mirando
+—el vector unitario medio de sus direcciones, sin corrección de signo: un polo
+no es axial como un rumbo de brújula, `poleOf` entrega siempre la misma mitad
+de la esfera— y lo dibuja aparte, con una mira propia (círculo magenta con una
+cruz blanca) que nunca se confunde con un polo real. Al lado del gráfico se lee
+el resultado en rumbo (mano derecha) y manteo, más `R`, el largo del vector
+resultante dividido por el número de polos: 1 es el cúmulo entero apuntando
+exactamente igual, cerca de 0 es disperso en cualquier dirección — la misma
+cifra que usa la estadística de Fisher para decir qué tan apretado está un
+cúmulo, y viaja con el número por la misma razón que el resto de la app nunca
+da un promedio sin decir cuánto pesa.
+
 Va sobre **papel claro** aunque la aplicación sea oscura, por las dos razones que
 mandan aquí: en terreno, al sol, una malla de líneas finas claras sobre fondo
 oscuro no se ve; y el destino de la figura es una memoria o un paper, donde va
@@ -1525,10 +1564,14 @@ que ninguna de las tres versiones puede desalinearse de las otras.
 
 Un lazo propio sobre la red marca un cúmulo de polos y lo devuelve a la
 selección del mapa. La pestaña **Compass** enseña la brújula en vivo del
-teléfono, de referencia, sin anotar nada: en tonos claros —que es lo único que se
-lee al sol— y rotulada `Strike (RHR) / Dip`, porque un «120/45» a secas no dice
-si esos 120 son rumbo por la mano derecha o dirección de manteo, y las dos
-lecturas difieren en 90°.
+teléfono, de referencia, sin anotar nada: en tonos claros —que es lo único que
+se lee al sol—, dibujada como una AGUJA de verdad —un rombo partido en dos
+mitades de color, la punta apuntando a la dirección de manteo, que es la única
+de las dos direcciones que apunta a un lado sin ambigüedad— y no como el
+símbolo de rumbo y manteo del mapa, que sobre un disco graduado con los cuatro
+cardinales se leía como una brújula mal calibrada. El número debajo va rotulado
+`Strike (RHR) / Dip`, porque un «120/45» a secas no dice si esos 120 son rumbo
+por la mano derecha o dirección de manteo, y las dos lecturas difieren en 90°.
 
 ### Espesor estratigráfico
 

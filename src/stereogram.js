@@ -39,6 +39,19 @@ export function poleOf(strike, dip) {
 }
 
 /**
+ * El inverso de `poleOf`: rumbo y manteo del plano cuyo polo apunta a
+ * `{trend, plunge}`. Deshace exactamente la misma cuenta —`trend =
+ * dipAzimuth + 180`, `plunge = 90 − dip`— así que sirve para leer de vuelta
+ * cualquier polo que no venga ya de un `strike/dip` conocido, como el vector
+ * medio de `meanPole`.
+ */
+export function strikeDipFromPole(trend, plunge) {
+  const dip = 90 - plunge;
+  const dipAzimuth = norm360(trend - 180);
+  return { strike: norm360(dipAzimuth - 90), dip, dipAzimuth };
+}
+
+/**
  * Punto {x, y} de una dirección {trend, plunge} en la red equiareal de
  * Schmidt, relativo al centro y en unidades del radio `R`.
  *
@@ -100,6 +113,47 @@ export function countsByType(points) {
   const out = new Map();
   for (const p of points) out.set(p.type, (out.get(p.type) || 0) + 1);
   return out;
+}
+
+/**
+ * Vector medio de un cúmulo de polos, como punto ploteable más su rumbo y
+ * manteo en la convención de siempre.
+ *
+ * Un polo es una dirección, no un eje: al revés que un rumbo de brújula —que
+ * es la misma línea mirada de los dos lados—, `poleOf` entrega SIEMPRE la
+ * misma mitad de la esfera (`plunge` cae en [0°, 90°] porque `dip` cae en
+ * [0°, 90°]), así que promediar los vectores unitarios sin más, sin ninguna
+ * corrección de signo, ya da la dirección media que corresponde.
+ *
+ * `r`, el largo del vector resultante dividido por el número de polos, es la
+ * misma cifra que usa la estadística de Fisher para decir qué tan apretado
+ * está el cúmulo: 1 es todos los polos exactamente juntos, cerca de 0 es
+ * dispersos en cualquier dirección. Viaja con el resultado por la misma razón
+ * que el resto de la app nunca da un número sin decir cuánto pesa: un rumbo y
+ * manteo medios de un cúmulo disperso son un promedio, no una medida.
+ */
+export function meanPole(points) {
+  if (points.length === 0) return null;
+  let sx = 0;
+  let sy = 0;
+  let sz = 0;
+  for (const p of points) {
+    const v = lineVector(p.trend, p.plunge);
+    sx += v.x;
+    sy += v.y;
+    sz += v.z;
+  }
+  const largo = Math.hypot(sx, sy, sz);
+  // Polos repartidos en todas direcciones —o exactamente opuestos entre
+  // sí—: el vector medio se cancela y no hay ninguna dirección que reportar.
+  if (largo < 1e-9) return null;
+
+  const plunge = Math.asin(Math.min(1, Math.max(-1, -sz / largo))) * DEG;
+  const trend = norm360(Math.atan2(sx / largo, sy / largo) * DEG);
+  const { strike, dip, dipAzimuth } = strikeDipFromPole(trend, plunge);
+  const xy = schmidtPoint(trend, plunge, 1);
+
+  return { trend, plunge, strike, dip, dipAzimuth, r: largo / points.length, n: points.length, ...xy };
 }
 
 /* ---------- geometría de la red y de los ciclogramas ---------- */

@@ -7,9 +7,10 @@
 
 import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
-import { countsByType, stereogramData } from './stereogram.js';
+import { countsByType, meanPole, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
 import { buildCompass, compassHint } from './compassWidget.js';
+import { formatStrikeDip, quadrant } from './structure.js';
 import {
   deviceOrientationSupported,
   needsOrientationPermission,
@@ -30,6 +31,10 @@ let highlighted = new Set();
 /** Qué familias se dibujan. Las dos encendidas de salida: ver `renderStereogram`. */
 let showPoles = true;
 let showPlanes = true;
+/** El vector medio se pide, no se da de fábrica: no todo cúmulo tiene uno que
+ * signifique algo, y encenderlo de entrada lo pondría a competir con el
+ * cúmulo mismo apenas se abre la pestaña. */
+let showMean = false;
 
 export function initStereogramPanel({ message } = {}) {
   onMessage = message || onMessage;
@@ -56,6 +61,10 @@ export function initStereogramPanel({ message } = {}) {
   });
   $('stereo-show-planes').addEventListener('change', (e) => {
     showPlanes = e.target.checked;
+    renderPlot();
+  });
+  $('stereo-show-mean').addEventListener('change', (e) => {
+    showMean = e.target.checked;
     renderPlot();
   });
 
@@ -105,11 +114,40 @@ function showTab(tab) {
 function renderPlot() {
   const st = store.getState();
   const data = stereogramData(st.features, st.selection);
-  lastPlot = renderStereogram($('stereo-chart'), data.points, { highlighted, showPoles, showPlanes });
+  // Del mismo cúmulo que se está mirando —la selección del mapa, o todo si
+  // no hay ninguna—, nunca de los tipos que la leyenda deja fuera: mezclar
+  // estratificación y diaclasas en un solo promedio daría un rumbo y manteo
+  // que no describe ninguna de las dos fábricas.
+  const media = meanPole(data.points);
+  lastPlot = renderStereogram($('stereo-chart'), data.points, {
+    highlighted,
+    showPoles,
+    showPlanes,
+    showMean,
+    meanVector: media,
+  });
 
   $('stereo-source-note').textContent = data.usingSelection
     ? `Plotting ${data.points.length} of ${data.total} measurement(s) — the current map selection.`
     : `Plotting all ${data.total} measurement(s) — select some on the map to plot only those.`;
+
+  const meanValue = $('stereo-mean-value');
+  if (showMean && media) {
+    meanValue.textContent =
+      `Mean vector: ${formatStrikeDip(media.strike, media.dip)} · dips ${quadrant(media.dipAzimuth)} · R = ${media.r.toFixed(2)} (n = ${media.n})`;
+    meanValue.classList.remove('hidden');
+  } else if (showMean) {
+    // Casilla encendida pero nada que promediar: sin puntos, o con un cúmulo
+    // tan disperso que el vector medio se cancela — se dice por qué en vez
+    // de dejar el hueco en blanco.
+    meanValue.textContent =
+      data.points.length === 0
+        ? 'Mean vector: no measurements plotted.'
+        : 'Mean vector: the poles are too scattered to average.';
+    meanValue.classList.remove('hidden');
+  } else {
+    meanValue.classList.add('hidden');
+  }
 
   const counts = countsByType(data.points);
   const legend = $('stereo-legend');

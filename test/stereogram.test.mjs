@@ -73,6 +73,57 @@ ok('...y lo dice', conSeleccion.usingSelection === true);
 const counts = S.countsByType(sinSeleccion.points);
 ok('cuenta por tipo', counts.get('bedding') === 2 && counts.get('joint') === 1);
 
+console.log('== vector medio de un cúmulo de polos ==');
+
+// `strikeDipFromPole` es el inverso exacto de `poleOf`: ida y vuelta sobre
+// varios rumbos y manteos.
+for (const [strike, dip] of [[0, 30], [137, 52], [270, 5], [10, 88]]) {
+  const polo = S.poleOf(strike, dip);
+  const vuelta = S.strikeDipFromPole(polo.trend, polo.plunge);
+  ok(`ida y vuelta ${strike}/${dip}: mismo rumbo`, cerca(vuelta.strike, strike), `${vuelta.strike}`);
+  ok(`ida y vuelta ${strike}/${dip}: mismo manteo`, cerca(vuelta.dip, dip), `${vuelta.dip}`);
+}
+
+// Un cúmulo de polos IDÉNTICOS promedia exactamente a ese mismo rumbo y
+// manteo, con la máxima concentración posible (r = 1).
+{
+  const iguales = [
+    S.stereogramPoint({ properties: { id: 'a', type: 'bedding', strike: 40, dip: 30 } }),
+    S.stereogramPoint({ properties: { id: 'b', type: 'bedding', strike: 40, dip: 30 } }),
+    S.stereogramPoint({ properties: { id: 'c', type: 'bedding', strike: 40, dip: 30 } }),
+  ];
+  const mp = S.meanPole(iguales);
+  ok('polos idénticos: el promedio es el mismo rumbo', cerca(mp.strike, 40));
+  ok('polos idénticos: el mismo manteo', cerca(mp.dip, 30));
+  ok('polos idénticos: concentración máxima', cerca(mp.r, 1, 1e-9));
+  ok('trae la cuenta de cuántos polos entraron', mp.n === 3);
+}
+
+// Un cúmulo APRETADO alrededor de un rumbo/manteo promedia cerca de él, con
+// una concentración alta pero no exactamente 1.
+{
+  const cerca4 = [
+    S.stereogramPoint({ properties: { id: 'a', type: 'bedding', strike: 35, dip: 28 } }),
+    S.stereogramPoint({ properties: { id: 'b', type: 'bedding', strike: 45, dip: 32 } }),
+    S.stereogramPoint({ properties: { id: 'c', type: 'bedding', strike: 38, dip: 31 } }),
+    S.stereogramPoint({ properties: { id: 'd', type: 'bedding', strike: 42, dip: 29 } }),
+  ];
+  const mp = S.meanPole(cerca4);
+  ok('cúmulo apretado: rumbo cerca del centro', Math.abs(mp.strike - 40) < 2, `${mp.strike}`);
+  ok('cúmulo apretado: manteo cerca del centro', Math.abs(mp.dip - 30) < 2, `${mp.dip}`);
+  ok('cúmulo apretado: concentración alta pero no perfecta', mp.r > 0.99 && mp.r < 1);
+}
+
+// Sin polos no hay promedio que dar.
+ok('sin datos, no hay vector medio', S.meanPole([]) === null);
+
+// Trae ya la posición proyectada, como cualquier otro punto ploteable.
+{
+  const uno = [S.stereogramPoint({ properties: { id: 'a', type: 'bedding', strike: 90, dip: 45 } })];
+  const mp = S.meanPole(uno);
+  ok('un solo polo: el vector medio es ese mismo punto', cerca(mp.x, uno[0].x) && cerca(mp.y, uno[0].y));
+}
+
 console.log('== ciclogramas ==');
 
 const radio = (p) => Math.hypot(p.x, p.y);

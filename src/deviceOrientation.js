@@ -293,10 +293,40 @@ export function orientationSpread(normales, media) {
 
 /* ---------- la captura en vivo ---------- */
 
-/** Cuánto se guarda de la ventana móvil de muestras, en milisegundos. */
-const SAMPLE_WINDOW_MS = 2000;
-/** Bajo esta cantidad de muestras la lectura se enseña pero no se ofrece para anotar. */
-const MIN_SAMPLES = 10;
+/**
+ * Cuánto se guarda de la ventana móvil de muestras, en milisegundos.
+ *
+ * ESTE NÚMERO ES LITERALMENTE CUÁNTO HAY QUE AGUANTAR QUIETO. La dispersión
+ * que decide si la lectura está lista (`READY_SPREAD_DEG`) se mide sobre
+ * TODA la ventana, así que una sola muestra ruidosa de hace 1,9 s —el
+ * teléfono todavía acomodándose contra la roca— mantiene la tanda "no lista"
+ * hasta que esa muestra vieja se cae de la ventana, sea cual sea la
+ * frecuencia del sensor. Con el teléfono ya quieto, el sensor entrega de
+ * sobra las `MIN_SAMPLES` que hacen falta en una fracción de la ventana —a
+ * 60 Hz, en menos de 20 ms— así que el número de muestras casi nunca es el
+ * cuello de botella real: lo es el LARGO de la ventana.
+ *
+ * Bajarlo de los 2000 ms de antes a 1000 no afloja el umbral de dispersión
+ * —sigue exigiendo los mismos 4°, así que no se acepta como buena una
+ * lectura más ruidosa— y a cambio corta a la mitad cuánto hay que sostener el
+ * teléfono. El costo real, y conviene decirlo, es que una ventana más corta
+ * es algo más fácil de engañar con una pausa breve a media sacudida: con
+ * 2 s, una pausa de medio segundo en medio de un ajuste no alcanza a
+ * "limpiar" la ventana de las muestras ruidosas de alrededor; con 1 s, sí
+ * podría. Sigue siendo mucho más lento de lo que se tarda en asentar
+ * físicamente un teléfono contra una roca, así que no debería notarse en la
+ * práctica.
+ */
+const SAMPLE_WINDOW_MS = 1000;
+/**
+ * Bajo esta cantidad de muestras la lectura se enseña pero no se ofrece para
+ * anotar. No es lo que fija cuánto tarda —ver la nota de `SAMPLE_WINDOW_MS`—
+ * sino un piso de seguridad para el sensor más lento: un teléfono viejo o con
+ * el sistema en ahorro de energía puede entregar bastante menos de 60
+ * muestras por segundo, y sin este mínimo una tanda de dos o tres muestras
+ * "por casualidad" parecidas podría darse por lista sin serlo de verdad.
+ */
+const MIN_SAMPLES = 8;
 /**
  * Dispersión máxima del polo, en grados, para dar la lectura por buena.
  *
