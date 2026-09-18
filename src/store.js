@@ -657,24 +657,19 @@ export function addVertex(p) {
       return;
     }
 
-    // Sensores del teléfono: sin lectura todavía —o mientras no se junten
-    // suficientes muestras— el toque no anota nada. La interfaz es quien
-    // explica por qué, en la barra de estado.
-    if (state.measureMethod === 'device') {
-      const r = state.deviceReading;
-      if (!r || !r.ready) return;
-      createMeasurement({
-        lngLat: p,
-        strike: r.strike,
-        dip: r.dip,
-        dipAzimuth: r.dipAzimuth,
-        method: 'device',
-        quality: {
-          strikeSd: Number.isFinite(r.strikeSd) ? Math.round(r.strikeSd * 10) / 10 : null,
-          dipSd: Number.isFinite(r.dipSd) ? Math.round(r.dipSd * 10) / 10 : null,
-          n: r.n,
-        },
-      });
+    // Sensores del teléfono: el toque en el mapa ya no coloca nada. La medida
+    // se ancla en la posición del GPS y se confirma con el botón Done de la
+    // brújula (ver `commitDeviceReading` en ui.js) — no donde caiga el dedo,
+    // que puede estar lejos de donde el teléfono está apoyado contra la roca.
+    if (state.measureMethod === 'device') return;
+
+    // Digitalizar desde el mapa: los dos primeros toques marcan la traza del
+    // rumbo; el tercer gesto es un ARRASTRE, no un toque, y lo resuelve
+    // `beginDigitizeDrag`/`endDigitizeDrag` en `mapView.js`.
+    if (state.measureMethod === 'digitize') {
+      const draft = state.draft && state.draft.kind === 'digitize-strike' ? state.draft : { kind: 'digitize-strike', coords: [] };
+      if (draft.coords.length >= 2) return; // el tercer punto es un arrastre, no un toque
+      set({ draft: { ...draft, coords: [...draft.coords, p] } });
       return;
     }
 

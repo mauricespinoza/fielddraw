@@ -50,6 +50,8 @@ import {
   requestOrientationPermission,
   startOrientationCapture,
 } from './deviceOrientation.js';
+import { buildCompass } from './compassWidget.js';
+import { closeStereogram, initStereogramPanel, isStereogramOpen } from './stereogramPanel.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import {
   DemSampler,
@@ -339,12 +341,18 @@ function buildPalette() {
             store.setMeasureMethod(m.id);
             /*
              * Elegido el método, el panel ya dijo lo que tenía que decir: se
-             * esconde para dejarle sitio al mapa —o, con Device, a la lectura
-             * en vivo que va a aparecer en la barra de estado—. Sigue
-             * pudiéndose reabrir desde Create ▸ Dip para tocar Surface o
-             * Unit otra vez.
+             * esconde para dejarle sitio al mapa —o, con Device, al panel de
+             * la brújula—. Sigue pudiéndose reabrir desde Create ▸ Dip para
+             * tocar Surface o Unit otra vez.
+             *
+             * Salvo que Device se haya revertido solo por falta de GPS: ahí
+             * el método vigente ya no es el que se tocó, y esconder el panel
+             * dejaría sin cómo elegir otro sin salir de la herramienta y
+             * volver a entrar.
              */
-            $('palette').classList.add('hidden');
+            if (store.getState().measureMethod === m.id) {
+              $('palette').classList.add('hidden');
+            }
           },
         }),
       );
@@ -1236,6 +1244,81 @@ export function closePropsMenu() {
   $('props-menu').classList.add('hidden');
 }
 
+/* ---------- tipo y unidad, al vuelo ---------- */
+
+/**
+ * Cuerpo del cuadro que se abre solo apenas se coloca una medida: elegir tipo
+ * de superficie y unidad es lo único que hace falta confirmar de inmediato —el
+ * resto del menú de propiedades (números, calidad, espesor) puede esperar a
+ * que alguien lo pida—.
+ */
+function quickTypeUnitBody(f) {
+  const body = $('quick-typeunit-body');
+  body.replaceChildren();
+  const p = f.properties;
+
+  const tipos = document.createElement('div');
+  tipos.className = 'palette-row';
+  for (const t of STRUCTURE_TYPES) {
+    tipos.appendChild(
+      chip({
+        label: t.short,
+        title: t.label,
+        color: t.color,
+        swatch: true,
+        active: p.type === t.id,
+        onClick: () => store.updateMeasurement({ type: t.id }),
+      }),
+    );
+  }
+  body.appendChild(tipos);
+
+  if (p.type === 'bedding') {
+    const inv = document.createElement('div');
+    inv.className = 'palette-row';
+    inv.appendChild(
+      chip({
+        label: 'Overturned',
+        glyph: '⤣',
+        active: !!p.overturned,
+        onClick: () => store.updateMeasurement({ overturned: !p.overturned }),
+      }),
+    );
+    body.appendChild(inv);
+  }
+
+  const uni = document.createElement('div');
+  unitSelect(uni, store.getState().units, p.unitId ?? null, (id) => store.assignUnitToSelection(id));
+  body.appendChild(uni);
+}
+
+/** El id de la medida que el cuadro rápido tiene abierta, o `null`. */
+let quickTypeUnitFor = null;
+
+export function openQuickTypeUnitMenu(id) {
+  const f = store.getState().features.find((x) => x.properties.id === id);
+  if (!f) return;
+  quickTypeUnitFor = id;
+  quickTypeUnitBody(f);
+  $('quick-typeunit').classList.remove('hidden');
+}
+
+export function closeQuickTypeUnitMenu() {
+  quickTypeUnitFor = null;
+  $('quick-typeunit').classList.add('hidden');
+}
+
+/** Refresca los chips activos tras un cambio de tipo/unidad, sin cerrar el cuadro. */
+function refreshQuickTypeUnitMenu() {
+  if (!quickTypeUnitFor || $('quick-typeunit').classList.contains('hidden')) return;
+  const f = store.getState().features.find((x) => x.properties.id === quickTypeUnitFor);
+  if (!f) {
+    closeQuickTypeUnitMenu();
+    return;
+  }
+  quickTypeUnitBody(f);
+}
+
 /* ---------- paneles ---------- */
 
 /** Cajones laterales: solo uno abierto a la vez. */
@@ -1255,6 +1338,8 @@ const POPOVERS = [
   'import-menu',
   'area-menu',
   'dem-notice',
+  'quick-typeunit',
+  'gps-required-dialog',
 ];
 
 /**
@@ -1270,7 +1355,15 @@ const POPOVERS = [
  * tienen su propia columna, pero siguen siendo controles del dibujo en
  * curso, no algo "fuera" de él.
  */
-const CLICK_OUTSIDE_EXEMPT = ['toolbar', 'side-actions', 'palette', 'profile-sheet', 'btn-scale'];
+const CLICK_OUTSIDE_EXEMPT = [
+  'toolbar',
+  'side-actions',
+  'palette',
+  'profile-sheet',
+  'btn-scale',
+  'device-panel',
+  'stereo-view',
+];
 
 /**
  * Cierra los paneles al hacer clic fuera de ellos.
@@ -2313,10 +2406,15 @@ function cycleCertainty() {
  * había un panel abierto.
  */
 function handleEscape() {
-  // El perfil estructural tapa la pantalla entera: es lo primero que hay que
-  // poder cerrar, antes que cualquier panel que quedara debajo.
+  // El perfil estructural y el estereograma tapan la pantalla entera: son lo
+  // primero que hay que poder cerrar, antes que cualquier panel que quedara
+  // debajo.
   if (store.getState().section) {
     store.clearSection();
+    return;
+  }
+  if (isStereogramOpen()) {
+    closeStereogram();
     return;
   }
   if (anyOverlayOpen()) {
@@ -2903,12 +3001,30 @@ function syncStructureControls() {
 
 /** Corta la escucha de sensores en curso, si hay una. */
 let stopDeviceCapture = null;
+/** La brújula del panel Device, construida una sola vez sobre su `<svg>`. */
+let deviceCompass = null;
 
 /**
- * Arranca o corta la escucha del giroscopio/magnetómetro según si la
- * herramienta de medir está activa con el método 'device'. Vive fuera del
- * store porque hablar con `DeviceOrientationEvent` es asunto de la capa de
- * aplicación —igual que el GPS en `mapView.js`—, no del estado.
+ * El método Device ancla la medida en la posición del GPS, así que sin GPS
+ * activo no tiene dónde ponerla. Se comprueba ANTES de arrancar los sensores
+ * —pedir permiso de orientación para nada, si total no se va a poder guardar
+ * la medida, sería un permiso pedido de más— y otra vez al apretar Done, por
+ * si el GPS se apagó mientras tanto.
+ */
+function gpsReadyForDevice() {
+  return !!(mapBridge && mapBridge.isGpsActive());
+}
+
+function openGpsRequiredDialog() {
+  openPanel('gps-required-dialog');
+}
+
+/**
+ * Arranca o corta la escucha del giroscopio/magnetómetro, y muestra u oculta
+ * el panel de la brújula, según si la herramienta de medir está activa con el
+ * método 'device'. Vive fuera del store porque hablar con
+ * `DeviceOrientationEvent` y con el GPS es asunto de la capa de aplicación,
+ * no del estado.
  */
 function syncDeviceCapture() {
   const s = store.getState();
@@ -2920,8 +3036,21 @@ function syncDeviceCapture() {
       stopDeviceCapture = null;
       store.setDeviceReading(null);
     }
+    $('device-panel').classList.add('hidden');
     return;
   }
+
+  if (!gpsReadyForDevice()) {
+    // Se revierte al método manual y se explica por qué en vez de dejar la
+    // herramienta puesta en un método que no va a poder guardar nada.
+    store.setMeasureMethod('manual');
+    openGpsRequiredDialog();
+    return;
+  }
+
+  $('device-panel').classList.remove('hidden');
+  if (!deviceCompass) deviceCompass = buildCompass($('device-compass'));
+  renderDevicePanel();
 
   if (stopDeviceCapture) return; // ya está escuchando
 
@@ -2959,6 +3088,58 @@ function syncDeviceCapture() {
   } else {
     begin();
   }
+}
+
+/** Refresca la aguja, el texto y el botón Done del panel Device. */
+function renderDevicePanel() {
+  if ($('device-panel').classList.contains('hidden')) return;
+  const r = store.getState().deviceReading;
+  if (deviceCompass) deviceCompass.update(r);
+
+  const fix = mapBridge && mapBridge.getGpsFix();
+  const note = $('device-gps-note');
+  if (!fix) {
+    note.textContent = 'Waiting for a GPS fix…';
+  } else {
+    note.textContent = `GPS fix: ±${Math.round(fix.accuracy)} m`;
+  }
+
+  const listo = !!(r && r.ready) && !!fix;
+  const boton = $('btn-device-done');
+  boton.disabled = !listo;
+  boton.textContent = r && !r.ready ? `Reading… (${r.n} sample${r.n === 1 ? '' : 's'})` : 'Add measurement';
+}
+
+/**
+ * Botón Done del panel Device: crea la medida en la posición GPS actual, con
+ * la lectura acumulada de los sensores. No hay toque en el mapa que valga
+ * aquí — es el mismo motivo por el que el manteo se lee apoyando el teléfono
+ * contra la roca y no mirando dónde cae el dedo.
+ */
+function commitDeviceReading() {
+  const r = store.getState().deviceReading;
+  const fix = mapBridge && mapBridge.getGpsFix();
+  if (!fix) {
+    openGpsRequiredDialog();
+    return;
+  }
+  if (!r || !r.ready) {
+    showBanner('Still reading — hold the phone still against the surface a moment longer.', 'warn');
+    return;
+  }
+  store.createMeasurement({
+    lngLat: fix.lngLat,
+    strike: r.strike,
+    dip: r.dip,
+    dipAzimuth: r.dipAzimuth,
+    method: 'device',
+    quality: {
+      strikeSd: round1(r.strikeSd),
+      dipSd: round1(r.dipSd),
+      n: r.n,
+      gpsAccuracy: Math.round(fix.accuracy),
+    },
+  });
 }
 
 /**
@@ -3757,8 +3938,13 @@ function measurementSection(body, medida, reabrir) {
       'One standard deviation across the samples taken while the phone was held against the surface',
     );
     measureRow(cal, 'Samples', `${p.n ?? '—'}`);
+    if (Number.isFinite(p.gpsAccuracy)) {
+      measureRow(cal, 'GPS accuracy', `±${p.gpsAccuracy} m`, 'The point was placed at the GPS position, not a tapped location');
+    }
   } else if (p.method === 'edited') {
     measureRow(cal, 'Uncertainty', 'not applicable — typed in by hand');
+  } else if (p.method === 'digitize') {
+    measureRow(cal, 'Uncertainty', 'not applicable — traced from a map symbol, not measured in the field');
   }
 
   /*
@@ -4439,8 +4625,15 @@ function renderStatus() {
         $('status-text').textContent = `Reading… hold the phone flat against the ${que} and keep it still (${r.n} sample${r.n === 1 ? '' : 's'})`;
       } else {
         $('status-text').textContent =
-          `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · tap where you measured the ${que} to record it`;
+          `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · press Add measurement in the compass panel to record it at your GPS position`;
       }
+    } else if (s.measureMethod === 'digitize') {
+      $('status-text').textContent =
+        n === 0
+          ? `Tap the two ends of the ${que}'s strike trace on the map`
+          : n === 1
+            ? '1 of 2 strike points · tap the other end'
+            : 'Drag away from the strike line to set dip direction and magnitude · release to place it at the midpoint';
     } else {
       $('status-text').textContent =
         n > 0
@@ -4522,6 +4715,21 @@ function renderStatus() {
       ? 'Tap for the first vertex · 3D terrain on, quality here is not the best · press and hold for freehand'
       : 'Tap for the first vertex · press and hold for freehand';
   }
+}
+
+/**
+ * Rumbo y manteo en vivo mientras dura el arrastre de Digitize. `mapView.js`
+ * la llama en cada fotograma del gesto porque escribir en el store ahí
+ * dispararía a todos los suscriptores por cada píxel de arrastre; esto se
+ * limita a pintar el texto y deja que `renderStatus()` retome al soltar.
+ */
+export function renderDigitizePreview(geo) {
+  if (!geo) {
+    renderStatus();
+    return;
+  }
+  $('status-text').textContent =
+    `${formatStrikeDip(geo.strike, geo.dip)} · release to place it at the midpoint of the strike line`;
 }
 
 /* ---------- cableado ---------- */
@@ -4640,6 +4848,14 @@ export function initUI() {
     else openTopoMenu();
   });
   $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
+  $('btn-close-quick-typeunit').addEventListener('click', closeQuickTypeUnitMenu);
+  $('btn-close-device').addEventListener('click', () => store.setMeasureMethod('manual'));
+  $('btn-device-done').addEventListener('click', commitDeviceReading);
+  $('btn-close-gps-required').addEventListener('click', closeOverlays);
+  $('btn-gps-required-enable').addEventListener('click', () => {
+    if (mapBridge) mapBridge.locateMe();
+    closeOverlays();
+  });
   $('topo-apply').addEventListener('click', () => {
     closeOverlays();
     runTopology();
@@ -4885,6 +5101,7 @@ export function initUI() {
   // El perfil estructural comparte el muestreador del DEM con el topográfico:
   // dos muestreadores distintos pedirían dos veces las mismas teselas.
   initSectionPanel({ message: showBanner, busy: setBusy, sampler: samplerFor });
+  initStereogramPanel({ message: showBanner });
   wireScale();
   wireShortcuts();
   wireClickOutside();
@@ -4933,6 +5150,24 @@ export function initUI() {
     }
     // Si la selección desaparece, el menú de propiedades ya no aplica a nada.
     if (store.changed('selection') && store.getState().selection.length === 0) closePropsMenu();
+    /*
+     * Cada medida nueva —cualquiera sea el método— abre sola el cuadro de
+     * tipo y unidad: son los dos datos que conviene confirmar de inmediato, y
+     * pedirlos antes de tocar el mapa habría significado repetirlos en cada
+     * punto en vez de corregirlos solo donde hace falta. Se distingue de una
+     * reselección manual porque esa entra por Elegir, no por la herramienta
+     * de medir: con 'measure' puesta, tocar el mapa siempre crea, nunca
+     * selecciona algo que ya existía.
+     */
+    if (store.changed('selection')) {
+      const st = store.getState();
+      if (st.tool === 'measure' && st.selection.length === 1) {
+        const f = st.features.find((x) => x.properties.id === st.selection[0]);
+        if (f && f.properties.geomKind === 'measurement') openQuickTypeUnitMenu(f.properties.id);
+      }
+    }
+    if (store.changed('features')) refreshQuickTypeUnitMenu();
+    if (store.changed('deviceReading')) renderDevicePanel();
     if (
       store.changed('tool') ||
       store.changed('draft') ||

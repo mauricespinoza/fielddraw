@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.28.0';
+export const APP_VERSION = '0.29.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -30,7 +30,8 @@ export const APP_CONTACT = 'mauricespinoza@udec.cl';
 export const APP_TOOLS = [
   ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
   ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
-  ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, o leído en vivo del giroscopio y el magnetómetro del teléfono. Cada medida viaja con su incertidumbre.'],
+  ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, leído en vivo del giroscopio y el magnetómetro del teléfono, o digitalizado sobre un mapa. Cada medida viaja con su incertidumbre.'],
+  ['Stereogram', 'Red estereográfica equiareal de los manteos seleccionados —o de todos—, coloreada por tipo, con lazo propio para marcar un cúmulo y su propia pestaña Compass. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
   ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
   ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
@@ -52,6 +53,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.29.0',
+    items: [
+      'Nueva pestaña Stereogram, arriba junto a Layers y Symbols: red estereográfica equiareal de los manteos seleccionados en el mapa —o de todos, si no hay selección—, coloreada por tipo de superficie. Un lazo propio sobre la red marca un cúmulo de polos y lo puede volver a seleccionar en el mapa. Exporta a SVG y PNG, y copia la imagen al portapapeles. Su pestaña Compass enseña la brújula en vivo del teléfono, de referencia, sin anotar nada.',
+      'Nuevo método de medida: Create → Dip → Digitize levanta rumbo y manteo de un símbolo dibujado en el mapa —por ejemplo, en una carta geológica escaneada e importada—: dos toques marcan la traza del rumbo y un arrastre hacia un lado fija la dirección y la magnitud del manteo. La medida queda en el punto medio de los dos toques.',
+      'El método Device cambia de flujo: en vez de tocar el mapa, se ve una brújula en vivo con el rumbo, el manteo y su error, y el botón Done ancla la medida en la posición del GPS —no donde caiga el dedo—. Por eso exige el GPS activo: sin posición no hay dónde ponerla, y lo avisa con un cuadro propio en vez de dejarlo fallar en silencio.',
+      'Al colocar una medida —cualquiera sea el método— se abre solo un cuadro compacto para confirmar el tipo de superficie y la unidad, anclado arriba a la derecha para no taparle nunca Done/Cancelar/Borrar a la columna de la esquina, que era el fallo que se reportó con el método manual.',
+    ],
+  },
   {
     version: '0.28.0',
     items: [

@@ -56,6 +56,13 @@ export const MEASURE_METHODS = [
     glyph: '◉',
     help: 'Hold the phone flat against the surface; strike and dip are read live from the gyroscope and magnetometer, with their sampled error',
   },
+  {
+    id: 'digitize',
+    label: 'Digitize from map',
+    short: 'Digit',
+    glyph: '▱',
+    help: 'Tap the two ends of the strike trace on the map, then drag to one side to set the dip direction and magnitude',
+  },
 ];
 
 export const METHOD_BY_ID = new Map(MEASURE_METHODS.map((m) => [m.id, m]));

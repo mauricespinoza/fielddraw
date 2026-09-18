@@ -328,6 +328,10 @@ export function createMapView({
   onStraboFeatureTap,
   onImportedFeatureTap,
   onScale,
+  // Rumbo/manteo en vivo mientras dura el arrastre de Digitize; `null` al
+  // soltar o al cancelar. Sin callback, no pasa nada: la traza se sigue
+  // viendo en el mapa, solo no hay número en la barra de estado.
+  onDigitizePreview = () => {},
 }) {
   const host = document.getElementById('map-host');
   const container = document.getElementById('map-container');
@@ -403,7 +407,52 @@ export function createMapView({
         ? 'Location permission denied. Allow it in the browser settings to centre on your position.'
         : 'Could not get a GPS fix. WiFi-only iPads have no GPS receiver.';
     onEditMessage(msg, 'warn');
+    gpsActive = false;
   });
+
+  /*
+   * Última posición del GPS, para el método Device de rumbo/manteo: la medida
+   * se ancla ahí y no en un punto tocado con el dedo (ver `getGpsFix` en el
+   * puente que devuelve esta función). `trackuserlocationend` la descarta:
+   * el círculo de precisión desapareció del mapa y seguir ofreciendo esa
+   * posición sería mentir sobre cuánto vale.
+   */
+  let lastGpsFix = null;
+  let gpsActive = false;
+  geolocate.on('geolocate', (pos) => {
+    lastGpsFix = {
+      lngLat: [pos.coords.longitude, pos.coords.latitude],
+      accuracy: pos.coords.accuracy,
+      at: Date.now(),
+    };
+    gpsActive = true;
+  });
+  geolocate.on('trackuserlocationstart', () => {
+    gpsActive = true;
+  });
+  geolocate.on('trackuserlocationend', () => {
+    gpsActive = false;
+    lastGpsFix = null;
+  });
+
+  /** Antigüedad máxima de una lectura para seguir contando como "activa". */
+  const GPS_FIX_STALE_MS = 20000;
+
+  function getGpsFix() {
+    if (!gpsActive || !lastGpsFix) return null;
+    if (Date.now() - lastGpsFix.at > GPS_FIX_STALE_MS) return null;
+    return lastGpsFix;
+  }
+
+  /**
+   * Si el control de seguimiento está encendido, sin exigir que ya haya
+   * llegado una posición: sirve para decidir si tiene sentido OFRECER el
+   * método Device, antes incluso de que exista una lectura con la que anclar
+   * la medida.
+   */
+  function isGpsActive() {
+    return gpsActive;
+  }
 
   /**
    * Centra el mapa en la posición del GPS.
@@ -2592,6 +2641,110 @@ export function createMapView({
     rebuildHandles();
   }
 
+  /* ---------- rumbo y manteo digitalizados desde el mapa ---------- */
+
+  /**
+   * Metros por grado, para pasar a un plano local — la misma aproximación
+   * equirrectangular que usa `toLocalENU` en `structure.js`: de sobra para la
+   * escala de un símbolo digitalizado, que rara vez pasa de unas decenas de
+   * metros en el mapa.
+   */
+  const DIGITIZE_M_PER_DEG_LAT = 110540;
+  const DIGITIZE_M_PER_DEG_LNG = 111320;
+
+  /** Acimut geográfico real de `a` a `b`, en grados [0, 360). */
+  function geoAzimuth(a, b) {
+    const lat0 = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+    const dE = (b[0] - a[0]) * DIGITIZE_M_PER_DEG_LNG * Math.cos(lat0);
+    const dN = (b[1] - a[1]) * DIGITIZE_M_PER_DEG_LAT;
+    return ((Math.atan2(dE, dN) * 180) / Math.PI + 360) % 360;
+  }
+
+  /** Arrastre que hace falta para declarar el manteo vertical, en píxeles. */
+  const DIGITIZE_DIP_FULL_PX = 120;
+
+  /** Puntos de la traza de rumbo, en pantalla, mientras dura el arrastre. */
+  let digitizeDrag = null;
+
+  /**
+   * Rumbo, manteo y punto de una medida digitalizada, a partir de los dos
+   * puntos de rumbo ya puestos y de dónde está el dedo ahora.
+   *
+   * La MAGNITUD del manteo sale de la distancia perpendicular en PÍXELES de
+   * pantalla: es el gesto táctil, y tiene que sentirse igual de lejos a
+   * cualquier zoom. La DIRECCIÓN sale de comparar en grados geográficos reales
+   * hacia dónde se tiró respecto de las dos normales posibles del rumbo — un
+   * producto cruzado en píxeles habría apuntado al lado que no es en cuanto
+   * el mapa está rotado o basculado.
+   */
+  function digitizeGeometry(dragScreen) {
+    const { p1, p2, p1Screen, p2Screen } = digitizeDrag;
+    const midScreen = [(p1Screen[0] + p2Screen[0]) / 2, (p1Screen[1] + p2Screen[1]) / 2];
+    const lineVec = [p2Screen[0] - p1Screen[0], p2Screen[1] - p1Screen[1]];
+    const lineLen = Math.hypot(lineVec[0], lineVec[1]) || 1;
+    const dragVec = [dragScreen[0] - midScreen[0], dragScreen[1] - midScreen[1]];
+    const cross = lineVec[0] * dragVec[1] - lineVec[1] * dragVec[0];
+    const perpPx = Math.abs(cross) / lineLen;
+    const dip = Math.min(90, (perpPx / DIGITIZE_DIP_FULL_PX) * 90);
+
+    const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+    const strike = geoAzimuth(p1, p2);
+    const candA = (strike + 90) % 360;
+    const candB = (strike + 270) % 360;
+    const dragAzimuth = geoAzimuth(mid, toLngLat(dragScreen));
+    const angDiff = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+    const dipAzimuth = angDiff(dragAzimuth, candA) <= angDiff(dragAzimuth, candB) ? candA : candB;
+
+    return { strike, dip, dipAzimuth, mid, midScreen };
+  }
+
+  /** Solo arranca si los dos puntos de rumbo ya están puestos. */
+  function beginDigitizeDrag() {
+    const d = store.getState().draft;
+    if (!d || d.kind !== 'digitize-strike' || d.coords.length !== 2) {
+      digitizeDrag = null;
+      return;
+    }
+    const [p1, p2] = d.coords;
+    const p1px = map.project(p1);
+    const p2px = map.project(p2);
+    digitizeDrag = { p1, p2, p1Screen: [p1px.x, p1px.y], p2Screen: [p2px.x, p2px.y] };
+  }
+
+  function moveDigitizeDrag(screen) {
+    if (!digitizeDrag) return;
+    const geo = digitizeGeometry(screen);
+    previewKind = 'digitize';
+    // El tramo de vuelta del punto 2 al punto medio repite la mitad del
+    // propio rumbo — se dibuja encima de sí mismo y no se nota— y deja el
+    // trazo salir desde el CENTRO hacia el arrastre, que es la lectura que
+    // importa: hacia dónde y cuánto.
+    preview = [geo.mid, toLngLat(screen)];
+    syncDraft();
+    onDigitizePreview(geo);
+  }
+
+  function endDigitizeDrag(screen, info) {
+    if (!digitizeDrag) return;
+    const geo = digitizeGeometry(screen);
+    digitizeDrag = null;
+    clearPreview();
+    onDigitizePreview(null);
+    if (!info.moved) {
+      // Ni un arrastre: se deja la traza de rumbo puesta para volver a
+      // intentarlo, en vez de descartar los dos puntos que ya costó marcar.
+      onEditMessage('Drag away from the strike line to set the dip direction and magnitude.', 'warn');
+      return;
+    }
+    store.createMeasurement({
+      lngLat: geo.mid,
+      strike: geo.strike,
+      dip: geo.dip,
+      dipAzimuth: geo.dipAzimuth,
+      method: 'digitize',
+    });
+  }
+
   /* ---------- cámara: mover la vista sin soltar la herramienta ---------- */
 
   /*
@@ -2662,24 +2815,54 @@ export function createMapView({
      * escena entera. Ver `swallow` en drawController.js.
      */
     suppressHover: () => store.getState().terrain3d,
-    // Nodos arrastra manijas. Elegir arrastra el lazo rectangular, que no es
-    // dibujo y por eso entra por su propia puerta (ver `lassoMode` en
-    // drawController.js); el mapa se sigue moviendo con dos dedos, o saliendo
-    // a Navegar.
-    dragMode: () => store.getState().tool === 'vertices',
+    /**
+     * Qué herramienta arrastra: Nodos agarra manijas, Digitize (con los dos
+     * puntos de rumbo ya puestos) arrastra el manteo. Elegir arrastra el
+     * lazo rectangular, que no es dibujo y por eso entra por su propia
+     * puerta (ver `lassoMode`); el mapa se sigue moviendo con dos dedos, o
+     * saliendo a Navegar.
+     */
+    dragMode: () => {
+      const st = store.getState();
+      if (st.tool === 'vertices') return true;
+      return (
+        st.tool === 'measure' &&
+        st.measureMethod === 'digitize' &&
+        !!st.draft &&
+        st.draft.kind === 'digitize-strike' &&
+        st.draft.coords.length === 2
+      );
+    },
     lassoMode: () => store.getState().tool === 'select',
     onDragStart: (p) => {
       if (onMapTap) onMapTap();
-      if (store.getState().tool === 'select') return beginLasso(p);
+      const st = store.getState();
+      if (st.tool === 'select') return beginLasso(p);
+      if (st.tool === 'measure') return beginDigitizeDrag();
       return beginVertexDrag(p);
     },
-    onDragMove: (p) => (store.getState().tool === 'select' ? moveLasso(p) : moveVertexDrag(p)),
-    onDragEnd: (p, info) =>
-      store.getState().tool === 'select'
-        ? endLasso(p, info, !!(info && info.shiftKey))
-        : endVertexDrag(p, info),
-    // Un segundo dedo aborta el gesto: la goma del lazo tiene que irse con él.
-    onDragCancel: () => hideLasso(),
+    onDragMove: (p) => {
+      const st = store.getState();
+      if (st.tool === 'select') return moveLasso(p);
+      if (st.tool === 'measure') return moveDigitizeDrag(p);
+      return moveVertexDrag(p);
+    },
+    onDragEnd: (p, info) => {
+      const st = store.getState();
+      if (st.tool === 'select') return endLasso(p, info, !!(info && info.shiftKey));
+      if (st.tool === 'measure') return endDigitizeDrag(p, info);
+      return endVertexDrag(p, info);
+    },
+    // Un segundo dedo aborta el gesto: la goma del lazo —o la traza a medio
+    // digitalizar— tiene que irse con él.
+    onDragCancel: () => {
+      hideLasso();
+      if (digitizeDrag) {
+        digitizeDrag = null;
+        clearPreview();
+        onDigitizePreview(null);
+      }
+    },
     // Mantener pulsado abre el menú de propiedades en cualquier herramienta:
     // es el gesto para tocar los atributos de lo que ya está dibujado sin
     // tener que cambiar a Elegir y volver.
@@ -2747,9 +2930,9 @@ export function createMapView({
       if (st.tool === 'measure') {
         clearPreview();
         store.addVertex(toLngLat(screen));
-        // Con brújula la medida ya existe: se abre el menú para escribir los
-        // números sin tener que buscarla y volver a tocarla.
-        if (st.measureMethod === 'manual') onOpenProps(screen);
+        // El cuadro de tipo y unidad se abre solo al crearse la medida —ver
+        // el `store.subscribe` de `ui.js`—, cualquiera sea el método: no hace
+        // falta distinguir aquí cuál de ellos ya la dejó lista.
         return;
       }
 
@@ -3229,6 +3412,10 @@ export function createMapView({
   return {
     map,
     locateMe,
+    /** Última posición del GPS, o `null` si no está activo/actualizado. */
+    getGpsFix,
+    /** Si el control de seguimiento del GPS está encendido ahora mismo. */
+    isGpsActive,
     /** La vista capturada y medida, para exportarla como lámina. */
     captureForExport,
     /** Lleva el mapa a una escala concreta, sin fijarla. */

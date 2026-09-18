@@ -217,6 +217,7 @@ export function measurementProvenance(props) {
     'three-point': 'three-point solution on DEM',
     'plane-fit': 'least-squares fit to trace on DEM',
     device: 'phone gyroscope/magnetometer',
+    digitize: 'digitized from a map symbol',
     edited: 'hand-edited',
     // Bajada de StraboSpot y adoptada en el dibujo: si vuelve a subir, que
     // conste que el dato es de allá y no una medida nueva.

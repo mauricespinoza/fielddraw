@@ -5,6 +5,7 @@ import {
   initUI,
   openImportedAttrs,
   openPropsMenu,
+  renderDigitizePreview,
   renderScale,
   restoreImportedFiles,
   showBanner,
@@ -44,6 +45,7 @@ const view = createMapView({
   onStraboFeatureTap: openStraboAttrs,
   onImportedFeatureTap: openImportedAttrs,
   onScale: renderScale,
+  onDigitizePreview: renderDigitizePreview,
 });
 
 wireLocate(() => view.locateMe());

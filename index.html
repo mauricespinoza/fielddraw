@@ -393,6 +393,7 @@
         <button class="pill" id="btn-layers">Layers</button>
         <button class="pill" id="btn-units">Units</button>
         <button class="pill" id="btn-symbology">Symbols</button>
+        <button class="pill" id="btn-stereogram" title="Plot the dip measurements on a stereonet">Stereogram</button>
         <button class="pill" id="btn-strabo">StraboSpot</button>
         <button class="pill" id="btn-settings">Settings</button>
         <button class="pill" id="btn-import">Import</button>
@@ -787,6 +788,46 @@
           <button class="icon-btn close-x" id="btn-close-props" aria-label="Close">✕</button>
         </header>
         <div id="props-body"></div>
+      </div>
+
+      <!-- Se abre sola apenas se coloca una medida, sea cual sea el método:
+           el tipo de superficie y la unidad son lo único que hace falta
+           confirmar, y el resto del menú de propiedades sobra para eso. Vive
+           colgada de la fila superior (misma posición que Project/Layers…) a
+           propósito: ahí nunca tapa Done/Cancel/Delete, que se mueven de
+           esquina según el dispositivo. -->
+      <div class="dropdown hidden" id="quick-typeunit">
+        <header>
+          <h2>Type &amp; unit</h2>
+          <button class="icon-btn close-x" id="btn-close-quick-typeunit" aria-label="Close">✕</button>
+        </header>
+        <div id="quick-typeunit-body"></div>
+      </div>
+
+      <!-- Brújula en vivo del método Device: se muestra mientras la
+           herramienta está en Create → Dip → Device, en vez del panel de
+           tipos. Done ancla la medida en la posición del GPS, no donde caiga
+           el dedo. -->
+      <div class="dropdown hidden" id="device-panel">
+        <header>
+          <h2>Device compass</h2>
+          <button class="icon-btn close-x" id="btn-close-device" aria-label="Close">✕</button>
+        </header>
+        <svg id="device-compass" class="compass-svg" aria-label="Live compass reading"></svg>
+        <p class="hint footnote" id="device-gps-note"></p>
+        <button class="pill accent wide" id="btn-device-done" disabled>Add measurement</button>
+      </div>
+
+      <div class="dropdown hidden" id="gps-required-dialog">
+        <header>
+          <h2>GPS required</h2>
+          <button class="icon-btn close-x" id="btn-close-gps-required" aria-label="Close">✕</button>
+        </header>
+        <p class="hint">
+          The Device method anchors the measurement at your current GPS position — not where you tap
+          the map — so location tracking has to be on first.
+        </p>
+        <button class="pill wide" id="btn-gps-required-enable">Enable GPS</button>
       </div>
 
       <!-- Atributos de un spot de StraboSpot: solo lectura, es dato ajeno. -->
@@ -1235,6 +1276,51 @@
           </aside>
         </div>
         <p class="hint footnote" id="section-note"></p>
+      </div>
+
+      <!-- Red estereográfica. Misma idea que el corte estructural: pantalla
+           entera y no un cajón, porque leer un cúmulo de polos exige verlo
+           grande. Dos pestañas propias —Plot y Compass— y no dos paneles
+           separados, para no duplicar la cabecera ni el cierre. -->
+      <div class="stereo-view hidden" id="stereo-view">
+        <header class="sv-head">
+          <h2>Stereogram</h2>
+          <div class="sv-tabs" role="tablist">
+            <button class="sv-tab active" id="stereo-tab-plot" role="tab">Plot</button>
+            <button class="sv-tab" id="stereo-tab-compass" role="tab">Compass</button>
+          </div>
+          <span class="sv-spacer"></span>
+          <button class="pill" id="btn-stereo-png" title="Save as a picture">PNG</button>
+          <button class="pill" id="btn-stereo-svg" title="Save as vector art, editable in Illustrator or Inkscape">SVG</button>
+          <button class="pill" id="btn-stereo-copy" title="Copy the image to the clipboard">Copy</button>
+          <button class="icon-btn close-x" id="btn-close-stereo" aria-label="Close stereogram">✕</button>
+        </header>
+
+        <div class="sv-body" id="stereo-panel-plot">
+          <div class="sv-chart-wrap">
+            <div class="stereo-chart-stack">
+              <svg id="stereo-chart" class="sv-chart" aria-label="Stereographic projection of the plotted dips"></svg>
+              <svg class="stereo-lasso" id="stereo-lasso" viewBox="0 0 520 520" aria-hidden="true">
+                <polygon points=""></polygon>
+              </svg>
+            </div>
+          </div>
+          <aside class="sv-side">
+            <p class="hint footnote" id="stereo-source-note"></p>
+            <h3>By type <span class="sv-count" id="stereo-legend-count"></span></h3>
+            <div class="sv-list" id="stereo-legend"></div>
+            <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>
+            <button class="pill wide" id="btn-stereo-clear-lasso" disabled>Clear lasso</button>
+            <p class="hint footnote">Drag on the net to lasso a cluster of poles.</p>
+          </aside>
+        </div>
+
+        <div class="sv-body hidden" id="stereo-panel-compass">
+          <div class="sv-chart-wrap stereo-compass-wrap">
+            <svg id="stereo-compass" class="compass-svg" aria-label="Live compass reading"></svg>
+            <p class="hint footnote" id="stereo-compass-note"></p>
+          </div>
+        </div>
       </div>
 
       <!-- La escala numérica va pegada a la izquierda, justo debajo de la barra

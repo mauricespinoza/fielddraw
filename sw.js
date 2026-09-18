@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v34';
+const VERSION = 'v35';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -70,7 +70,9 @@ const SHELL = [
   './src/areaCache.js',
   './src/attrs.js',
   './src/basemaps.js',
+  './src/compassWidget.js',
   './src/dem.js',
+  './src/deviceOrientation.js',
   './src/drawController.js',
   './src/editOps.js',
   './src/geologyStyle.js',
@@ -98,6 +100,9 @@ const SHELL = [
   './src/shortcuts.js',
   './src/simplify.js',
   './src/snapping.js',
+  './src/stereogram.js',
+  './src/stereogramPanel.js',
+  './src/stereogramView.js',
   './src/store.js',
   './src/stroke.js',
   './src/structure.js',
