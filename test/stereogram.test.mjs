@@ -73,5 +73,109 @@ ok('...y lo dice', conSeleccion.usingSelection === true);
 const counts = S.countsByType(sinSeleccion.points);
 ok('cuenta por tipo', counts.get('bedding') === 2 && counts.get('joint') === 1);
 
+console.log('== ciclogramas ==');
+
+const radio = (p) => Math.hypot(p.x, p.y);
+
+// El ciclograma de un plano 000/30E tiene que tocar el círculo primitivo
+// justo en N y en S —los dos extremos de su línea de rumbo— y alejarse del
+// centro hacia el Este, al punto que ocupa su línea de máxima pendiente.
+{
+  const arco = S.greatCirclePath(0, 30).flat();
+  const este = arco.reduce((a, b) => (b.x > a.x ? b : a));
+  ok('el ciclograma pasa por la línea de máxima pendiente',
+    cerca(este.x, Math.SQRT2 * Math.sin(Math.PI / 12 * 2), 1e-4) && cerca(este.y, 0, 1e-6),
+    `${este.x}, ${este.y}`);
+  const norte = arco.reduce((a, b) => (b.y < a.y ? b : a));
+  const sur = arco.reduce((a, b) => (b.y > a.y ? b : a));
+  ok('y acaba en los dos extremos del rumbo, sobre el primitivo',
+    cerca(radio(norte), 1, 1e-6) && cerca(radio(sur), 1, 1e-6) && cerca(norte.x, 0, 1e-6) && cerca(sur.x, 0, 1e-6));
+  ok('ningún punto se sale de la red', arco.every((p) => radio(p) <= 1 + 1e-9));
+}
+
+// Un plano vertical proyecta como un diámetro recto en la dirección de su
+// rumbo: todos sus puntos caen sobre esa recta.
+{
+  const arco = S.greatCirclePath(45, 90).flat();
+  const fuera = arco.filter((p) => Math.abs(p.x + p.y) > 1e-6); // recta NE-SW: y = -x
+  ok('un plano vertical es un diámetro recto', fuera.length === 0, `${fuera.length} fuera de la recta`);
+  ok('...de extremo a extremo del primitivo',
+    cerca(Math.max(...arco.map(radio)), 1, 1e-6));
+}
+
+// El polo de un plano está siempre a 90° de cualquier línea contenida en él:
+// es la comprobación que liga las dos cosas que se dibujan en la red y la que
+// detectaría que una de las dos se calculó con otro convenio.
+{
+  const polo = S.poleOf(137, 52);
+  const v = S.lineVector(polo.trend, polo.plunge);
+  const RADIANES = Math.PI / 180;
+  const arco = S.smallCircleSegments(v, 90, { steps: 60 }).flat();
+  // Se reconstruye la dirección 3D de cada punto proyectado y se mide su
+  // ángulo con el polo: la proyección equiareal es invertible.
+  const angulos = arco.map((p) => {
+    const r = Math.min(1, radio(p));
+    const theta = 2 * Math.asin(r / Math.SQRT2);
+    const trend = Math.atan2(p.x, -p.y);
+    const plunge = Math.PI / 2 - theta;
+    const l = S.lineVector(trend / RADIANES, plunge / RADIANES);
+    return Math.abs(Math.acos(Math.max(-1, Math.min(1, l.x * v.x + l.y * v.y + l.z * v.z))) / RADIANES);
+  });
+  ok('todo el ciclograma está a 90° de su polo',
+    angulos.every((a) => Math.abs(a - 90) < 1e-6), `máx desvío ${Math.max(...angulos.map((a) => Math.abs(a - 90)))}`);
+}
+
+console.log('== la red de Schmidt ==');
+
+{
+  const net = S.schmidtNet({ step: 10 });
+  ok('trae las dos familias', net.great.length > 0 && net.small.length > 0);
+  const todos = [...net.great, ...net.small].flat();
+  ok('nada se sale del primitivo', todos.every((p) => radio(p) <= 1 + 1e-9));
+
+  /*
+   * LO QUE NO PUEDE TENER: radios. La red anterior dibujaba seis diámetros
+   * cada 30° —una rosa polar—, y sobre eso no se puede rotar un dato ni leer
+   * la intersección de dos planos. Los únicos tramos rectos que pasan por el
+   * centro son el diámetro N-S y el E-W, que sí pertenecen a las familias.
+   */
+  // Solo dos curvas de la red llegan al centro: la más cercana de todas las
+  // demás se queda a r = 0.12 (el manteo de 80° y el cono de 80°), así que a
+  // 0.02 del centro únicamente puede haber muestras de esos dos diámetros.
+  const porElCentro = todos.filter((p) => radio(p) < 0.02);
+  ok('alguna curva llega al centro', porElCentro.length > 0);
+  const acimutes = new Set(
+    porElCentro
+      .filter((p) => radio(p) > 1e-6)
+      .map((p) => Math.round((((Math.atan2(p.x, -p.y) * 180) / Math.PI) % 180 + 180) % 180)),
+  );
+  const ejes = [...acimutes].filter((a) => Math.min(a % 90, 90 - (a % 90)) > 2);
+  ok('por el centro solo pasan los diámetros N-S y E-W', ejes.length === 0, `acimutes ${ejes.join(',')}`);
+
+  /*
+   * NINGUNA CURVA DA UN SALTO. Es la regresión del fallo que convertía la red
+   * en un abanico de rectas: los extremos de cada arco caen exactamente en el
+   * horizonte, donde `z` vale ±1e-17 según el redondeo, y dejar que ese ruido
+   * decidiera el hemisferio mandaba el último punto a su antípoda. La
+   * polilínea lo unía con el anterior y dibujaba una cuerda de un borde al
+   * otro de la red. Un salto no puede pasar del paso de muestreo.
+   */
+  const saltoMaximo = (seg) =>
+    Math.max(...seg.slice(1).map((p, i) => Math.hypot(p.x - seg[i].x, p.y - seg[i].y)));
+  const peor = Math.max(...[...net.great, ...net.small].map(saltoMaximo));
+  ok('ninguna curva salta a su antípoda', peor < 0.05, `salto de ${peor}`);
+
+  // Lo mismo para un ciclograma de dato, que sale de la misma función.
+  ok('tampoco los ciclogramas de las medidas',
+    S.greatCirclePath(0, 10).every((seg) => saltoMaximo(seg) < 0.05));
+
+  // Cada familia arranca en 10° y llega hasta la vertical: con menos, la red
+  // no sirve para estimar nada a ojo.
+  ok('hay círculos máximos a ambos lados del eje N-S',
+    net.great.flat().some((p) => p.x > 0.5) && net.great.flat().some((p) => p.x < -0.5));
+  ok('los círculos menores llegan cerca del N y del S',
+    net.small.flat().some((p) => p.y < -0.9) && net.small.flat().some((p) => p.y > 0.9));
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

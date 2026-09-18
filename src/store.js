@@ -1,4 +1,5 @@
 import { BASEMAPS } from './basemaps.js';
+import { geoAzimuth, lngLatMidpoint } from './structure.js';
 import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
 import { adoptLayer } from './adopt.js';
 import { adoptStrabo } from './strabo/adopt.js';
@@ -228,6 +229,15 @@ let state = {
    * `deviceOrientation.js`).
    */
   deviceReading: null,
+  /**
+   * Id de la última medida recién creada, cualquiera sea el método. Es una
+   * SEÑAL, no un dato: existe para que la interfaz sepa distinguir "acaba de
+   * nacer una medida" de "alguien seleccionó una que ya estaba", que es lo
+   * que decide si se abre solo el cuadro de tipo y unidad. Antes eso se
+   * deducía de `tool === 'measure'`, y dejó de servir en cuanto crear una
+   * medida pasa a devolver la herramienta a Elegir.
+   */
+  justMeasured: null,
   /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
   structureStyle: defaultStructureStyle(),
 
@@ -664,12 +674,31 @@ export function addVertex(p) {
     if (state.measureMethod === 'device') return;
 
     // Digitalizar desde el mapa: los dos primeros toques marcan la traza del
-    // rumbo; el tercer gesto es un ARRASTRE, no un toque, y lo resuelve
-    // `beginDigitizeDrag`/`endDigitizeDrag` en `mapView.js`.
+    // rumbo. Puesto el segundo, se pasa de una vez a la fase de AJUSTE del
+    // manteo (`digitize-dip`): ya no se resuelve con un toque más sino
+    // arrastrando, tantas veces como haga falta, y se resuelve en
+    // `beginDigitizeDrag`/`moveDigitizeDrag`/`endDigitizeDrag` de
+    // `mapView.js`. `reading` empieza en `null` — todavía no hay ningún
+    // manteo que congelar, solo la traza y una guía vertical de referencia
+    // que el mapa dibuja sin que el store tenga que saber nada de ella.
     if (state.measureMethod === 'digitize') {
       const draft = state.draft && state.draft.kind === 'digitize-strike' ? state.draft : { kind: 'digitize-strike', coords: [] };
-      if (draft.coords.length >= 2) return; // el tercer punto es un arrastre, no un toque
-      set({ draft: { ...draft, coords: [...draft.coords, p] } });
+      if (draft.coords.length >= 2) return; // ya se pasó a digitize-dip; no debería llegar aquí
+      const coords = [...draft.coords, p];
+      if (coords.length === 2) {
+        const [p1, p2] = coords;
+        set({
+          draft: {
+            kind: 'digitize-dip',
+            coords,
+            mid: lngLatMidpoint(p1, p2),
+            strike: geoAzimuth(p1, p2),
+            reading: null,
+          },
+        });
+        return;
+      }
+      set({ draft: { ...draft, coords } });
       return;
     }
 
@@ -722,12 +751,32 @@ export function appendStroke(pts) {
 
 export function undoVertex() {
   if (!state.draft) return;
+  // La fase de ajuste del manteo no tiene "un vértice más" que quitar —sus
+  // dos coordenadas son fijas, la traza de rumbo entera— así que deshacer
+  // aquí vuelve a pedir el segundo punto de esa traza, no recorta la lista.
+  if (state.draft.kind === 'digitize-dip') {
+    set({ draft: { kind: 'digitize-strike', coords: state.draft.coords.slice(0, 1) } });
+    return;
+  }
   const coords = state.draft.coords.slice(0, -1);
   set({ draft: coords.length ? { ...state.draft, coords } : null });
 }
 
 export function cancelDraft() {
   set({ draft: null });
+}
+
+/**
+ * Congela la lectura del método Digitize tras soltar un arrastre: el manteo
+ * y su dirección quedan guardados en el borrador, listos para que `Done`
+ * —`finishDraft()`— los convierta en la medida, o para que un nuevo arrastre
+ * los vuelva a corregir. El rumbo no cambia aquí: lo fijan los dos puntos de
+ * la traza, ya puestos.
+ */
+export function setDigitizeDipReading(reading) {
+  const d = state.draft;
+  if (!d || d.kind !== 'digitize-dip') return;
+  set({ draft: { ...d, reading } });
 }
 
 export function finishDraft() {
@@ -786,6 +835,30 @@ export function finishDraft() {
       pendingPlane:
         d.coords.length >= 3 ? { coords: d.coords, method: state.measureMethod } : null,
     });
+    return;
+  }
+
+  /*
+   * Digitalizado desde el mapa: rumbo, manteo y punto ya están resueltos —no
+   * hay DEM que muestrear ni geometría que ajustar—, así que Done crea la
+   * medida directamente, igual que el método manual. Sin ninguna lectura
+   * congelada todavía (`reading` sigue en `null` porque nunca se soltó un
+   * arrastre) no hay nada que crear: el botón Done está apagado para ese
+   * caso (ver `renderToolbar` en `ui.js`), y si de todos modos se llega aquí
+   * —por ejemplo con el atajo de teclado— simplemente se descarta el intento
+   * en vez de guardar una medida sin manteo.
+   */
+  if (d.kind === 'digitize-dip') {
+    if (d.reading) {
+      createMeasurement({
+        lngLat: d.mid,
+        strike: d.strike,
+        dip: d.reading.dip,
+        dipAzimuth: d.reading.dipAzimuth,
+        method: 'digitize',
+      });
+    }
+    set({ draft: null });
     return;
   }
 
@@ -1129,7 +1202,28 @@ export function createMeasurement({
     geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
   };
   pushHistory();
-  set({ features: [...state.features, feature], draft: null, selection: [id], pendingPlane: null });
+  /*
+   * Colocada la medida, la herramienta vuelve a ELEGIR.
+   *
+   * Un rumbo y manteo se toma de uno en uno y se confirma de uno en uno: lo
+   * que sigue a colocarlo es mirar qué quedó y corregirle el tipo o la
+   * unidad, no colocar otro a ciegas. Dejando puesta la herramienta de medir,
+   * el siguiente toque en el mapa creaba una medida más —normalmente sin
+   * querer, al ir a tocar la que se acababa de poner— y encima mantenía a la
+   * vista la paleta de Surface, que pregunta lo mismo que el cuadro de tipo y
+   * unidad que se abre al crearla: dos sitios para contestar lo mismo.
+   *
+   * `selection` queda en la medida nueva, así que Elegir la muestra ya
+   * seleccionada y el cuadro de tipo y unidad opera sobre ella.
+   */
+  set({
+    features: [...state.features, feature],
+    draft: null,
+    selection: [id],
+    pendingPlane: null,
+    tool: 'select',
+    justMeasured: id,
+  });
   return feature;
 }
 

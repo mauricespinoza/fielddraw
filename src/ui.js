@@ -50,7 +50,7 @@ import {
   requestOrientationPermission,
   startOrientationCapture,
 } from './deviceOrientation.js';
-import { buildCompass } from './compassWidget.js';
+import { buildCompass, compassHint } from './compassWidget.js';
 import { closeStereogram, initStereogramPanel, isStereogramOpen } from './stereogramPanel.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import {
@@ -1257,6 +1257,18 @@ function quickTypeUnitBody(f) {
   body.replaceChildren();
   const p = f.properties;
 
+  /*
+   * Qué se acaba de anotar, antes de preguntar qué es. Con el método Device o
+   * con un ajuste sobre el DEM el número no lo escribió nadie: verlo aquí es
+   * la única oportunidad de detectar en el acto un rumbo que salió 180° girado
+   * —cuando todavía se está delante del afloramiento y se puede repetir— en
+   * vez de descubrirlo en casa mirando el mapa.
+   */
+  const lectura = document.createElement('p');
+  lectura.className = 'quick-reading';
+  lectura.textContent = `${formatStrikeDip(p.strike, p.dip)} · dips ${quadrant(p.dipAzimuth)}`;
+  body.appendChild(lectura);
+
   const tipos = document.createElement('div');
   tipos.className = 'palette-row';
   for (const t of STRUCTURE_TYPES) {
@@ -1306,6 +1318,11 @@ export function openQuickTypeUnitMenu(id) {
 export function closeQuickTypeUnitMenu() {
   quickTypeUnitFor = null;
   $('quick-typeunit').classList.add('hidden');
+}
+
+/** La medida sobre la que opera el cuadro rápido, o `null` si está cerrado. */
+function quickTypeUnitTarget() {
+  return $('quick-typeunit').classList.contains('hidden') ? null : quickTypeUnitFor;
 }
 
 /** Refresca los chips activos tras un cambio de tipo/unidad, sin cerrar el cuadro. */
@@ -3103,11 +3120,15 @@ function renderDevicePanel() {
   } else {
     note.textContent = `GPS fix: ±${Math.round(fix.accuracy)} m`;
   }
+  // El mismo consejo que da la pestaña Compass, palabra por palabra: los dos
+  // sitios leen los mismos sensores y no pueden discrepar sobre si la lectura
+  // vale (ver `compassHint`).
+  $('device-read-note').textContent = compassHint(r);
 
   const listo = !!(r && r.ready) && !!fix;
   const boton = $('btn-device-done');
   boton.disabled = !listo;
-  boton.textContent = r && !r.ready ? `Reading… (${r.n} sample${r.n === 1 ? '' : 's'})` : 'Add measurement';
+  boton.textContent = listo ? 'Add measurement' : 'Hold steady…';
 }
 
 /**
@@ -3136,6 +3157,10 @@ function commitDeviceReading() {
     quality: {
       strikeSd: round1(r.strikeSd),
       dipSd: round1(r.dipSd),
+      // Dispersión angular del polo en la tanda: es la cifra que de verdad
+      // dice si el teléfono estaba quieto, y viaja con el dato porque sin ella
+      // nadie puede volver a juzgar la medida meses después.
+      poleSpread: round1(r.spread),
       n: r.n,
       gpsAccuracy: Math.round(fix.accuracy),
     },
@@ -4567,7 +4592,12 @@ function renderToolbar() {
    */
   $('btn-undo').disabled = !store.canUndo();
   $('btn-redo').disabled = !store.canRedo();
-  $('t-finish').disabled = !hasDraft;
+  // Digitize, en su fase de ajuste, no tiene nada que guardar hasta el primer
+  // arrastre soltado: Done apagado explica por qué no basta con las dos
+  // puntas de la traza, sin necesidad de tocarlo y que no pase nada.
+  const digitizeSinLectura = s.draft && s.draft.kind === 'digitize-dip' && !s.draft.reading;
+  $('t-finish').disabled = !hasDraft || digitizeSinLectura;
+  $('t-finish').title = digitizeSinLectura ? 'Drag to set the dip first' : 'Finish feature';
   $('t-cancel').disabled = !hasDraft;
   $('t-delete').disabled = s.selection.length === 0;
   $('t-delete').title = `Delete ${s.selection.length} selected feature(s)`;
@@ -4622,18 +4652,31 @@ function renderStatus() {
       if (!r) {
         $('status-text').textContent = `Requesting sensor access… hold the phone flat against the ${que}`;
       } else if (!r.ready) {
-        $('status-text').textContent = `Reading… hold the phone flat against the ${que} and keep it still (${r.n} sample${r.n === 1 ? '' : 's'})`;
+        // El mismo consejo que da el panel de la brújula: si la barra de
+        // estado dijera «sostén el teléfono contra la roca» mientras el panel
+        // pide nivelarlo para encontrar el norte, se estarían contradiciendo.
+        $('status-text').textContent = compassHint(r);
       } else {
         $('status-text').textContent =
           `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · press Add measurement in the compass panel to record it at your GPS position`;
       }
     } else if (s.measureMethod === 'digitize') {
-      $('status-text').textContent =
-        n === 0
-          ? `Tap the two ends of the ${que}'s strike trace on the map`
-          : n === 1
-            ? '1 of 2 strike points · tap the other end'
-            : 'Drag away from the strike line to set dip direction and magnitude · release to place it at the midpoint';
+      const adjusting = s.draft && s.draft.kind === 'digitize-dip' ? s.draft : null;
+      if (!adjusting) {
+        $('status-text').textContent =
+          n === 0
+            ? `Tap the two ends of the ${que}'s strike trace on the map`
+            : '1 of 2 strike points · tap the other end';
+      } else if (!adjusting.reading) {
+        // La traza de rumbo ya está puesta y el mapa enseña el palito
+        // vertical de guía: falta decir que hay que arrastrar para
+        // convertirlo en una lectura de verdad.
+        $('status-text').textContent =
+          'Drag to one side to set the dip direction and magnitude · release to freeze it, drag again to refine';
+      } else {
+        $('status-text').textContent =
+          `${formatStrikeDip(adjusting.strike, adjusting.reading.dip)} frozen · drag again to adjust, or press Done to save it`;
+      }
     } else {
       $('status-text').textContent =
         n > 0
@@ -4718,18 +4761,46 @@ function renderStatus() {
 }
 
 /**
- * Rumbo y manteo en vivo mientras dura el arrastre de Digitize. `mapView.js`
- * la llama en cada fotograma del gesto porque escribir en el store ahí
- * dispararía a todos los suscriptores por cada píxel de arrastre; esto se
- * limita a pintar el texto y deja que `renderStatus()` retome al soltar.
+ * Rumbo y manteo del método Digitize, en vivo mientras dura un arrastre y
+ * congelados mientras no lo hay. `mapView.js` llama esto en cada fotograma
+ * de un arrastre —escribir en el store ahí dispararía a todos los
+ * suscriptores por cada píxel— y también, una sola vez, al soltar, al abrir
+ * la fase de ajuste o al abortar un arrastre a medio camino.
+ *
+ * `geo` es `null` cuando no hay ningún número que afirmar todavía —la traza
+ * de rumbo puesta pero ni un arrastre soltado— y entonces solo manda
+ * `renderStatus()`, que es quien explica en la barra de estado que hay que
+ * arrastrar. Con `geo`, además del texto se enciende el número grande: es lo
+ * único que se puede leer de un vistazo con el dedo tapando media pantalla.
  */
 export function renderDigitizePreview(geo) {
   if (!geo) {
+    hideDigitizeReadout();
     renderStatus();
     return;
   }
-  $('status-text').textContent =
-    `${formatStrikeDip(geo.strike, geo.dip)} · release to place it at the midpoint of the strike line`;
+  $('status-text').textContent = geo.live
+    ? `${formatStrikeDip(geo.strike, geo.dip)} · release to freeze it`
+    : `${formatStrikeDip(geo.strike, geo.dip)} frozen · drag again to adjust, or press Done to save it`;
+  showDigitizeReadout(geo);
+}
+
+/**
+ * El número grande del manteo mientras se ajusta con Digitize: vive fuera de
+ * la barra de estado, que un dedo arrastrando tapa justo en esa esquina.
+ * `live` distingue el arrastre en curso —fondo activo— de una lectura ya
+ * congelada a la espera de Done o de un nuevo arrastre.
+ */
+function showDigitizeReadout(geo) {
+  const el = $('digitize-readout');
+  el.classList.remove('hidden');
+  el.classList.toggle('live', !!geo.live);
+  $('digitize-readout-value').textContent = `${Math.round(geo.dip)}°`;
+  $('digitize-readout-sub').textContent = `${formatStrikeDip(geo.strike, geo.dip)} · dips ${quadrant(geo.dipAzimuth)}`;
+}
+
+function hideDigitizeReadout() {
+  $('digitize-readout').classList.add('hidden');
 }
 
 /* ---------- cableado ---------- */
@@ -5154,16 +5225,23 @@ export function initUI() {
      * Cada medida nueva —cualquiera sea el método— abre sola el cuadro de
      * tipo y unidad: son los dos datos que conviene confirmar de inmediato, y
      * pedirlos antes de tocar el mapa habría significado repetirlos en cada
-     * punto en vez de corregirlos solo donde hace falta. Se distingue de una
-     * reselección manual porque esa entra por Elegir, no por la herramienta
-     * de medir: con 'measure' puesta, tocar el mapa siempre crea, nunca
-     * selecciona algo que ya existía.
+     * punto en vez de corregirlos solo donde hace falta.
+     *
+     * Lo que lo dispara es `justMeasured`, la señal que publica el store al
+     * crear la medida, y no la selección: crear una medida ahora devuelve la
+     * herramienta a Elegir, así que "estar en la herramienta de medir" ya no
+     * distingue una medida recién nacida de una que alguien volvió a tocar.
      */
-    if (store.changed('selection')) {
-      const st = store.getState();
-      if (st.tool === 'measure' && st.selection.length === 1) {
-        const f = st.features.find((x) => x.properties.id === st.selection[0]);
-        if (f && f.properties.geomKind === 'measurement') openQuickTypeUnitMenu(f.properties.id);
+    if (store.changed('justMeasured')) {
+      const id = store.getState().justMeasured;
+      if (id) openQuickTypeUnitMenu(id);
+    }
+    // Tocar otra cosa —o deseleccionar— cierra el cuadro: pregunta por UNA
+    // medida concreta, y sin ella no tiene sujeto.
+    if (store.changed('selection') && !store.changed('justMeasured')) {
+      const sel = store.getState().selection;
+      if (quickTypeUnitTarget() && (sel.length !== 1 || sel[0] !== quickTypeUnitTarget())) {
+        closeQuickTypeUnitMenu();
       }
     }
     if (store.changed('features')) refreshQuickTypeUnitMenu();

@@ -61,7 +61,7 @@ export const MEASURE_METHODS = [
     label: 'Digitize from map',
     short: 'Digit',
     glyph: '▱',
-    help: 'Tap the two ends of the strike trace on the map, then drag to one side to set the dip direction and magnitude',
+    help: 'Tap the two ends of the strike trace, then drag to one side to set the dip direction and magnitude — release to freeze it, drag again to refine, and press Done when it looks right',
   },
 ];
 
@@ -101,6 +101,45 @@ export function toLocalENU(points) {
 }
 
 const norm360 = (deg) => ((deg % 360) + 360) % 360;
+
+/*
+ * Cuatro cuentas geográficas chicas, para el método Digitize (`store.js`,
+ * `mapView.js`): la traza de rumbo entra como dos puntos lngLat sueltos, sin
+ * ningún DEM ni proyección de mapa de por medio, así que hacen falta acimut,
+ * punto medio, distancia y punto de destino en el plano de la Tierra, y no en
+ * píxeles de pantalla. Misma aproximación equirrectangular local que
+ * `toLocalENU` — de sobra a la escala de un símbolo digitalizado.
+ */
+
+/** Acimut geográfico real de `a` a `b`, en grados [0, 360). */
+export function geoAzimuth(a, b) {
+  const lat0 = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+  const dE = (b[0] - a[0]) * M_PER_DEG_LNG * Math.cos(lat0);
+  const dN = (b[1] - a[1]) * M_PER_DEG_LAT;
+  return norm360((Math.atan2(dE, dN) * 180) / Math.PI);
+}
+
+/** Punto medio geográfico simple entre dos lngLat. */
+export function lngLatMidpoint(a, b) {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+}
+
+/** Distancia real en metros entre dos lngLat, la misma aproximación local. */
+export function geoDistance(a, b) {
+  const lat0 = ((a[1] + b[1]) / 2) * (Math.PI / 180);
+  const dE = (b[0] - a[0]) * M_PER_DEG_LNG * Math.cos(lat0);
+  const dN = (b[1] - a[1]) * M_PER_DEG_LAT;
+  return Math.hypot(dE, dN);
+}
+
+/** Punto a `distMeters` de `origin`, en la dirección `bearingDeg` (acimut real). */
+export function destinationPoint(origin, bearingDeg, distMeters) {
+  const rad = bearingDeg * (Math.PI / 180);
+  const lat0 = origin[1] * (Math.PI / 180);
+  const dE = distMeters * Math.sin(rad);
+  const dN = distMeters * Math.cos(rad);
+  return [origin[0] + dE / (M_PER_DEG_LNG * Math.cos(lat0)), origin[1] + dN / M_PER_DEG_LAT];
+}
 
 /**
  * Rumbo y manteo a partir del gradiente del plano `z = a·x + b·y + c`.

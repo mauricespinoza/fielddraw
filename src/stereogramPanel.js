@@ -9,7 +9,7 @@ import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
 import { countsByType, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
-import { buildCompass } from './compassWidget.js';
+import { buildCompass, compassHint } from './compassWidget.js';
 import {
   deviceOrientationSupported,
   needsOrientationPermission,
@@ -27,6 +27,9 @@ let activeTab = 'plot';
 let lastPlot = null;
 /** Ids resaltados por el lazo, o vacío si no hay ninguno. */
 let highlighted = new Set();
+/** Qué familias se dibujan. Las dos encendidas de salida: ver `renderStereogram`. */
+let showPoles = true;
+let showPlanes = true;
 
 export function initStereogramPanel({ message } = {}) {
   onMessage = message || onMessage;
@@ -46,6 +49,15 @@ export function initStereogramPanel({ message } = {}) {
     onMessage(`${highlighted.size} measurement(s) selected on the map.`, 'info');
   });
   $('btn-stereo-clear-lasso').addEventListener('click', clearHighlight);
+
+  $('stereo-show-poles').addEventListener('change', (e) => {
+    showPoles = e.target.checked;
+    renderPlot();
+  });
+  $('stereo-show-planes').addEventListener('change', (e) => {
+    showPlanes = e.target.checked;
+    renderPlot();
+  });
 
   wireLasso();
 
@@ -93,7 +105,7 @@ function showTab(tab) {
 function renderPlot() {
   const st = store.getState();
   const data = stereogramData(st.features, st.selection);
-  lastPlot = renderStereogram($('stereo-chart'), data.points, { highlighted });
+  lastPlot = renderStereogram($('stereo-chart'), data.points, { highlighted, showPoles, showPlanes });
 
   $('stereo-source-note').textContent = data.usingSelection
     ? `Plotting ${data.points.length} of ${data.total} measurement(s) — the current map selection.`
@@ -205,9 +217,10 @@ function startCompass() {
     stopCompassCapture = startOrientationCapture({
       onReading: (r) => {
         compassWidget.update(r);
-        if (r && r.ready) {
-          note.textContent = `${r.n} sample(s) · ±${Math.round(r.strikeSd * 10) / 10}° strike, ±${Math.round(r.dipSd * 10) / 10}° dip`;
-        }
+        // El consejo lo redacta `compassHint`, el mismo que usa el panel
+        // Device: dos textos distintos sobre la misma lectura harían dudar de
+        // cuál de los dos manda.
+        note.textContent = compassHint(r);
       },
       onError: (msg) => {
         note.textContent = msg;

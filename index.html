@@ -68,6 +68,15 @@
         <div class="pen-hover" id="pen-hover" hidden></div>
         <div class="longpress-ring" id="longpress-ring" hidden></div>
         <div class="snap-marker" id="snap-marker" hidden></div>
+        <!-- Número grande del manteo mientras se ajusta con Create → Dip →
+             Digitize: en vivo durante el arrastre, congelado al soltar. Vive
+             arriba al centro para que el dedo arrastrando —normalmente hacia
+             abajo o a un lado del punto medio— nunca lo tape. Ver
+             `renderDigitizePreview` en ui.js. -->
+        <div class="digitize-readout hidden" id="digitize-readout" aria-live="polite">
+          <div class="digitize-readout-value" id="digitize-readout-value"></div>
+          <div class="digitize-readout-sub" id="digitize-readout-sub"></div>
+        </div>
         <!-- Goma del lazo de Elegir. El rectángulo es un div con cuatro lados;
              el trazo a mano alzada —lo de fábrica— es un polígono SVG que se
              cierra solo. Ver `lassoMode` en mapView.js. -->
@@ -793,9 +802,11 @@
       <!-- Se abre sola apenas se coloca una medida, sea cual sea el método:
            el tipo de superficie y la unidad son lo único que hace falta
            confirmar, y el resto del menú de propiedades sobra para eso. Vive
-           colgada de la fila superior (misma posición que Project/Layers…) a
-           propósito: ahí nunca tapa Done/Cancel/Delete, que se mueven de
-           esquina según el dispositivo. -->
+           AL PIE, apoyada sobre la barra de herramientas: es lo que se
+           contesta con el pulgar justo después de colocar el punto, y es
+           además el único sitio donde se pregunta el tipo —al crear la
+           medida la herramienta vuelve a Elegir y la paleta de Surface se
+           retira, para no preguntar dos veces lo mismo en dos sitios. -->
       <div class="dropdown hidden" id="quick-typeunit">
         <header>
           <h2>Type &amp; unit</h2>
@@ -814,6 +825,7 @@
           <button class="icon-btn close-x" id="btn-close-device" aria-label="Close">✕</button>
         </header>
         <svg id="device-compass" class="compass-svg" aria-label="Live compass reading"></svg>
+        <p class="hint footnote" id="device-read-note"></p>
         <p class="hint footnote" id="device-gps-note"></p>
         <button class="pill accent wide" id="btn-device-done" disabled>Add measurement</button>
       </div>
@@ -1307,6 +1319,19 @@
           </div>
           <aside class="sv-side">
             <p class="hint footnote" id="stereo-source-note"></p>
+            <!-- Planos y polos son dos lecturas del mismo dato, no dos modos
+                 excluyentes: con cinco medidas se miran los ciclogramas y con
+                 cien los polos, así que se dibujan los dos y se apaga el que
+                 estorbe. -->
+            <h3>Draw</h3>
+            <label class="sv-check">
+              <input type="checkbox" id="stereo-show-poles" checked />
+              Poles
+            </label>
+            <label class="sv-check">
+              <input type="checkbox" id="stereo-show-planes" checked />
+              Great circles (planes)
+            </label>
             <h3>By type <span class="sv-count" id="stereo-legend-count"></span></h3>
             <div class="sv-list" id="stereo-legend"></div>
             <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>

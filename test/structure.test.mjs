@@ -207,6 +207,46 @@ ok('los métodos tienen id único',
 ok('los dos métodos que leen el DEM están marcados',
   S.DEM_METHODS.has('three-point') && S.DEM_METHODS.has('plane-fit') && !S.DEM_METHODS.has('manual'));
 
+console.log('== geometría geográfica de Digitize ==');
+
+// Acimut de un punto exactamente al Este de otro: 90°, sin importar cuánto
+// pese la longitud a esa latitud.
+{
+  const az = S.geoAzimuth([-71.4, -37.2], [-71.39, -37.2]);
+  ok('al Este da 90°', cerca(az, 90, 0.5), `${az}`);
+}
+{
+  const az = S.geoAzimuth([-71.4, -37.2], [-71.4, -37.19]);
+  ok('al Norte da 0°', cerca(az, 0, 0.5), `${az}`);
+}
+
+// Punto medio: el promedio simple de las dos coordenadas.
+{
+  const mid = S.lngLatMidpoint([-71.4, -37.2], [-71.38, -37.18]);
+  ok('el punto medio es el promedio de lng/lat', cerca(mid[0], -71.39) && cerca(mid[1], -37.19));
+}
+
+// Ida y vuelta: moverse `distMeters` desde `origin` en un acimut y volver a
+// medir la distancia y el acimut tiene que devolver lo mismo con lo que se
+// entró — es la comprobación de que `destinationPoint` es de verdad el
+// inverso de `geoDistance`/`geoAzimuth`.
+{
+  const origin = [-71.4, -37.2];
+  for (const [bearing, dist] of [[0, 500], [90, 500], [200, 1200], [315, 80]]) {
+    const dest = S.destinationPoint(origin, bearing, dist);
+    const azBack = S.geoAzimuth(origin, dest);
+    const distBack = S.geoDistance(origin, dest);
+    ok(`ida y vuelta en acimut ${bearing}°: mismo acimut`, cerca(azBack, bearing, 0.5), `${azBack}`);
+    ok(`ida y vuelta en acimut ${bearing}°: misma distancia`, cerca(distBack, dist, dist * 0.02), `${distBack}`);
+  }
+}
+
+// Distancia cero cuando los dos puntos coinciden, y positiva si no.
+{
+  ok('distancia nula entre un punto y sí mismo', S.geoDistance([-71.4, -37.2], [-71.4, -37.2]) === 0);
+  ok('distancia positiva entre dos puntos distintos', S.geoDistance([-71.4, -37.2], [-71.39, -37.2]) > 0);
+}
+
 console.log('== flujo en el store ==');
 const store = await import(BASE + 'store.js');
 
@@ -226,6 +266,14 @@ store.addVertex([-71.4, -37.2]);
   ok('deriva la dirección de manteo', p.dipAzimuth === 210);
   ok('queda seleccionada para poder corregirla', store.getState().selection[0] === p.id);
   ok('no deja borrador abierto', store.getState().draft === null);
+  /*
+   * Colocada la medida, la herramienta vuelve a Elegir: el siguiente toque en
+   * el mapa ya no crea otra sin querer, y el cuadro de tipo y unidad queda
+   * como el único sitio donde se pregunta qué es lo que se acaba de medir.
+   */
+  ok('la herramienta vuelve a Elegir', store.getState().tool === 'select');
+  ok('y lo anuncia para que la interfaz abra el cuadro de tipo y unidad',
+    store.getState().justMeasured === p.id);
 }
 
 // El rumbo y el manteo tienen dominio propio: 400° y 120° no existen.
@@ -236,6 +284,9 @@ ok('el manteo se acota a [0,90]', store.getState().manualDip === 90);
 
 // --- tres puntos: se cierra solo al tercero ---
 store.clearFeatures();
+// Hay que volver a entrar en la herramienta: crear la medida anterior la
+// devolvió a Elegir, que es justo lo que se acaba de comprobar.
+store.setTool('measure');
 store.setMeasureMethod('three-point');
 store.addVertex([-71.4, -37.2]);
 store.addVertex([-71.39, -37.2]);
@@ -270,6 +321,94 @@ store.addVertex([-71.4, -37.2]);
 store.addVertex([-71.39, -37.2]);
 store.finishDraft();
 ok('dos nodos no producen medida', store.getState().pendingPlane === null);
+
+// --- digitalizar desde el mapa: dos toques, luego arrastrar (y arrastrar de
+// nuevo) para congelar el manteo, y solo Done lo convierte en medida ---
+store.clearFeatures();
+store.setTool('measure');
+store.setMeasureMethod('digitize');
+store.addVertex([-71.4, -37.2]);
+ok('primer toque: sigue en digitize-strike', store.getState().draft.kind === 'digitize-strike');
+ok('con un solo punto', store.getState().draft.coords.length === 1);
+store.addVertex([-71.39, -37.2]);
+{
+  const d = store.getState().draft;
+  ok('el segundo toque pasa de una vez a la fase de ajuste', d.kind === 'digitize-dip');
+  ok('con las dos puntas de la traza', d.coords.length === 2);
+  ok('todavía sin ninguna lectura', d.reading === null);
+  // Traza E-W (mismo lat, lng distinto): el rumbo geográfico real es 90°, y
+  // el punto medio el promedio simple de las dos coordenadas.
+  ok('el rumbo ya queda fijo por los dos puntos', cerca(d.strike, 90, 0.5), `${d.strike}`);
+  ok('y el punto medio también', cerca(d.mid[0], -71.395) && cerca(d.mid[1], -37.2));
+}
+
+// Sin ninguna lectura congelada, Done no crea nada: se limita a cerrar.
+store.finishDraft();
+ok('Done sin arrastrar no crea ninguna medida', store.getState().features.length === 0);
+ok('y descarta el intento entero', store.getState().draft === null);
+
+// Se rehace la traza para lo que sigue.
+store.setTool('measure');
+store.addVertex([-71.4, -37.2]);
+store.addVertex([-71.39, -37.2]);
+
+// Deshacer en esta fase no recorta coordenadas —son fijas, las dos puntas de
+// la traza— sino que vuelve a pedir el segundo punto.
+store.undoVertex();
+{
+  const d = store.getState().draft;
+  ok('deshacer vuelve a digitize-strike', d.kind === 'digitize-strike');
+  ok('con el primer punto puesto', d.coords.length === 1);
+}
+store.addVertex([-71.39, -37.2]);
+
+// Un arrastre soltado congela la lectura en el borrador, sin crear nada
+// todavía: es la diferencia con el diseño de un solo gesto.
+store.setDigitizeDipReading({ dip: 42, dipAzimuth: 90 });
+{
+  const d = store.getState().draft;
+  ok('la lectura queda congelada en el borrador', d.reading && d.reading.dip === 42);
+  ok('sin crear ninguna medida todavía', store.getState().features.length === 0);
+}
+
+// Se puede volver a arrastrar cuantas veces haga falta: la última lectura es
+// la que cuenta.
+store.setDigitizeDipReading({ dip: 67, dipAzimuth: 270 });
+ok('un segundo arrastre reemplaza la lectura', store.getState().draft.reading.dip === 67);
+
+// Ahora sí: Done crea la medida con el rumbo de la traza y el manteo
+// congelado, en el punto medio de los dos toques.
+store.finishDraft();
+{
+  const fs = store.getState().features;
+  ok('Done crea la medida', fs.length === 1);
+  const p = fs[0].properties;
+  ok('con el rumbo de la traza', cerca(p.strike, 90, 0.5), `${p.strike}`);
+  ok('y el manteo de la última lectura congelada', p.dip === 67);
+  ok('la dirección de manteo también es la congelada', p.dipAzimuth === 270);
+  ok('el método queda declarado', p.method === 'digitize');
+  ok('vuelve a Elegir, como cualquier otra medida', store.getState().tool === 'select');
+}
+{
+  const geom = store.getState().features[0].geometry.coordinates;
+  ok('el punto queda en el punto medio geográfico', cerca(geom[0], -71.395) && cerca(geom[1], -37.2));
+}
+
+// Cancelar en cualquier momento descarta todo: no queda ni la traza.
+store.clearFeatures();
+store.setTool('measure');
+store.addVertex([-71.4, -37.2]);
+store.addVertex([-71.39, -37.2]);
+store.setDigitizeDipReading({ dip: 30, dipAzimuth: 90 });
+store.cancelDraft();
+ok('cancelar no crea ninguna medida', store.getState().features.length === 0);
+ok('y no deja nada del intento', store.getState().draft === null);
+
+// `setDigitizeDipReading` no hace nada fuera de la fase de ajuste: no hay
+// ninguna traza sobre la que congelar un manteo.
+store.setMeasureMethod('manual');
+store.setDigitizeDipReading({ dip: 10, dipAzimuth: 10 });
+ok('sin borrador de digitize-dip, no pasa nada', store.getState().draft === null);
 
 // --- editar a mano invalida la incertidumbre del ajuste ---
 store.clearFeatures();

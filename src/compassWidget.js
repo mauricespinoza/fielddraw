@@ -7,10 +7,22 @@
  * texto y no como adorno—, así que la forma de dibujarlo vive en un solo
  * sitio y no se copia dos veces.
  *
- * Notación strike: el trazo largo marca el rumbo (regla de la mano derecha,
- * igual que el símbolo que se dibuja en el mapa en `structureSymbols.js`), y
- * el tic corto hacia la derecha del trazo marca el manteo.
+ * **EN TONOS CLAROS, Y NO POR GUSTO.** El resto de la aplicación es oscura
+ * porque de noche o bajo techo cansa menos, pero esto se mira a mediodía, al
+ * sol, con la pantalla al mínimo de brillo para que dure la batería: ahí una
+ * aguja fina y clara sobre fondo oscuro desaparece, y lo que se lee es el
+ * reflejo de la cara de uno. Tinta oscura sobre disco claro es lo que se ve
+ * con el sol de frente, que es la única condición en la que esta pantalla
+ * tiene que funcionar de verdad.
+ *
+ * **Notación**: `rumbo/manteo` con el rumbo por la REGLA DE LA MANO DERECHA
+ * —la misma del símbolo que se dibuja en el mapa (`structureSymbols.js`) y la
+ * misma que exporta el GeoPackage—, rotulada como tal debajo del número. Un
+ * `120/45` no dice por sí solo si los 120 son rumbo RHR o dirección de manteo,
+ * y las dos lecturas difieren en 90°: el rótulo no es decoración.
  */
+
+import { READY_SPREAD_DEG } from './deviceOrientation.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -20,7 +32,18 @@ const el = (name, attrs = {}) => {
   return n;
 };
 
-const DEG_TICKS = [0, 45, 90, 135, 180, 225, 270, 315];
+/* Paleta de terreno: papel claro, tinta oscura, y dos acentos que se
+   distinguen entre sí incluso en escala de grises impresa. */
+const PAPEL = '#f2f5f8';
+const TINTA = '#1b2430';
+const TENUE = '#5b6876';
+const RUMBO = '#0b5cad';
+const MANTEO = '#c2410c';
+
+/** Cuadrante del acimut, que es como se dicta en terreno. */
+const RUMBOS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const cuadrante = (az) => (Number.isFinite(az) ? RUMBOS[Math.round(((az % 360) + 360) % 360 / 22.5) % 16] : '');
+
 const CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
 
 /**
@@ -28,40 +51,61 @@ const CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
  * no —se limpia primero—. Devuelve funciones para refrescar la lectura sin
  * reconstruir el marco cada vez que llega una muestra nueva.
  *
+ * El lienzo es más ALTO que ancho a propósito: la rosa ocupa la parte de
+ * arriba y el número vive debajo, dentro del mismo `viewBox`. Estaba escrito
+ * en coordenadas que caían fuera del cuadrado del `viewBox` —un SVG recorta
+ * lo que se sale— así que el rumbo y el manteo, que son LO ÚNICO que hay que
+ * leer aquí, no se veían en ninguna parte.
+ *
  * @param {SVGElement} svg
- * @param {{size?: number}} opts
+ * @param {{size?: number}} opts — `size` es el diámetro del lienzo de la rosa.
  */
-export function buildCompass(svg, { size = 220 } = {}) {
+export function buildCompass(svg, { size = 240 } = {}) {
+  const alto = size + 88; // la rosa, y debajo el número con sus dos rótulos
   svg.replaceChildren();
-  svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+  svg.setAttribute('viewBox', `0 0 ${size} ${alto}`);
   svg.setAttribute('width', size);
-  svg.setAttribute('height', size);
+  svg.setAttribute('height', alto);
 
   const cx = size / 2;
   const cy = size / 2;
-  const R = size / 2 - 22;
+  const R = size / 2 - 18;
+
+  // Fondo claro propio: el panel que lo contiene es oscuro, y el disco tiene
+  // que traerse su propio papel o la tinta oscura no se vería sobre él.
+  svg.appendChild(el('rect', { x: 0, y: 0, width: size, height: alto, rx: 12, fill: PAPEL }));
 
   const g = el('g', { class: 'compass-frame' });
   g.append(
-    el('circle', { cx, cy, r: R, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.4, opacity: 0.5 }),
-    el('circle', { cx, cy, r: R * 0.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 1, opacity: 0.25 }),
+    el('circle', { cx, cy, r: R, fill: '#ffffff', stroke: TINTA, 'stroke-width': 1.6 }),
+    el('circle', { cx, cy, r: R * 0.55, fill: 'none', stroke: TENUE, 'stroke-width': 0.9, opacity: 0.5 }),
   );
-  for (const deg of DEG_TICKS) {
+  // Graduación cada 10°, marcada cada 30° y rotulada en los cuatro cardinales:
+  // con menos no se estima un rumbo a ojo, con más se emborrona a esta escala.
+  for (let deg = 0; deg < 360; deg += 10) {
     const rad = (deg * Math.PI) / 180;
-    const inner = deg % 90 === 0 ? R - 10 : R - 6;
-    const x1 = cx + Math.sin(rad) * R;
-    const y1 = cy - Math.cos(rad) * R;
-    const x2 = cx + Math.sin(rad) * inner;
-    const y2 = cy - Math.cos(rad) * inner;
+    const mayor = deg % 90 === 0;
+    const media = deg % 30 === 0;
+    const inner = mayor ? R - 14 : media ? R - 10 : R - 5;
     g.appendChild(
-      el('line', { x1, y1, x2, y2, stroke: 'currentColor', 'stroke-width': deg % 90 === 0 ? 1.6 : 1, opacity: 0.6 }),
+      el('line', {
+        x1: cx + Math.sin(rad) * R,
+        y1: cy - Math.cos(rad) * R,
+        x2: cx + Math.sin(rad) * inner,
+        y2: cy - Math.cos(rad) * inner,
+        stroke: mayor ? TINTA : TENUE,
+        'stroke-width': mayor ? 2 : media ? 1.2 : 0.8,
+      }),
     );
     if (CARDINAL[deg]) {
-      const lx = cx + Math.sin(rad) * (R - 20);
-      const ly = cy - Math.cos(rad) * (R - 20);
       const t = el('text', {
-        x: lx, y: ly, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
-        'font-size': 12, 'font-weight': 700, fill: 'currentColor',
+        x: cx + Math.sin(rad) * (R - 26),
+        y: cy - Math.cos(rad) * (R - 26),
+        'text-anchor': 'middle',
+        'dominant-baseline': 'middle',
+        'font-size': 13,
+        'font-weight': 700,
+        fill: deg === 0 ? MANTEO : TINTA,
       });
       t.textContent = CARDINAL[deg];
       g.appendChild(t);
@@ -70,39 +114,48 @@ export function buildCompass(svg, { size = 220 } = {}) {
   svg.appendChild(g);
 
   const needle = el('g', { class: 'compass-needle', visibility: 'hidden' });
+  // El trazo largo es el rumbo; el tic corto sale hacia la DERECHA del rumbo,
+  // que es donde cae el manteo por la regla de la mano derecha. Quien lee el
+  // símbolo en el mapa lee exactamente lo mismo aquí.
   const strikeLine = el('line', {
-    x1: cx, y1: cy - R + 12, x2: cx, y2: cy + R - 12,
-    stroke: '#4fc3f7', 'stroke-width': 3, 'stroke-linecap': 'round',
+    x1: cx, y1: cy - R + 10, x2: cx, y2: cy + R - 10,
+    stroke: RUMBO, 'stroke-width': 4, 'stroke-linecap': 'round',
   });
   const dipTick = el('line', {
-    x1: cx, y1: cy, x2: cx + 16, y2: cy,
-    stroke: '#ff8a65', 'stroke-width': 3, 'stroke-linecap': 'round',
+    x1: cx, y1: cy, x2: cx + 22, y2: cy,
+    stroke: MANTEO, 'stroke-width': 4.5, 'stroke-linecap': 'round',
   });
-  const hub = el('circle', { cx, cy, r: 3.5, fill: '#e6edf3' });
+  const hub = el('circle', { cx, cy, r: 4, fill: TINTA });
   needle.append(strikeLine, dipTick, hub);
   svg.appendChild(needle);
 
   const label = el('text', {
-    x: cx, y: cy + R + 24, 'text-anchor': 'middle', 'font-size': 15,
-    'font-weight': 600, fill: 'currentColor',
+    x: cx, y: size + 26, 'text-anchor': 'middle', 'font-size': 30,
+    'font-weight': 700, fill: TINTA, 'font-variant-numeric': 'tabular-nums',
   });
   svg.appendChild(label);
 
+  const notacion = el('text', {
+    x: cx, y: size + 46, 'text-anchor': 'middle', 'font-size': 11.5,
+    'font-weight': 600, fill: TENUE, 'letter-spacing': 0.4,
+  });
+  notacion.textContent = 'Strike (RHR) / Dip';
+  svg.appendChild(notacion);
+
   const sub = el('text', {
-    x: cx, y: cy + R + 40, 'text-anchor': 'middle', 'font-size': 11,
-    fill: 'currentColor', opacity: 0.7,
+    x: cx, y: size + 68, 'text-anchor': 'middle', 'font-size': 12, fill: TENUE,
   });
   svg.appendChild(sub);
 
   /**
-   * Refresca la aguja y el texto con una lectura `{strike, dip, strikeSd,
-   * dipSd, ready, n}`. `null`/`undefined` la deja apagada, sin inventar un
-   * cero que no se midió.
+   * Refresca la aguja y el texto con una lectura `{strike, dip, dipAzimuth,
+   * strikeSd, dipSd, spread, ready, n}`. `null`/`undefined` la deja apagada,
+   * sin inventar un cero que no se midió.
    */
   function update(reading) {
     if (!reading || !Number.isFinite(reading.strike) || !Number.isFinite(reading.dip)) {
       needle.setAttribute('visibility', 'hidden');
-      label.textContent = '';
+      label.textContent = '—';
       sub.textContent = '';
       return;
     }
@@ -110,15 +163,53 @@ export function buildCompass(svg, { size = 220 } = {}) {
     // La aguja gira con el rumbo: `g` ya está fijo, así que basta rotar el
     // grupo entero alrededor del centro.
     needle.setAttribute('transform', `rotate(${reading.strike} ${cx} ${cy})`);
-    const strike = String(Math.round(reading.strike)).padStart(3, '0');
-    const dip = Math.round(reading.dip);
-    label.textContent = `${strike}/${dip}`;
+    const strike = String(Math.round(reading.strike) % 360).padStart(3, '0');
+    label.textContent = `${strike}/${Math.round(reading.dip)}`;
+
+    const trozos = [];
     if (Number.isFinite(reading.strikeSd) && Number.isFinite(reading.dipSd)) {
-      sub.textContent = `±${Math.round(reading.strikeSd * 10) / 10}° / ±${Math.round(reading.dipSd * 10) / 10}°`;
-    } else {
-      sub.textContent = '';
+      trozos.push(`±${Math.round(reading.strikeSd * 10) / 10}° / ±${Math.round(reading.dipSd * 10) / 10}°`);
     }
+    // Hacia dónde cae el manteo: es lo primero que se comprueba de una medida
+    // en la libreta, y con la sola cifra de rumbo RHR hay que deducirlo.
+    const az = Number.isFinite(reading.dipAzimuth) ? reading.dipAzimuth : reading.strike + 90;
+    if (reading.dip > 0.5) trozos.push(`dips ${cuadrante(az)}`);
+    sub.textContent = trozos.join(' · ');
   }
 
   return { update };
+}
+
+/**
+ * Qué decirle a quien sostiene el teléfono, a partir de la lectura.
+ *
+ * Vive aquí y no en cada panel porque los dos sitios que enseñan la brújula
+ * —el método Device y la pestaña Compass— tienen que dar exactamente el mismo
+ * consejo: si uno dice "sostén más quieto" y el otro se calla, el que se calla
+ * parece estar dando por buena una lectura que el otro rechaza.
+ *
+ * El caso que importa de verdad es `needsHeading`, que solo aparece en iOS:
+ * apoyar el teléfono en vertical contra una pared deja al magnetómetro sin
+ * poder decir dónde está el norte (ver `alphaFromHeading`). No es un fallo que
+ * se pueda resolver por dentro — hay que NIVELARLO un momento para fijar el
+ * norte y volver a apoyarlo. Decirlo es la única salida.
+ */
+export function compassHint(reading) {
+  if (!reading || !(reading.n >= 2)) return 'Reading the sensors…';
+  if (reading.needsHeading) {
+    return 'Hold the phone level, screen up, for a moment so the compass can find north — then press it flat against the surface.';
+  }
+  const disp = Number.isFinite(reading.spread) ? Math.round(reading.spread * 10) / 10 : null;
+  if (!reading.ready) {
+    if (disp !== null && disp > READY_SPREAD_DEG) return `Hold it steadier — the reading is wandering ±${disp}°.`;
+    return `Reading… (${reading.n} sample${reading.n === 1 ? '' : 's'})`;
+  }
+  const partes = [`${reading.n} samples`];
+  if (disp !== null) partes.push(`steady to ±${disp}°`);
+  if (reading.headingStale) {
+    partes.push(`north locked ${Math.round(reading.headingAge / 1000)} s ago — level the phone again if the strike looks off`);
+  } else if (reading.headingHeld) {
+    partes.push('north held from the last level reading');
+  }
+  return partes.join(' · ');
 }
