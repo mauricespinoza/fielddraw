@@ -50,7 +50,7 @@ import {
   requestOrientationPermission,
   startOrientationCapture,
 } from './deviceOrientation.js';
-import { buildCompass } from './compassWidget.js';
+import { buildCompass, compassHint } from './compassWidget.js';
 import { closeStereogram, initStereogramPanel, isStereogramOpen } from './stereogramPanel.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import {
@@ -1257,6 +1257,18 @@ function quickTypeUnitBody(f) {
   body.replaceChildren();
   const p = f.properties;
 
+  /*
+   * Qué se acaba de anotar, antes de preguntar qué es. Con el método Device o
+   * con un ajuste sobre el DEM el número no lo escribió nadie: verlo aquí es
+   * la única oportunidad de detectar en el acto un rumbo que salió 180° girado
+   * —cuando todavía se está delante del afloramiento y se puede repetir— en
+   * vez de descubrirlo en casa mirando el mapa.
+   */
+  const lectura = document.createElement('p');
+  lectura.className = 'quick-reading';
+  lectura.textContent = `${formatStrikeDip(p.strike, p.dip)} · dips ${quadrant(p.dipAzimuth)}`;
+  body.appendChild(lectura);
+
   const tipos = document.createElement('div');
   tipos.className = 'palette-row';
   for (const t of STRUCTURE_TYPES) {
@@ -1306,6 +1318,11 @@ export function openQuickTypeUnitMenu(id) {
 export function closeQuickTypeUnitMenu() {
   quickTypeUnitFor = null;
   $('quick-typeunit').classList.add('hidden');
+}
+
+/** La medida sobre la que opera el cuadro rápido, o `null` si está cerrado. */
+function quickTypeUnitTarget() {
+  return $('quick-typeunit').classList.contains('hidden') ? null : quickTypeUnitFor;
 }
 
 /** Refresca los chips activos tras un cambio de tipo/unidad, sin cerrar el cuadro. */
@@ -3103,11 +3120,15 @@ function renderDevicePanel() {
   } else {
     note.textContent = `GPS fix: ±${Math.round(fix.accuracy)} m`;
   }
+  // El mismo consejo que da la pestaña Compass, palabra por palabra: los dos
+  // sitios leen los mismos sensores y no pueden discrepar sobre si la lectura
+  // vale (ver `compassHint`).
+  $('device-read-note').textContent = compassHint(r);
 
   const listo = !!(r && r.ready) && !!fix;
   const boton = $('btn-device-done');
   boton.disabled = !listo;
-  boton.textContent = r && !r.ready ? `Reading… (${r.n} sample${r.n === 1 ? '' : 's'})` : 'Add measurement';
+  boton.textContent = listo ? 'Add measurement' : 'Hold steady…';
 }
 
 /**
@@ -3136,6 +3157,10 @@ function commitDeviceReading() {
     quality: {
       strikeSd: round1(r.strikeSd),
       dipSd: round1(r.dipSd),
+      // Dispersión angular del polo en la tanda: es la cifra que de verdad
+      // dice si el teléfono estaba quieto, y viaja con el dato porque sin ella
+      // nadie puede volver a juzgar la medida meses después.
+      poleSpread: round1(r.spread),
       n: r.n,
       gpsAccuracy: Math.round(fix.accuracy),
     },
@@ -4622,7 +4647,10 @@ function renderStatus() {
       if (!r) {
         $('status-text').textContent = `Requesting sensor access… hold the phone flat against the ${que}`;
       } else if (!r.ready) {
-        $('status-text').textContent = `Reading… hold the phone flat against the ${que} and keep it still (${r.n} sample${r.n === 1 ? '' : 's'})`;
+        // El mismo consejo que da el panel de la brújula: si la barra de
+        // estado dijera «sostén el teléfono contra la roca» mientras el panel
+        // pide nivelarlo para encontrar el norte, se estarían contradiciendo.
+        $('status-text').textContent = compassHint(r);
       } else {
         $('status-text').textContent =
           `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · press Add measurement in the compass panel to record it at your GPS position`;
@@ -5154,16 +5182,23 @@ export function initUI() {
      * Cada medida nueva —cualquiera sea el método— abre sola el cuadro de
      * tipo y unidad: son los dos datos que conviene confirmar de inmediato, y
      * pedirlos antes de tocar el mapa habría significado repetirlos en cada
-     * punto en vez de corregirlos solo donde hace falta. Se distingue de una
-     * reselección manual porque esa entra por Elegir, no por la herramienta
-     * de medir: con 'measure' puesta, tocar el mapa siempre crea, nunca
-     * selecciona algo que ya existía.
+     * punto en vez de corregirlos solo donde hace falta.
+     *
+     * Lo que lo dispara es `justMeasured`, la señal que publica el store al
+     * crear la medida, y no la selección: crear una medida ahora devuelve la
+     * herramienta a Elegir, así que "estar en la herramienta de medir" ya no
+     * distingue una medida recién nacida de una que alguien volvió a tocar.
      */
-    if (store.changed('selection')) {
-      const st = store.getState();
-      if (st.tool === 'measure' && st.selection.length === 1) {
-        const f = st.features.find((x) => x.properties.id === st.selection[0]);
-        if (f && f.properties.geomKind === 'measurement') openQuickTypeUnitMenu(f.properties.id);
+    if (store.changed('justMeasured')) {
+      const id = store.getState().justMeasured;
+      if (id) openQuickTypeUnitMenu(id);
+    }
+    // Tocar otra cosa —o deseleccionar— cierra el cuadro: pregunta por UNA
+    // medida concreta, y sin ella no tiene sujeto.
+    if (store.changed('selection') && !store.changed('justMeasured')) {
+      const sel = store.getState().selection;
+      if (quickTypeUnitTarget() && (sel.length !== 1 || sel[0] !== quickTypeUnitTarget())) {
+        closeQuickTypeUnitMenu();
       }
     }
     if (store.changed('features')) refreshQuickTypeUnitMenu();

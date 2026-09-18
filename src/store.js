@@ -228,6 +228,15 @@ let state = {
    * `deviceOrientation.js`).
    */
   deviceReading: null,
+  /**
+   * Id de la última medida recién creada, cualquiera sea el método. Es una
+   * SEÑAL, no un dato: existe para que la interfaz sepa distinguir "acaba de
+   * nacer una medida" de "alguien seleccionó una que ya estaba", que es lo
+   * que decide si se abre solo el cuadro de tipo y unidad. Antes eso se
+   * deducía de `tool === 'measure'`, y dejó de servir en cuanto crear una
+   * medida pasa a devolver la herramienta a Elegir.
+   */
+  justMeasured: null,
   /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
   structureStyle: defaultStructureStyle(),
 
@@ -1129,7 +1138,28 @@ export function createMeasurement({
     geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
   };
   pushHistory();
-  set({ features: [...state.features, feature], draft: null, selection: [id], pendingPlane: null });
+  /*
+   * Colocada la medida, la herramienta vuelve a ELEGIR.
+   *
+   * Un rumbo y manteo se toma de uno en uno y se confirma de uno en uno: lo
+   * que sigue a colocarlo es mirar qué quedó y corregirle el tipo o la
+   * unidad, no colocar otro a ciegas. Dejando puesta la herramienta de medir,
+   * el siguiente toque en el mapa creaba una medida más —normalmente sin
+   * querer, al ir a tocar la que se acababa de poner— y encima mantenía a la
+   * vista la paleta de Surface, que pregunta lo mismo que el cuadro de tipo y
+   * unidad que se abre al crearla: dos sitios para contestar lo mismo.
+   *
+   * `selection` queda en la medida nueva, así que Elegir la muestra ya
+   * seleccionada y el cuadro de tipo y unidad opera sobre ella.
+   */
+  set({
+    features: [...state.features, feature],
+    draft: null,
+    selection: [id],
+    pendingPlane: null,
+    tool: 'select',
+    justMeasured: id,
+  });
   return feature;
 }
 

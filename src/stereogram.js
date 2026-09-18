@@ -101,3 +101,181 @@ export function countsByType(points) {
   for (const p of points) out.set(p.type, (out.get(p.type) || 0) + 1);
   return out;
 }
+
+/* ---------- geometría de la red y de los ciclogramas ---------- */
+
+/**
+ * Vector unitario de una línea `trend`/`plunge` en el marco (Este, Norte,
+ * Arriba), apuntando HACIA ABAJO cuando el plunge es positivo.
+ *
+ * Todo lo que sigue —el ciclograma de un plano, los círculos de la red— se
+ * calcula con vectores y no con ángulos: una circunferencia sobre la esfera no
+ * tiene ninguna singularidad, pero su parametrización en rumbo y buzamiento
+ * las tiene en el cenit y en el nadir, que es justo por donde pasan la mitad
+ * de las curvas que hay que dibujar.
+ */
+export function lineVector(trend, plunge) {
+  const t = trend * RAD;
+  const p = plunge * RAD;
+  return { x: Math.sin(t) * Math.cos(p), y: Math.cos(t) * Math.cos(p), z: -Math.sin(p) };
+}
+
+/**
+ * Proyecta un vector cualquiera en la red equiareal, forzándolo al HEMISFERIO
+ * INFERIOR: un eje y su opuesto son la misma dirección estructural, y el
+ * convenio de esta red —como el de cualquier estereograma geológico— es
+ * enseñar la mitad de abajo.
+ */
+export function projectVector(v, R = 1) {
+  const s = v.z > 0 ? -1 : 1;
+  const x = v.x * s;
+  const y = v.y * s;
+  const z = v.z * s;
+  const largo = Math.hypot(x, y, z) || 1;
+  const trend = Math.atan2(x / largo, y / largo);
+  const plunge = Math.asin(Math.min(1, Math.max(-1, -z / largo)));
+  const theta = Math.PI / 2 - plunge;
+  const r = R * Math.SQRT2 * Math.sin(theta / 2);
+  return { x: r * Math.sin(trend), y: -r * Math.cos(trend) };
+}
+
+const cross = (a, b) => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x,
+});
+function unit(v) {
+  const l = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / l, y: v.y / l, z: v.z / l };
+}
+
+/**
+ * Traza de un CÍRCULO MENOR —el cono de semiángulo `psi` alrededor de `axis`—
+ * en el hemisferio inferior, como una o dos polilíneas ya proyectadas.
+ *
+ * Con `psi = 90` el cono es un plano y la traza es un CÍRCULO MÁXIMO: los dos
+ * dibujos de la red salen de esta misma función, que es la razón de que no
+ * puedan desalinearse entre sí.
+ *
+ * Un círculo que cruza el horizonte sale de la mitad de abajo y vuelve a
+ * entrar, así que se devuelve partido: unirlo daría una cuerda recta cruzando
+ * la red. El punto exacto del cruce se afina por bisección en vez de dejarlo
+ * caer en la muestra más cercana — sin eso, cada curva termina un grado antes
+ * del círculo primitivo y la red se ve deshilachada por el borde.
+ */
+export function smallCircleSegments(axis, psi, { R = 1, steps = 240 } = {}) {
+  const a = unit(axis);
+  const auxiliar = Math.abs(a.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  const u = unit(cross(a, auxiliar));
+  const v = cross(a, u);
+  const c = Math.cos(psi * RAD);
+  const s = Math.sin(psi * RAD);
+  const at = (t) => ({
+    x: c * a.x + s * (Math.cos(t) * u.x + Math.sin(t) * v.x),
+    y: c * a.y + s * (Math.cos(t) * u.y + Math.sin(t) * v.y),
+    z: c * a.z + s * (Math.cos(t) * u.z + Math.sin(t) * v.z),
+  });
+
+  /** Parámetro del cruce por z = 0 entre dos muestras, por bisección. */
+  const cruce = (t1, t2) => {
+    let lo = t1;
+    let hi = t2;
+    const zLo = at(lo).z;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (at(mid).z * zLo > 0) lo = mid;
+      else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
+
+  /*
+   * Proyecta SIN dejar que la componente vertical decida el hemisferio.
+   *
+   * `projectVector` manda al hemisferio inferior tomando el opuesto de lo que
+   * apunte hacia arriba, y eso es lo correcto para un dato suelto. Pero los
+   * puntos de esta curva ya están todos abajo por construcción, y los de los
+   * extremos están EXACTAMENTE en el horizonte, donde `z` vale ±1e-17 según
+   * cómo caiga el redondeo. Dejar que ese ruido elija hemisferio mandaba el
+   * extremo del arco a su antípoda, y la polilínea lo unía con el punto
+   * anterior: una cuerda recta cruzando la red entera, de un borde al otro.
+   * Con 34 curvas eso era un abanico de rectas por el centro — justamente la
+   * rosa polar que esta red viene a reemplazar.
+   */
+  const proyecta = (p) => projectVector({ x: p.x, y: p.y, z: Math.min(0, p.z) }, R);
+
+  const TOL = 1e-9;
+  const segmentos = [];
+  let actual = [];
+  let tPrev = null;
+  let abajo = false;
+  const cierra = () => {
+    // Un arco que solo ROZA el horizonte deja dos puntos en el mismo sitio: no
+    // es una curva, es un punto, y dibujarlo solo ensucia el borde. Se mide el
+    // largo recorrido y no la distancia entre extremos, porque un círculo
+    // entero bajo el horizonte vuelve a su punto de partida y sí hay que
+    // dibujarlo.
+    let largo = 0;
+    for (let i = 1; i < actual.length; i++) {
+      largo += Math.hypot(actual[i].x - actual[i - 1].x, actual[i].y - actual[i - 1].y);
+    }
+    if (actual.length > 1 && largo > 1e-9) segmentos.push(actual);
+    actual = [];
+  };
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * 2 * Math.PI;
+    const p = at(t);
+    const dentro = p.z <= TOL;
+    if (dentro && !abajo && tPrev !== null) actual.push(proyecta(at(cruce(tPrev, t))));
+    if (dentro) {
+      actual.push(proyecta(p));
+    } else if (abajo) {
+      actual.push(proyecta(at(cruce(tPrev, t))));
+      cierra();
+    }
+    abajo = dentro;
+    tPrev = t;
+  }
+  cierra();
+  return segmentos;
+}
+
+/**
+ * Ciclograma (círculo máximo) de un plano rumbo/manteo: el lugar de todas las
+ * líneas contenidas en él. Es el cono de 90° alrededor de su polo.
+ */
+export function greatCirclePath(strike, dip, opts = {}) {
+  const polo = poleOf(strike, dip);
+  return smallCircleSegments(lineVector(polo.trend, polo.plunge), 90, opts);
+}
+
+/**
+ * La RED DE SCHMIDT propiamente dicha, como listas de polilíneas ya
+ * proyectadas y en unidades del radio.
+ *
+ * Es la red estándar y no una rosa de coordenadas polares: círculos máximos de
+ * los planos que contienen el eje horizontal N-S, y círculos menores de los
+ * conos alrededor de ese mismo eje. Las ÚNICAS rectas que salen son los dos
+ * diámetros N-S y E-W, que son casos de esas mismas dos familias (el plano
+ * vertical N-S y el cono de 90°). La versión anterior dibujaba en su lugar
+ * circunferencias concéntricas y seis diámetros cada 30°: eso es un papel
+ * polar, sirve para leer un acimut y un ángulo, y NO es sobre lo que se lee un
+ * estereograma —no se puede rotar un dato sobre él, ni leer la intersección de
+ * dos planos, ni estimar un eje de pliegue, que es para lo que existe la red.
+ */
+export function schmidtNet({ step = 10, R = 1, steps = 240 } = {}) {
+  const ejeNS = { x: 0, y: 1, z: 0 };
+  const opciones = { R, steps };
+  const great = [];
+  const small = [];
+  for (let dip = step; dip <= 90; dip += step) {
+    // Buzando al Este y al Oeste: juntos forman la familia completa. A 90° los
+    // dos son el mismo plano vertical, así que solo entra una vez.
+    great.push(...greatCirclePath(0, dip, opciones));
+    if (dip !== 90) great.push(...greatCirclePath(180, dip, opciones));
+  }
+  for (let psi = step; psi < 180; psi += step) {
+    small.push(...smallCircleSegments(ejeNS, psi, opciones));
+  }
+  return { great, small };
+}

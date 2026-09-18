@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.29.0';
+export const APP_VERSION = '0.30.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
   ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
   ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, leído en vivo del giroscopio y el magnetómetro del teléfono, o digitalizado sobre un mapa. Cada medida viaja con su incertidumbre.'],
-  ['Stereogram', 'Red estereográfica equiareal de los manteos seleccionados —o de todos—, coloreada por tipo, con lazo propio para marcar un cúmulo y su propia pestaña Compass. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
+  ['Stereogram', 'Red de Schmidt de los manteos seleccionados —o de todos—, con los polos y los ciclogramas coloreados por tipo y una casilla para apagar cualquiera de las dos familias. Lazo propio para marcar un cúmulo y devolverlo a la selección del mapa, y pestaña Compass con la brújula en vivo. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
   ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
   ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
@@ -53,6 +53,20 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.30.0',
+    items: [
+      'Colocar una medida devuelve la herramienta a Elegir: el toque siguiente ya no crea otra sin querer, y la medida recién puesta queda seleccionada para corregirla.',
+      'Se deja de preguntar el tipo de superficie en dos sitios a la vez. Al crear la medida solo queda el cuadro de tipo y unidad, y baja al PIE de la pantalla —apoyado sobre la barra de herramientas— para contestarlo con el pulgar sin soltar el teléfono. Encabeza con el rumbo y el manteo que se acaban de anotar, para poder desmentirlos ahí mismo y no en casa.',
+      'El método Device ya no salta en superficies subverticales, que es justo donde más se usa. Eran tres fallos encadenados: la normal del teléfono se iba al hemisferio de abajo y el rumbo saltaba 180° entre dos lecturas de la misma pared; el promedio se hacía sobre ángulos en vez de sobre vectores, y promediar 0° y 180° no da nada; y en iOS el rumbo de la brújula se traducía con la fórmula del teléfono tumbado cuando ya estaba de pie, con otros 180° de error.',
+      'En iOS, además, apoyar el teléfono en vertical contra una pared deja al magnetómetro sin poder decir dónde está el norte: ahora la app FIJA el norte mientras el teléfono está nivelado y lo mantiene con el giroscopio mientras se apoya, en vez de entregar un rumbo inventado. Si nunca se niveló, lo pide en vez de callarlo.',
+      'La lectura llega con rechazo de atípicos —un clavo o la hebilla del cinturón metían una muestra disparatada— y no se da por buena hasta que el teléfono está de verdad quieto: el botón lo dice y la dispersión medida viaja con el dato al GeoPackage.',
+      'La brújula se ve en tonos claros, que es lo único que se lee al sol, con el número grande y rotulado Strike (RHR) / Dip: un «120/45» a secas no dice si esos 120 son rumbo o dirección de manteo, y las dos lecturas difieren en 90°. Debajo, hacia dónde mantea. Antes el número quedaba fuera del lienzo y no se veía en ninguna parte.',
+      'El estereograma dibuja ahora la RED DE SCHMIDT de verdad —círculos máximos y menores cada 10°— en vez de circunferencias concéntricas con seis radios, que era un papel polar y no una red: sobre aquello no se podía rotar un dato, ni leer la intersección de dos planos, ni sacar un eje de pliegue.',
+      'Y dibuja los planos además de los polos, cada familia con su casilla para apagarla: con cinco medidas se miran los ciclogramas y con cien los polos. Los polos se agrandan a 7 px, que era lo que costaba distinguirlos de un cruce de la propia red.',
+      'La red va sobre papel claro: al sol una malla de líneas finas sobre fondo oscuro no se ve, y el SVG y el PNG exportados ya salen con el fondo que van a tener en una memoria.',
+    ],
+  },
   {
     version: '0.29.0',
     items: [

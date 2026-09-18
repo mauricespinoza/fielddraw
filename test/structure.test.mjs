@@ -226,6 +226,14 @@ store.addVertex([-71.4, -37.2]);
   ok('deriva la dirección de manteo', p.dipAzimuth === 210);
   ok('queda seleccionada para poder corregirla', store.getState().selection[0] === p.id);
   ok('no deja borrador abierto', store.getState().draft === null);
+  /*
+   * Colocada la medida, la herramienta vuelve a Elegir: el siguiente toque en
+   * el mapa ya no crea otra sin querer, y el cuadro de tipo y unidad queda
+   * como el único sitio donde se pregunta qué es lo que se acaba de medir.
+   */
+  ok('la herramienta vuelve a Elegir', store.getState().tool === 'select');
+  ok('y lo anuncia para que la interfaz abra el cuadro de tipo y unidad',
+    store.getState().justMeasured === p.id);
 }
 
 // El rumbo y el manteo tienen dominio propio: 400° y 120° no existen.
@@ -236,6 +244,9 @@ ok('el manteo se acota a [0,90]', store.getState().manualDip === 90);
 
 // --- tres puntos: se cierra solo al tercero ---
 store.clearFeatures();
+// Hay que volver a entrar en la herramienta: crear la medida anterior la
+// devolvió a Elegir, que es justo lo que se acaba de comprobar.
+store.setTool('measure');
 store.setMeasureMethod('three-point');
 store.addVertex([-71.4, -37.2]);
 store.addVertex([-71.39, -37.2]);

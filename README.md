@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -1340,7 +1340,7 @@ de exigir red — o sea, no funcionarían justo en terreno.
 ## Rumbo y manteo
 
 **Dip** es la primera herramienta que produce geometría de **punto**: hasta
-aquí el modelo eran líneas y polígonos. Tres métodos, que se eligen en la
+aquí el modelo eran líneas y polígonos. Cinco métodos, que se eligen en la
 paleta:
 
 | Método | Gesto | De dónde sale el número |
@@ -1348,6 +1348,22 @@ paleta:
 | **Manual** | un toque | de tu brújula; los valores se escriben en la paleta y se corrigen en el menú de propiedades |
 | **Tres puntos** | tres toques sobre la misma superficie | el problema clásico: tres cotas del DEM definen un plano exacto |
 | **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
+| **Device** | apoyar el dorso del teléfono contra la roca y pulsar *Add measurement* | los sensores del propio teléfono, promediados mientras está apoyado; la medida se ancla en la posición del GPS |
+| **Digitize** | dos toques sobre la traza del rumbo y un arrastre hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
+
+### Colocada la medida, la herramienta vuelve a Elegir
+
+Cualquiera sea el método, en cuanto la medida existe la herramienta pasa a
+**Select** con la medida nueva seleccionada, y se abre **al pie de la pantalla**
+un cuadro con lo único que hay que confirmar en el acto: el tipo de superficie y
+la unidad. Encabeza con el rumbo y el manteo recién anotados.
+
+Las dos cosas son deliberadas y responden a lo mismo. Con la herramienta puesta,
+el toque siguiente —normalmente el de ir a tocar la medida que se acaba de
+colocar— creaba otra sin querer; y mientras la paleta de *Dip* seguía a la
+vista, el tipo de superficie se preguntaba en **dos sitios a la vez**, la paleta
+y el cuadro, sin que nada dijera cuál mandaba. Al pie, además, se contesta con
+el pulgar sin soltar el teléfono, que es la mano que acaba de colocar el punto.
 
 Se usa la **regla de la mano derecha**: el manteo cae 90° en sentido horario
 desde el rumbo. Es la misma convención con la que ya se rotan por `Strike` los
@@ -1393,6 +1409,109 @@ alineados no se entrega ninguna medida: se explica por qué.
 Corregir a mano el rumbo o el manteo de una medida calculada la marca como
 *editada* y **retira** las barras de error: eran del ajuste, y mantenerlas
 afirmaría una precisión que el número escrito a mano ya no tiene.
+
+### El método Device: leer el plano con el propio teléfono
+
+El dorso del teléfono apoyado a ras contra la superficie, con la pantalla
+mirando al observador. En esa postura el eje **+Z** del teléfono —el que sale de
+la pantalla— *es* la normal de la superficie, así que rumbo y manteo salen de él
+con la misma fórmula que se aplica a la normal de un plano ajustado al DEM: no
+son dos convenciones, es la misma cuenta mirada al revés.
+
+El navegador no entrega sensores sueltos sino el trío `alpha`/`beta`/`gamma` ya
+fusionado, que son los ángulos de Euler Z-X'-Y'' del estándar W3C. De la matriz
+que definen se toma la tercera columna, que es ese eje +Z en el marco terrestre.
+**A partir de ahí no se vuelve a pasar por ángulos**, y esa es la decisión que
+sostiene todo lo demás: una dirección sobre la esfera no tiene singularidades,
+pero su parametrización en rumbo y manteo las tiene justo donde se toman las
+medidas difíciles.
+
+#### Lo que hacía saltar la lectura en una pared subvertical
+
+Tres fallos encadenados, los tres en el mismo sitio —el plano de falla, la
+diaclasa, el banco de pie— que es donde más se usa esto:
+
+1. **La normal se iba al hemisferio de abajo.** Apoyando el teléfono contra una
+   pared basta pasarse un pelo de la vertical (o medir el techo de un volado)
+   para que la normal apunte hacia abajo. El manteo salía de 91°, se recortaba a
+   90 y la dirección se quedaba apuntando al lado contrario: la misma pared
+   medida dos veces daba rumbos separados 180°. Ahora la normal se lleva siempre
+   al hemisferio de arriba, con lo que el manteo cae por construcción en
+   [0°, 90°] y la dirección es única.
+2. **El promedio se hacía sobre ángulos.** Con el fallo anterior vivo, promediar
+   rumbos de 0° y 180° no da 0 ni 180, da cualquier cosa. Y aunque no lo
+   estuviera, promediar rumbo y manteo por separado no es promediar
+   orientaciones. Ahora se promedian las **normales tratadas como ejes** —cada
+   muestra se alinea por signo contra la referencia antes de sumarla—, que es la
+   versión barata del vector propio principal del tensor de orientación.
+3. **En iOS, la traducción del rumbo de brújula cambiaba de fórmula.**
+   `webkitCompassHeading` es el acimut del eje **+Y** del teléfono, y su relación
+   con el `alpha` del estándar es `α = 360 − rumbo` solo mientras `cos β > 0`;
+   pasado el teléfono de la vertical es `α = 180 − rumbo`. Usar la primera en el
+   otro lado son otros 180° de error, y se cruza esa frontera continuamente
+   apoyando el teléfono contra una pared.
+
+#### El norte, cuando el magnetómetro no puede darlo
+
+Hay una postura en la que el rumbo de brújula de iOS sencillamente **no existe**:
+cuando el eje +Y apunta al cielo su acimut es indefinido, y esa es, literalmente,
+la de apoyar el teléfono de pie contra una pared con la parte de arriba hacia
+arriba. En vez de entregar el número que salga, la app **fija el desfase de
+norte** mientras la postura sí lo permite y lo mantiene con el giroscopio
+mientras se apoya: la corrección se aplica rotando el vector alrededor de la
+vertical, que es equivalente a haber leído el `alpha` corregido pero no se rompe
+en el bloqueo de cardán. Si nunca hubo una postura desde la que fijarlo, lo pide
+—«nivela el teléfono un momento»— en vez de callarlo.
+
+#### Cuánto vale esta lectura
+
+La misma regla que el resto del módulo: el error no se declara, se mide. De la
+ventana de muestras se descarta lo que se aparta mucho más que el resto —un
+clavo, la hebilla del cinturón, el imán de la funda meten una muestra
+disparatada— siempre que quede la mayoría; si se cae más de un tercio de la
+tanda, lo que pasa no es que haya atípicos sino que el teléfono se está moviendo,
+y eso lo tiene que **ver** la dispersión, no taparlo el recorte. La lectura no se
+da por buena hasta que la dispersión del polo baja de 4°, y el botón lo dice.
+
+Los dos márgenes que se reportan no salen de medir rumbos y manteos por separado:
+se proyecta la desviación de cada normal sobre las dos direcciones en que mover
+el polo cambia una cosa u otra. A lo largo del meridiano del polo cambia el
+manteo grado por grado; perpendicular a él cambia la dirección, y ahí la misma
+desviación vale `1/sen(manteo)` grados de rumbo. Por eso el rumbo de una
+superficie tumbada se reporta mucho menos preciso aunque el teléfono no se haya
+movido: no es ruido, es que **no está definido**, y la cifra tiene que decirlo.
+
+### El estereograma
+
+**Red de Schmidt** —equiareal, hemisferio inferior— de las medidas
+seleccionadas en el mapa, o de todas si no hay selección.
+
+La red es la de verdad: círculos máximos de los planos que contienen el eje
+horizontal N-S y círculos menores de los conos alrededor de ese mismo eje, cada
+10°. Las únicas rectas que la cruzan son los diámetros N-S y E-W, que son casos
+de esas mismas dos familias. Lo que había antes —circunferencias concéntricas y
+seis radios cada 30°— es un **papel polar**: sirve para leer un acimut y un
+ángulo, y sobre él no se puede rotar un dato, ni leer la intersección de dos
+planos, ni estimar un eje de pliegue, que es para lo que existe una red.
+
+De cada medida se dibujan **las dos cosas**, con su casilla para apagar la que
+estorbe: el **polo**, que es lo que se mira con cien medidas encima porque se
+agrupa solo donde el afloramiento tiene una fábrica, y el **ciclograma**, que es
+lo que se mira con cinco, cuando lo que interesa es dónde se cortan dos planos o
+qué cinturón describen. Ninguna de las dos sustituye a la otra.
+
+Va sobre **papel claro** aunque la aplicación sea oscura, por las dos razones que
+mandan aquí: en terreno, al sol, una malla de líneas finas claras sobre fondo
+oscuro no se ve; y el destino de la figura es una memoria o un paper, donde va
+sobre blanco. El SVG y el PNG salen del mismo dibujo que está en pantalla, así
+que ninguna de las tres versiones puede desalinearse de las otras.
+
+Un lazo propio sobre la red marca un cúmulo de polos y lo devuelve a la
+selección del mapa. La pestaña **Compass** enseña la brújula en vivo del
+teléfono, de referencia, sin anotar nada: en tonos claros —que es lo único que se
+lee al sol— y rotulada `Strike (RHR) / Dip`, porque un «120/45» a secas no dice
+si esos 120 son rumbo por la mano derecha o dirección de manteo, y las dos
+lecturas difieren en 90°.
 
 ### Espesor estratigráfico
 
@@ -1518,7 +1637,7 @@ caminado de uno proyectado. En el mapa acabado son la misma línea negra.
 
 Las medidas salen en una tercera tabla del GeoPackage, `geol_points`, con los
 campos de calidad al lado del dato (`strike_sd`, `dip_sd`, `rms_m`, `n_points`,
-`base_m`, `spread_m`, `dem_source`) — no solo en pantalla: un manteo sacado de
+`base_m`, `spread_m`, `pole_sd`, `dem_source`) — no solo en pantalla: un manteo sacado de
 un DEM sin su incertidumbre termina citado como si fuera de brújula, y en QGIS
 ya no queda forma de saber cuál era cuál. El QML que se escribe en
 `layer_styles` arma el símbolo con dos marcadores de línea y una rotación por

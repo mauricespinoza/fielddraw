@@ -298,7 +298,7 @@ export async function exportGeoPackage(features, units, ornaments) {
         columns: [
           'type', 'strike', 'dip', 'dip_dir', 'overturned', 'method',
           'strike_sd', 'dip_sd', 'rms_m', 'n_points', 'base_m', 'spread_m',
-          'dem_source', 'unit', 'code', 'label', 'note', 'created_at',
+          'pole_sd', 'dem_source', 'unit', 'code', 'label', 'note', 'created_at',
         ],
         /*
          * Los campos de calidad se exportan junto al dato y no solo se muestran
@@ -319,6 +319,11 @@ export async function exportGeoPackage(features, units, ornaments) {
           p.n ?? null,
           p.baseline ?? null,
           p.minorSpread ?? null,
+          // Dispersión angular del polo entre las muestras del método Device,
+          // en grados. `spread_m` de al lado son METROS y es otra cosa —la
+          // geometría de la base de un ajuste sobre el DEM—, de ahí que no
+          // compartan columna por mucho que ambas se llamen dispersión.
+          p.poleSpread ?? null,
           p.demSource || null,
           p.unit || '',
           p.code || '',
