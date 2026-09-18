@@ -765,37 +765,6 @@ body,
   font-size: 14px;
 }
 
-/*
- * TIPO Y UNIDAD: AL PIE, NO EN LA FILA DE ARRIBA.
- *
- * Es el único desplegable que no lo abre un botón sino la propia medida al
- * nacer, y lo que pregunta hay que contestarlo con el pulgar sin soltar el
- * teléfono. Colgado de la fila superior quedaba en el extremo opuesto de la
- * pantalla al dedo que acaba de colocar el punto, y encima tapaba justo la
- * mitad del mapa donde suele caer la medida recién puesta. Al pie se apoya
- * sobre la barra de herramientas —la misma cuenta que usa la paleta— así que
- * nunca la pisa.
- */
-/* El rumbo y el manteo recién anotados, en grande: es lo primero que hay que
-   poder desmentir sin salir del afloramiento. */
-.quick-reading {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-#quick-typeunit {
-  top: auto;
-  bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 6px);
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  width: min(460px, calc(100vw - var(--safe-l) - var(--safe-r) - 2 * var(--edge)));
-  max-height: 44dvh;
-}
-
 .dropdown .field {
   display: flex;
   flex-direction: column;
@@ -2745,19 +2714,6 @@ input[type='radio'] {
    * sobra alto y falta ancho, así que va de hoja al pie; baja (C) es al revés
    * y vuelve a ser la columna del costado de siempre.
    */
-
-  /*
-   * A ancho de pantalla, igual que la paleta: aquí los chips de tipo son lo
-   * que hay que acertar con el dedo, y 460 px centrados dejaban dos márgenes
-   * muertos a los lados de un móvil.
-   */
-  #quick-typeunit {
-    left: calc(var(--safe-l) + var(--edge));
-    right: calc(var(--safe-r) + var(--edge));
-    transform: none;
-    width: auto;
-    max-height: 40dvh;
-  }
 
   /* La barra de estado se aprieta: cada píxel suyo es un píxel de mapa, y la
      tira de herramientas se apoya justo encima de ella. */

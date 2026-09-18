@@ -61,7 +61,7 @@ export const MEASURE_METHODS = [
     label: 'Digitize from map',
     short: 'Digit',
     glyph: '▱',
-    help: 'Tap the two ends of the strike trace, then drag to one side to set the dip direction and magnitude — release to freeze it, drag again to refine, and press Done when it looks right',
+    help: 'Drag along the strike trace, then drag to one side to set the dip direction and magnitude — release to freeze it, drag again to refine, and press Done when it looks right',
   },
 ];
 
@@ -139,6 +139,37 @@ export function destinationPoint(origin, bearingDeg, distMeters) {
   const dE = distMeters * Math.sin(rad);
   const dN = distMeters * Math.cos(rad);
   return [origin[0] + dE / (M_PER_DEG_LNG * Math.cos(lat0)), origin[1] + dN / M_PER_DEG_LAT];
+}
+
+/**
+ * De las dos direcciones de manteo posibles de una traza de rumbo —90° a
+ * cada lado— cuál es la que de verdad se arrastró, y el RUMBO que le
+ * corresponde por la regla de la mano derecha.
+ *
+ * Una traza de rumbo por sí sola es una RECTA, sin sentido: hasta que no se
+ * dice hacia dónde mantea, "rumbo 040" y "rumbo 220" son la misma línea. La
+ * regla de la mano derecha fija cuál de los dos se reporta exigiendo
+ * `dipAzimuth = rumbo + 90` siempre — así que arrastrar hacia el lado
+ * "de vuelta" (`rumboBase + 270`) no es un rumbo distinto: es EL MISMO plano,
+ * leído con la convención volteada 180°. Sin este ajuste, guardar
+ * `{rumbo: rumboBase, dipAzimuth: rumboBase − 90}` produce un par que ya no
+ * cumple esa regla, y todo el resto de la app —el símbolo, el cuadrante que
+ * se muestra, la exportación— asume que sí la cumple.
+ *
+ * @param {number} strikeBase El rumbo de la traza tal cual sale de sus dos
+ *   puntos (`geoAzimuth`), sin decidir todavía hacia qué lado mantea.
+ * @param {number} dragAzimuth Hacia dónde se tiró, en grados geográficos
+ *   reales.
+ */
+export function resolveDipSide(strikeBase, dragAzimuth) {
+  const candA = norm360(strikeBase + 90);
+  const candB = norm360(strikeBase + 270);
+  const angDiff = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+  const haciaA = angDiff(dragAzimuth, candA) <= angDiff(dragAzimuth, candB);
+  return {
+    strike: haciaA ? norm360(strikeBase) : norm360(strikeBase + 180),
+    dipAzimuth: haciaA ? candA : candB,
+  };
 }
 
 /**

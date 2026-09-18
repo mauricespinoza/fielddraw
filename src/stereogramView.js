@@ -26,6 +26,10 @@ const PAPEL = '#ffffff';
 const TINTA = '#1b2430';
 const MALLA = '#aab6c2';
 const TENUE = '#5b6876';
+/* Magenta, a propósito: ningún tipo de superficie del catálogo usa ese tono
+   (negro, verde, azul, rojo), así que el vector medio nunca se confunde con
+   el polo de una medida real. */
+const MEDIA = '#c026d3';
 
 const el = (name, attrs = {}) => {
   const n = document.createElementNS(SVG_NS, name);
@@ -108,6 +112,11 @@ export function renderStereogram(svg, points, opts = {}) {
     highlighted = null,
     showPoles = true,
     showPlanes = true,
+    // El vector medio (`S.meanPole`) es un punto aparte, no uno más de
+    // `points`: no tiene tipo ni color propio, y se apaga con su propia
+    // casilla en vez de la de Polos, que sigue gobernando los polos reales.
+    showMean = false,
+    meanVector = null,
   } = opts;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('width', width);
@@ -183,6 +192,34 @@ export function renderStereogram(svg, points, opts = {}) {
     placed.push({ id: p.id, x: px, y: py });
   }
   svg.appendChild(dots);
+
+  /*
+   * VECTOR MEDIO: una mira, no un polo más.
+   *
+   * Encima de todo lo demás —de los ciclogramas y de los propios polos—
+   * porque es la lectura que se viene a buscar cuando hay un cúmulo entero
+   * plagado de puntos: tiene que verse aunque haya cien polos debajo. La cruz
+   * blanca sobre el círculo magenta es deliberadamente distinta de cualquier
+   * polo (un círculo liso, en el color del tipo): nunca hay que dudar cuál de
+   * los puntos es el promedio y cuál una medida de verdad.
+   */
+  if (showMean && meanVector) {
+    const mx = cx + meanVector.x * radius;
+    const my = cy + meanVector.y * radius;
+    const media = el('g', { class: 'stereo-mean' });
+    media.append(
+      el('circle', { cx: mx, cy: my, r: 11, fill: MEDIA, stroke: TINTA, 'stroke-width': 1.6 }),
+      el('line', {
+        x1: mx - 6, y1: my, x2: mx + 6, y2: my,
+        stroke: '#ffffff', 'stroke-width': 2, 'stroke-linecap': 'round',
+      }),
+      el('line', {
+        x1: mx, y1: my - 6, x2: mx, y2: my + 6,
+        stroke: '#ffffff', 'stroke-width': 2, 'stroke-linecap': 'round',
+      }),
+    );
+    svg.appendChild(media);
+  }
 
   // Las coordenadas de cada punto ya en el sistema del `viewBox`, para que
   // quien haga hit-testing del lazo (`stereogramPanel.js`) no tenga que

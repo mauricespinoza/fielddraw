@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.30.0';
+export const APP_VERSION = '0.31.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
   ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
   ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, leído en vivo del giroscopio y el magnetómetro del teléfono, o digitalizado sobre un mapa. Cada medida viaja con su incertidumbre.'],
-  ['Stereogram', 'Red de Schmidt de los manteos seleccionados —o de todos—, con los polos y los ciclogramas coloreados por tipo y una casilla para apagar cualquiera de las dos familias. Lazo propio para marcar un cúmulo y devolverlo a la selección del mapa, y pestaña Compass con la brújula en vivo. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
+  ['Stereogram', 'Red de Schmidt de los manteos seleccionados —o de todos—, con los polos y los ciclogramas coloreados por tipo, cada familia con su casilla, y un vector medio opcional del cúmulo. Lazo propio para marcar un cúmulo y devolverlo a la selección del mapa, y pestaña Compass con la brújula en vivo. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
   ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
   ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
@@ -53,6 +53,17 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.31.0',
+    items: [
+      'El cuadro de tipo y unidad que se abría al colocar una medida se retira: el tipo de superficie y la unidad ya se eligen en la paleta ANTES de tocar el mapa, y preguntarlos otra vez apenas nace la medida era la misma pregunta dos veces, no dos preguntas. Corregirlos después sigue siendo cosa del menú de propiedades (mantener pulsado sobre la medida).',
+      'Se quita «Dyke margin» del catálogo de superficies medibles: un dique es un cuerpo, no una superficie suelta, y ya se cartografía como tal —con su propia traza y, si hace falta, su propia unidad—. Tratarlo además como un quinto tipo de medida puntual duplicaba la pregunta que la traza o el polígono ya contestan.',
+      'Digitize cambia otra vez de gesto: la traza de rumbo se dibuja con UN arrastre —el punto donde baja el dedo es el primer extremo— en vez de con dos toques, como se traza una línea con una regla. El palito del manteo, además, se dibuja SIEMPRE ortogonal al rumbo por más que el dedo se vaya de lado, y arrastrar al lado contrario del que ya se había elegido voltea el rumbo guardado 180° para que `dipAzimuth = rumbo + 90` siga cumpliéndose siempre, como en cualquier otro método.',
+      'El estereograma suma una casilla «Mean vector»: el promedio de los polos que se están mirando, con su rumbo y manteo (regla de la mano derecha) y una cifra de qué tan apretado está el cúmulo. Se dibuja con una mira propia —círculo magenta con una cruz blanca— para que nunca se confunda con un polo de verdad.',
+      'El método Device se da por listo bastante antes que antes, sin aceptar una lectura más ruidosa: la ventana de muestras baja de 2 a 1 segundo. La demora no la ponía cuántas muestras hacían falta —el sensor entrega de sobra en un puñado de milisegundos— sino cuánto tiempo seguido tenía que verse quieto: acortar la ventana acorta exactamente eso, sin tocar el umbral de dispersión que decide si la lectura es buena.',
+      'La brújula en vivo —panel Device y pestaña Compass del estereograma— se dibuja como una aguja de verdad: un rombo partido en dos mitades de color, la punta hacia la dirección de manteo. Antes dibujaba el mismo símbolo de rumbo y manteo que va en el mapa, que sobre un disco graduado se leía como una brújula mal calibrada y no como una brújula.',
+    ],
+  },
   {
     version: '0.30.0',
     items: [

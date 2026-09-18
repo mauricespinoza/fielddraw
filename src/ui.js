@@ -1244,98 +1244,6 @@ export function closePropsMenu() {
   $('props-menu').classList.add('hidden');
 }
 
-/* ---------- tipo y unidad, al vuelo ---------- */
-
-/**
- * Cuerpo del cuadro que se abre solo apenas se coloca una medida: elegir tipo
- * de superficie y unidad es lo único que hace falta confirmar de inmediato —el
- * resto del menú de propiedades (números, calidad, espesor) puede esperar a
- * que alguien lo pida—.
- */
-function quickTypeUnitBody(f) {
-  const body = $('quick-typeunit-body');
-  body.replaceChildren();
-  const p = f.properties;
-
-  /*
-   * Qué se acaba de anotar, antes de preguntar qué es. Con el método Device o
-   * con un ajuste sobre el DEM el número no lo escribió nadie: verlo aquí es
-   * la única oportunidad de detectar en el acto un rumbo que salió 180° girado
-   * —cuando todavía se está delante del afloramiento y se puede repetir— en
-   * vez de descubrirlo en casa mirando el mapa.
-   */
-  const lectura = document.createElement('p');
-  lectura.className = 'quick-reading';
-  lectura.textContent = `${formatStrikeDip(p.strike, p.dip)} · dips ${quadrant(p.dipAzimuth)}`;
-  body.appendChild(lectura);
-
-  const tipos = document.createElement('div');
-  tipos.className = 'palette-row';
-  for (const t of STRUCTURE_TYPES) {
-    tipos.appendChild(
-      chip({
-        label: t.short,
-        title: t.label,
-        color: t.color,
-        swatch: true,
-        active: p.type === t.id,
-        onClick: () => store.updateMeasurement({ type: t.id }),
-      }),
-    );
-  }
-  body.appendChild(tipos);
-
-  if (p.type === 'bedding') {
-    const inv = document.createElement('div');
-    inv.className = 'palette-row';
-    inv.appendChild(
-      chip({
-        label: 'Overturned',
-        glyph: '⤣',
-        active: !!p.overturned,
-        onClick: () => store.updateMeasurement({ overturned: !p.overturned }),
-      }),
-    );
-    body.appendChild(inv);
-  }
-
-  const uni = document.createElement('div');
-  unitSelect(uni, store.getState().units, p.unitId ?? null, (id) => store.assignUnitToSelection(id));
-  body.appendChild(uni);
-}
-
-/** El id de la medida que el cuadro rápido tiene abierta, o `null`. */
-let quickTypeUnitFor = null;
-
-export function openQuickTypeUnitMenu(id) {
-  const f = store.getState().features.find((x) => x.properties.id === id);
-  if (!f) return;
-  quickTypeUnitFor = id;
-  quickTypeUnitBody(f);
-  $('quick-typeunit').classList.remove('hidden');
-}
-
-export function closeQuickTypeUnitMenu() {
-  quickTypeUnitFor = null;
-  $('quick-typeunit').classList.add('hidden');
-}
-
-/** La medida sobre la que opera el cuadro rápido, o `null` si está cerrado. */
-function quickTypeUnitTarget() {
-  return $('quick-typeunit').classList.contains('hidden') ? null : quickTypeUnitFor;
-}
-
-/** Refresca los chips activos tras un cambio de tipo/unidad, sin cerrar el cuadro. */
-function refreshQuickTypeUnitMenu() {
-  if (!quickTypeUnitFor || $('quick-typeunit').classList.contains('hidden')) return;
-  const f = store.getState().features.find((x) => x.properties.id === quickTypeUnitFor);
-  if (!f) {
-    closeQuickTypeUnitMenu();
-    return;
-  }
-  quickTypeUnitBody(f);
-}
-
 /* ---------- paneles ---------- */
 
 /** Cajones laterales: solo uno abierto a la vez. */
@@ -1355,7 +1263,6 @@ const POPOVERS = [
   'import-menu',
   'area-menu',
   'dem-notice',
-  'quick-typeunit',
   'gps-required-dialog',
 ];
 
@@ -4663,10 +4570,7 @@ function renderStatus() {
     } else if (s.measureMethod === 'digitize') {
       const adjusting = s.draft && s.draft.kind === 'digitize-dip' ? s.draft : null;
       if (!adjusting) {
-        $('status-text').textContent =
-          n === 0
-            ? `Tap the two ends of the ${que}'s strike trace on the map`
-            : '1 of 2 strike points · tap the other end';
+        $('status-text').textContent = `Drag along the ${que}'s strike trace on the map`;
       } else if (!adjusting.reading) {
         // La traza de rumbo ya está puesta y el mapa enseña el palito
         // vertical de guía: falta decir que hay que arrastrar para
@@ -4767,6 +4671,11 @@ function renderStatus() {
  * suscriptores por cada píxel— y también, una sola vez, al soltar, al abrir
  * la fase de ajuste o al abortar un arrastre a medio camino.
  *
+ * Dos fases, con `geo.phase` distinguiéndolas: `'strike'` mientras se dibuja
+ * la traza de rumbo arrastrando —solo hay rumbo, así que solo se actualiza la
+ * barra de estado— y la fase del manteo (`phase` ausente), donde además se
+ * enciende el número grande.
+ *
  * `geo` es `null` cuando no hay ningún número que afirmar todavía —la traza
  * de rumbo puesta pero ni un arrastre soltado— y entonces solo manda
  * `renderStatus()`, que es quien explica en la barra de estado que hay que
@@ -4777,6 +4686,14 @@ export function renderDigitizePreview(geo) {
   if (!geo) {
     hideDigitizeReadout();
     renderStatus();
+    return;
+  }
+  // Dibujando la traza de rumbo con el arrastre: todavía no hay manteo que
+  // mostrar, así que no se enciende el número grande —eso es cosa de la
+  // segunda fase— y la barra de estado dice nada más el rumbo en vivo.
+  if (geo.phase === 'strike') {
+    $('status-text').textContent = `Strike ${String(Math.round(geo.strike)).padStart(3, '0')}° · release to set it`;
+    hideDigitizeReadout();
     return;
   }
   $('status-text').textContent = geo.live
@@ -4919,7 +4836,6 @@ export function initUI() {
     else openTopoMenu();
   });
   $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
-  $('btn-close-quick-typeunit').addEventListener('click', closeQuickTypeUnitMenu);
   $('btn-close-device').addEventListener('click', () => store.setMeasureMethod('manual'));
   $('btn-device-done').addEventListener('click', commitDeviceReading);
   $('btn-close-gps-required').addEventListener('click', closeOverlays);
@@ -5221,30 +5137,6 @@ export function initUI() {
     }
     // Si la selección desaparece, el menú de propiedades ya no aplica a nada.
     if (store.changed('selection') && store.getState().selection.length === 0) closePropsMenu();
-    /*
-     * Cada medida nueva —cualquiera sea el método— abre sola el cuadro de
-     * tipo y unidad: son los dos datos que conviene confirmar de inmediato, y
-     * pedirlos antes de tocar el mapa habría significado repetirlos en cada
-     * punto en vez de corregirlos solo donde hace falta.
-     *
-     * Lo que lo dispara es `justMeasured`, la señal que publica el store al
-     * crear la medida, y no la selección: crear una medida ahora devuelve la
-     * herramienta a Elegir, así que "estar en la herramienta de medir" ya no
-     * distingue una medida recién nacida de una que alguien volvió a tocar.
-     */
-    if (store.changed('justMeasured')) {
-      const id = store.getState().justMeasured;
-      if (id) openQuickTypeUnitMenu(id);
-    }
-    // Tocar otra cosa —o deseleccionar— cierra el cuadro: pregunta por UNA
-    // medida concreta, y sin ella no tiene sujeto.
-    if (store.changed('selection') && !store.changed('justMeasured')) {
-      const sel = store.getState().selection;
-      if (quickTypeUnitTarget() && (sel.length !== 1 || sel[0] !== quickTypeUnitTarget())) {
-        closeQuickTypeUnitMenu();
-      }
-    }
-    if (store.changed('features')) refreshQuickTypeUnitMenu();
     if (store.changed('deviceReading')) renderDevicePanel();
     if (
       store.changed('tool') ||

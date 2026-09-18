@@ -799,22 +799,6 @@
         <div id="props-body"></div>
       </div>
 
-      <!-- Se abre sola apenas se coloca una medida, sea cual sea el método:
-           el tipo de superficie y la unidad son lo único que hace falta
-           confirmar, y el resto del menú de propiedades sobra para eso. Vive
-           AL PIE, apoyada sobre la barra de herramientas: es lo que se
-           contesta con el pulgar justo después de colocar el punto, y es
-           además el único sitio donde se pregunta el tipo —al crear la
-           medida la herramienta vuelve a Elegir y la paleta de Surface se
-           retira, para no preguntar dos veces lo mismo en dos sitios. -->
-      <div class="dropdown hidden" id="quick-typeunit">
-        <header>
-          <h2>Type &amp; unit</h2>
-          <button class="icon-btn close-x" id="btn-close-quick-typeunit" aria-label="Close">✕</button>
-        </header>
-        <div id="quick-typeunit-body"></div>
-      </div>
-
       <!-- Brújula en vivo del método Device: se muestra mientras la
            herramienta está en Create → Dip → Device, en vez del panel de
            tipos. Done ancla la medida en la posición del GPS, no donde caiga
@@ -1332,6 +1316,13 @@
               <input type="checkbox" id="stereo-show-planes" checked />
               Great circles (planes)
             </label>
+            <label class="sv-check">
+              <input type="checkbox" id="stereo-show-mean" />
+              Mean vector
+            </label>
+            <!-- Solo aparece con la casilla encendida y datos que promediar;
+                 lo llena `renderPlot()` en stereogramPanel.js. -->
+            <p class="hint footnote sv-mean-value hidden" id="stereo-mean-value"></p>
             <h3>By type <span class="sv-count" id="stereo-legend-count"></span></h3>
             <div class="sv-list" id="stereo-legend"></div>
             <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>
