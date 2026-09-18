@@ -220,6 +220,14 @@ let state = {
   /** Valores de partida del método manual, que se editan tras colocarlo. */
   manualStrike: 0,
   manualDip: 30,
+  /**
+   * Última lectura del método 'device': rumbo, manteo y su desviación
+   * estándar entre las muestras tomadas mientras el teléfono está apoyado, o
+   * `null` mientras no hay ninguna todavía. La capa de aplicación es quien
+   * escucha los sensores; el store solo guarda el resultado (ver
+   * `deviceOrientation.js`).
+   */
+  deviceReading: null,
   /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
   structureStyle: defaultStructureStyle(),
 
@@ -649,6 +657,27 @@ export function addVertex(p) {
       return;
     }
 
+    // Sensores del teléfono: sin lectura todavía —o mientras no se junten
+    // suficientes muestras— el toque no anota nada. La interfaz es quien
+    // explica por qué, en la barra de estado.
+    if (state.measureMethod === 'device') {
+      const r = state.deviceReading;
+      if (!r || !r.ready) return;
+      createMeasurement({
+        lngLat: p,
+        strike: r.strike,
+        dip: r.dip,
+        dipAzimuth: r.dipAzimuth,
+        method: 'device',
+        quality: {
+          strikeSd: Number.isFinite(r.strikeSd) ? Math.round(r.strikeSd * 10) / 10 : null,
+          dipSd: Number.isFinite(r.dipSd) ? Math.round(r.dipSd * 10) / 10 : null,
+          n: r.n,
+        },
+      });
+      return;
+    }
+
     const draft = state.draft && state.draft.kind === 'plane' ? state.draft : { kind: 'plane', coords: [] };
     const coords = [...draft.coords, p];
     // El problema de tres puntos se cierra solo al tercero: pedir además que
@@ -1017,10 +1046,13 @@ export function clearPendingCut() {
 
 /* ---------- medidas estructurales ---------- */
 
-export const setMeasureMethod = (measureMethod) => set({ measureMethod, draft: null });
+export const setMeasureMethod = (measureMethod) =>
+  set({ measureMethod, draft: null, deviceReading: null });
 export const setMeasureType = (measureType) => set({ measureType });
 export const setMeasureOverturned = (measureOverturned) => set({ measureOverturned });
 export const setMeasureUnit = (measureUnit) => set({ measureUnit });
+/** La capa de aplicación publica aquí lo que van diciendo los sensores. */
+export const setDeviceReading = (deviceReading) => set({ deviceReading });
 export const setManualStrike = (manualStrike) => set({ manualStrike: norm360(manualStrike) });
 export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) });
 

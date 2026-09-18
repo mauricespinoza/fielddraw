@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.27.0';
+export const APP_VERSION = '0.28.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -30,7 +30,7 @@ export const APP_CONTACT = 'mauricespinoza@udec.cl';
 export const APP_TOOLS = [
   ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
   ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
-  ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, o ajustando un plano a una traza dibujada. Cada medida viaja con su incertidumbre.'],
+  ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, o leído en vivo del giroscopio y el magnetómetro del teléfono. Cada medida viaja con su incertidumbre.'],
   ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
   ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
   ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
@@ -52,6 +52,16 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.28.0',
+    items: [
+      'Nuevo método de medida: Create → Dip → Device lee rumbo y manteo en vivo del giroscopio y el magnetómetro del teléfono, apoyando el dorso contra la superficie. La incertidumbre no es una cifra de catálogo: sale de cuánto varían entre sí las muestras tomadas mientras el teléfono está apoyado, igual que la de un plano ajustado al DEM.',
+      'Se agrega el tipo «Dyke margin» a las superficies medibles, en el mismo rojo que la traza de un dique.',
+      'Elegido el método de una medida, el panel se esconde para dejarle sitio al mapa —antes solo pasaba al elegir tipo de línea o de polígono—.',
+      'La unidad geológica de una medida se elige en un menú desplegable en vez de una fila de chips, para no empujar el resto del panel fuera de la pantalla.',
+      'Se quita de la barra de herramientas el botón de deshacer el último vértice: quedaba redundante con el Deshacer general de la esquina. El atajo de teclado (Backspace) sigue funcionando.',
+    ],
+  },
   {
     version: '0.27.0',
     items: [

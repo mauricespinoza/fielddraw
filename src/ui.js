@@ -44,6 +44,12 @@ import {
   planeFromPoints,
   quadrant,
 } from './structure.js';
+import {
+  deviceOrientationSupported,
+  needsOrientationPermission,
+  requestOrientationPermission,
+  startOrientationCapture,
+} from './deviceOrientation.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import {
   DemSampler,
@@ -239,6 +245,31 @@ function unitChips(container, units, activeId, onPick, { allowNone = true } = {}
   }
 }
 
+/**
+ * La misma elección de unidad que `unitChips`, pero como menú desplegable:
+ * una fila de chips con seis u ocho unidades no cabe en el panel de crear
+ * medida sin empujar todo lo demás fuera de la pantalla, y ahí lo que importa
+ * es tocar rápido, no ver el color de un vistazo — ese color ya se ve en el
+ * chip de la medida una vez puesta.
+ */
+function unitSelect(container, units, activeId, onPick) {
+  const select = document.createElement('select');
+  select.className = 'palette-select';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = 'None';
+  select.appendChild(none);
+  for (const u of units) {
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = u.code ? `${u.code} — ${u.name}` : u.name;
+    select.appendChild(opt);
+  }
+  select.value = activeId || '';
+  select.addEventListener('change', () => onPick(select.value || null));
+  container.appendChild(select);
+}
+
 /* ---------- paleta de tipos ---------- */
 
 /**
@@ -304,7 +335,17 @@ function buildPalette() {
           title: m.help,
           glyph: m.glyph,
           active: s.measureMethod === m.id,
-          onClick: () => store.setMeasureMethod(m.id),
+          onClick: () => {
+            store.setMeasureMethod(m.id);
+            /*
+             * Elegido el método, el panel ya dijo lo que tenía que decir: se
+             * esconde para dejarle sitio al mapa —o, con Device, a la lectura
+             * en vivo que va a aparecer en la barra de estado—. Sigue
+             * pudiéndose reabrir desde Create ▸ Dip para tocar Surface o
+             * Unit otra vez.
+             */
+            $('palette').classList.add('hidden');
+          },
         }),
       );
     }
@@ -324,7 +365,7 @@ function buildPalette() {
     }
 
     const unidades = paletteGroup(scroll, 'Unit');
-    unitChips(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
+    unitSelect(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
 
     // Invertido solo aplica a la estratificación: una foliación o una diaclasa
     // no tienen techo y muro que se puedan haber dado vuelta.
@@ -2860,6 +2901,66 @@ function syncStructureControls() {
   $('structure-labels').checked = st.showLabels;
 }
 
+/** Corta la escucha de sensores en curso, si hay una. */
+let stopDeviceCapture = null;
+
+/**
+ * Arranca o corta la escucha del giroscopio/magnetómetro según si la
+ * herramienta de medir está activa con el método 'device'. Vive fuera del
+ * store porque hablar con `DeviceOrientationEvent` es asunto de la capa de
+ * aplicación —igual que el GPS en `mapView.js`—, no del estado.
+ */
+function syncDeviceCapture() {
+  const s = store.getState();
+  const quiere = s.tool === 'measure' && s.measureMethod === 'device';
+
+  if (!quiere) {
+    if (stopDeviceCapture) {
+      stopDeviceCapture();
+      stopDeviceCapture = null;
+      store.setDeviceReading(null);
+    }
+    return;
+  }
+
+  if (stopDeviceCapture) return; // ya está escuchando
+
+  const begin = () => {
+    // Puede haber cambiado de herramienta o de método mientras se esperaba
+    // el permiso; no arrancar la escucha sobre un estado que ya no aplica.
+    const st = store.getState();
+    if (st.tool !== 'measure' || st.measureMethod !== 'device') return;
+    stopDeviceCapture = startOrientationCapture({
+      onReading: (r) => store.setDeviceReading(r),
+      onError: (msg) => {
+        showBanner(msg, 'warn');
+        store.setMeasureMethod('manual');
+      },
+    });
+  };
+
+  if (!deviceOrientationSupported()) {
+    showBanner('This device or browser has no orientation sensor available.', 'warn');
+    store.setMeasureMethod('manual');
+    return;
+  }
+
+  if (needsOrientationPermission()) {
+    requestOrientationPermission().then((granted) => {
+      if (granted) begin();
+      else {
+        showBanner(
+          'Motion & orientation access was not granted. Allow it in Settings to read the device sensors.',
+          'warn',
+        );
+        store.setMeasureMethod('manual');
+      }
+    });
+  } else {
+    begin();
+  }
+}
+
 /**
  * Color único de lo traído de StraboSpot. La casilla y el selector van juntos:
  * apagarla no borra el color elegido, solo deja de aplicarlo, así que volver a
@@ -3648,6 +3749,14 @@ function measurementSection(body, medida, reabrir) {
     measureRow(cal, 'Base', `${p.baseline ?? '—'} m long · ${p.minorSpread ?? '—'} m across`);
     measureRow(cal, 'Fit', `${p.n ?? '—'} points · RMS ${p.rms ?? '—'} m`);
     measureRow(cal, 'Elevations from', p.demSource === 'opentopo' ? 'OpenTopography' : 'AWS Terrain Tiles');
+  } else if (p.method === 'device') {
+    measureRow(
+      cal,
+      'Uncertainty',
+      `±${p.strikeSd ?? '—'}° strike · ±${p.dipSd ?? '—'}° dip`,
+      'One standard deviation across the samples taken while the phone was held against the surface',
+    );
+    measureRow(cal, 'Samples', `${p.n ?? '—'}`);
   } else if (p.method === 'edited') {
     measureRow(cal, 'Uncertainty', 'not applicable — typed in by hand');
   }
@@ -4265,11 +4374,11 @@ function renderToolbar() {
       : 'Make all adjacent features share vertices';
 
   /*
-   * Los dos deshaceres de la app, que no son el mismo y por eso tienen botones
-   * distintos: el de la barra retira el último VÉRTICE del trazo en curso, y
-   * el de la esquina deshace la última operación sobre el dibujo.
+   * El deshacer de la barra —que solo retiraba el último VÉRTICE del trazo en
+   * curso— se quitó por redundante con el de la esquina («ya está»), que
+   * deshace la última operación sobre el dibujo. El atajo `undo-vertex` sigue
+   * vivo para quien lo usaba desde el teclado.
    */
-  $('t-undo').disabled = !hasDraft;
   $('btn-undo').disabled = !store.canUndo();
   $('btn-redo').disabled = !store.canRedo();
   $('t-finish').disabled = !hasDraft;
@@ -4322,6 +4431,16 @@ function renderStatus() {
         n === 0
           ? `Tap three points on the same ${que}, spread as widely as the outcrop allows`
           : `${n} of 3 points · spread them out: a short or collinear base gives a worthless dip`;
+    } else if (s.measureMethod === 'device') {
+      const r = s.deviceReading;
+      if (!r) {
+        $('status-text').textContent = `Requesting sensor access… hold the phone flat against the ${que}`;
+      } else if (!r.ready) {
+        $('status-text').textContent = `Reading… hold the phone flat against the ${que} and keep it still (${r.n} sample${r.n === 1 ? '' : 's'})`;
+      } else {
+        $('status-text').textContent =
+          `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · tap where you measured the ${que} to record it`;
+      }
     } else {
       $('status-text').textContent =
         n > 0
@@ -4486,7 +4605,6 @@ export function initUI() {
   $('t-trace').addEventListener('click', () =>
     store.setTraceEnabled(!store.getState().traceEnabled),
   );
-  $('t-undo').addEventListener('click', () => store.undoVertex());
   $('t-finish').addEventListener('click', () => store.finishDraft());
   $('t-cancel').addEventListener('click', () => store.cancelDraft());
   $('t-select').addEventListener('click', () => store.setTool('select'));
@@ -4830,11 +4948,13 @@ export function initUI() {
       store.changed('measureType') ||
       store.changed('manualStrike') ||
       store.changed('manualDip') ||
+      store.changed('deviceReading') ||
       store.changed('thicknessFrom')
     ) {
       renderToolbar();
       renderStatus();
     }
+    if (store.changed('tool') || store.changed('measureMethod')) syncDeviceCapture();
     // La línea de corte se publica desde el store; aquí es donde se aplica,
     // porque cargar JSTS es asíncrono y el store se mantiene síncrono.
     if (store.changed('pendingCut')) {

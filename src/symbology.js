@@ -73,6 +73,9 @@ export const STRUCTURE_TYPES = [
   { id: 'foliation', short: 'S₁', label: 'Foliation / cleavage', color: '#2E7D32' },
   { id: 'joint', short: 'Jnt', label: 'Joint', color: '#1565C0' },
   { id: 'fault-plane', short: 'Flt', label: 'Fault plane', color: '#D32F2F' },
+  // Mismo rojo que la traza de un dique (DIKE_COLOR): son cuerpos, no límites,
+  // y el margen medido tiene que saltar igual que su traza.
+  { id: 'dike', short: 'Dyke', label: 'Dyke margin', color: DIKE_COLOR },
 ];
 
 export const STRUCTURE_TYPE_BY_ID = new Map(STRUCTURE_TYPES.map((t) => [t.id, t]));

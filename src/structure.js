@@ -49,6 +49,13 @@ export const MEASURE_METHODS = [
     glyph: '∿',
     help: 'Draw along the outcrop trace; the plane is least-squares fitted to every node',
   },
+  {
+    id: 'device',
+    label: 'Device sensors',
+    short: 'Dev',
+    glyph: '◉',
+    help: 'Hold the phone flat against the surface; strike and dip are read live from the gyroscope and magnetometer, with their sampled error',
+  },
 ];
 
 export const METHOD_BY_ID = new Map(MEASURE_METHODS.map((m) => [m.id, m]));
@@ -217,6 +224,19 @@ export function circularStdDeg(angulos) {
   const R = Math.hypot(sx, sy) / angulos.length;
   if (R >= 1) return 0;
   return (Math.sqrt(-2 * Math.log(R)) * 180) / Math.PI;
+}
+
+/** Media circular, en grados: el rumbo medio de una muestra de ángulos. */
+export function circularMeanDeg(angulos) {
+  if (angulos.length === 0) return NaN;
+  let sx = 0;
+  let sy = 0;
+  for (const a of angulos) {
+    const r = (a * Math.PI) / 180;
+    sx += Math.cos(r);
+    sy += Math.sin(r);
+  }
+  return norm360((Math.atan2(sy, sx) * 180) / Math.PI);
 }
 
 /** Media aritmética y desviación estándar de una muestra. */
