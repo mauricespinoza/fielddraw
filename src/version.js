@@ -65,6 +65,7 @@ export const CHANGELOG = [
       'El estereograma dibuja ahora la RED DE SCHMIDT de verdad —círculos máximos y menores cada 10°— en vez de circunferencias concéntricas con seis radios, que era un papel polar y no una red: sobre aquello no se podía rotar un dato, ni leer la intersección de dos planos, ni sacar un eje de pliegue.',
       'Y dibuja los planos además de los polos, cada familia con su casilla para apagarla: con cinco medidas se miran los ciclogramas y con cien los polos. Los polos se agrandan a 7 px, que era lo que costaba distinguirlos de un cruce de la propia red.',
       'La red va sobre papel claro: al sol una malla de líneas finas sobre fondo oscuro no se ve, y el SVG y el PNG exportados ya salen con el fondo que van a tener en una memoria.',
+      'Digitize cambia de gesto: puestos los dos extremos de la traza de rumbo aparece un palito vertical de guía y arrastrar hacia un lado lo convierte en el manteo, con el número grande en pantalla mientras dura el gesto. Soltar el dedo lo CONGELA, no lo guarda: se puede volver a arrastrar cuantas veces haga falta para afinarlo, y solo Done —ya con el manteo puesto— lo convierte en la medida. Antes un solo arrastre decidía todo de una vez, sin poder corregirlo antes de soltarlo.',
     ],
   },
   {

@@ -68,6 +68,15 @@
         <div class="pen-hover" id="pen-hover" hidden></div>
         <div class="longpress-ring" id="longpress-ring" hidden></div>
         <div class="snap-marker" id="snap-marker" hidden></div>
+        <!-- Número grande del manteo mientras se ajusta con Create → Dip →
+             Digitize: en vivo durante el arrastre, congelado al soltar. Vive
+             arriba al centro para que el dedo arrastrando —normalmente hacia
+             abajo o a un lado del punto medio— nunca lo tape. Ver
+             `renderDigitizePreview` en ui.js. -->
+        <div class="digitize-readout hidden" id="digitize-readout" aria-live="polite">
+          <div class="digitize-readout-value" id="digitize-readout-value"></div>
+          <div class="digitize-readout-sub" id="digitize-readout-sub"></div>
+        </div>
         <!-- Goma del lazo de Elegir. El rectángulo es un div con cuatro lados;
              el trazo a mano alzada —lo de fábrica— es un polígono SVG que se
              cierra solo. Ver `lassoMode` en mapView.js. -->

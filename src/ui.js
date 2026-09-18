@@ -4592,7 +4592,12 @@ function renderToolbar() {
    */
   $('btn-undo').disabled = !store.canUndo();
   $('btn-redo').disabled = !store.canRedo();
-  $('t-finish').disabled = !hasDraft;
+  // Digitize, en su fase de ajuste, no tiene nada que guardar hasta el primer
+  // arrastre soltado: Done apagado explica por qué no basta con las dos
+  // puntas de la traza, sin necesidad de tocarlo y que no pase nada.
+  const digitizeSinLectura = s.draft && s.draft.kind === 'digitize-dip' && !s.draft.reading;
+  $('t-finish').disabled = !hasDraft || digitizeSinLectura;
+  $('t-finish').title = digitizeSinLectura ? 'Drag to set the dip first' : 'Finish feature';
   $('t-cancel').disabled = !hasDraft;
   $('t-delete').disabled = s.selection.length === 0;
   $('t-delete').title = `Delete ${s.selection.length} selected feature(s)`;
@@ -4656,12 +4661,22 @@ function renderStatus() {
           `${formatStrikeDip(r.strike, r.dip)} ±${round1(r.strikeSd)}°/±${round1(r.dipSd)}° · press Add measurement in the compass panel to record it at your GPS position`;
       }
     } else if (s.measureMethod === 'digitize') {
-      $('status-text').textContent =
-        n === 0
-          ? `Tap the two ends of the ${que}'s strike trace on the map`
-          : n === 1
-            ? '1 of 2 strike points · tap the other end'
-            : 'Drag away from the strike line to set dip direction and magnitude · release to place it at the midpoint';
+      const adjusting = s.draft && s.draft.kind === 'digitize-dip' ? s.draft : null;
+      if (!adjusting) {
+        $('status-text').textContent =
+          n === 0
+            ? `Tap the two ends of the ${que}'s strike trace on the map`
+            : '1 of 2 strike points · tap the other end';
+      } else if (!adjusting.reading) {
+        // La traza de rumbo ya está puesta y el mapa enseña el palito
+        // vertical de guía: falta decir que hay que arrastrar para
+        // convertirlo en una lectura de verdad.
+        $('status-text').textContent =
+          'Drag to one side to set the dip direction and magnitude · release to freeze it, drag again to refine';
+      } else {
+        $('status-text').textContent =
+          `${formatStrikeDip(adjusting.strike, adjusting.reading.dip)} frozen · drag again to adjust, or press Done to save it`;
+      }
     } else {
       $('status-text').textContent =
         n > 0
@@ -4746,18 +4761,46 @@ function renderStatus() {
 }
 
 /**
- * Rumbo y manteo en vivo mientras dura el arrastre de Digitize. `mapView.js`
- * la llama en cada fotograma del gesto porque escribir en el store ahí
- * dispararía a todos los suscriptores por cada píxel de arrastre; esto se
- * limita a pintar el texto y deja que `renderStatus()` retome al soltar.
+ * Rumbo y manteo del método Digitize, en vivo mientras dura un arrastre y
+ * congelados mientras no lo hay. `mapView.js` llama esto en cada fotograma
+ * de un arrastre —escribir en el store ahí dispararía a todos los
+ * suscriptores por cada píxel— y también, una sola vez, al soltar, al abrir
+ * la fase de ajuste o al abortar un arrastre a medio camino.
+ *
+ * `geo` es `null` cuando no hay ningún número que afirmar todavía —la traza
+ * de rumbo puesta pero ni un arrastre soltado— y entonces solo manda
+ * `renderStatus()`, que es quien explica en la barra de estado que hay que
+ * arrastrar. Con `geo`, además del texto se enciende el número grande: es lo
+ * único que se puede leer de un vistazo con el dedo tapando media pantalla.
  */
 export function renderDigitizePreview(geo) {
   if (!geo) {
+    hideDigitizeReadout();
     renderStatus();
     return;
   }
-  $('status-text').textContent =
-    `${formatStrikeDip(geo.strike, geo.dip)} · release to place it at the midpoint of the strike line`;
+  $('status-text').textContent = geo.live
+    ? `${formatStrikeDip(geo.strike, geo.dip)} · release to freeze it`
+    : `${formatStrikeDip(geo.strike, geo.dip)} frozen · drag again to adjust, or press Done to save it`;
+  showDigitizeReadout(geo);
+}
+
+/**
+ * El número grande del manteo mientras se ajusta con Digitize: vive fuera de
+ * la barra de estado, que un dedo arrastrando tapa justo en esa esquina.
+ * `live` distingue el arrastre en curso —fondo activo— de una lectura ya
+ * congelada a la espera de Done o de un nuevo arrastre.
+ */
+function showDigitizeReadout(geo) {
+  const el = $('digitize-readout');
+  el.classList.remove('hidden');
+  el.classList.toggle('live', !!geo.live);
+  $('digitize-readout-value').textContent = `${Math.round(geo.dip)}°`;
+  $('digitize-readout-sub').textContent = `${formatStrikeDip(geo.strike, geo.dip)} · dips ${quadrant(geo.dipAzimuth)}`;
+}
+
+function hideDigitizeReadout() {
+  $('digitize-readout').classList.add('hidden');
 }
 
 /* ---------- cableado ---------- */

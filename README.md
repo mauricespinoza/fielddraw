@@ -1349,7 +1349,7 @@ paleta:
 | **Tres puntos** | tres toques sobre la misma superficie | el problema clásico: tres cotas del DEM definen un plano exacto |
 | **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
 | **Device** | apoyar el dorso del teléfono contra la roca y pulsar *Add measurement* | los sensores del propio teléfono, promediados mientras está apoyado; la medida se ancla en la posición del GPS |
-| **Digitize** | dos toques sobre la traza del rumbo y un arrastre hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
+| **Digitize** | dos toques sobre la traza del rumbo, luego arrastrar —tantas veces como haga falta— hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
 
 ### Colocada la medida, la herramienta vuelve a Elegir
 
@@ -1364,6 +1364,23 @@ colocar— creaba otra sin querer; y mientras la paleta de *Dip* seguía a la
 vista, el tipo de superficie se preguntaba en **dos sitios a la vez**, la paleta
 y el cuadro, sin que nada dijera cuál mandaba. Al pie, además, se contesta con
 el pulgar sin soltar el teléfono, que es la mano que acaba de colocar el punto.
+
+### Digitize: arrastrar congela, no guarda
+
+Puestos los dos toques que marcan la traza del rumbo, el mapa muestra un
+**palito vertical de guía** —el manteo de partida, 90°, hacia un lado
+cualquiera— junto con el aviso de que hay que arrastrar para convertirlo en un
+dato de verdad. Arrastrar hacia uno u otro lado del palito fija la dirección
+del manteo por hacia dónde se tira, y su magnitud por cuánto: un número grande
+en pantalla lo dice en vivo mientras dura el gesto, para que se lea sin que el
+dedo tape la barra de estado.
+
+Soltar el dedo **congela** esa lectura, no la guarda: es la diferencia con el
+diseño anterior, de un solo arrastre que decidía todo de golpe. Con la lectura
+congelada se puede volver a arrastrar cuantas veces haga falta —cada intento
+parte de la misma traza y vuelve a congelar al soltar— hasta que el manteo se
+vea bien. Solo entonces **Done** la convierte en la medida; **Discard**
+descarta el intento entero, traza incluida.
 
 Se usa la **regla de la mano derecha**: el manteo cae 90° en sentido horario
 desde el rumbo. Es la misma convención con la que ya se rotan por `Strike` los

@@ -3,6 +3,7 @@ import mlcontour from 'maplibre-contour';
 
 import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
 import { haversine } from './dem.js';
+import { destinationPoint, geoAzimuth, geoDistance } from './structure.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
 import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './scale.js';
@@ -2643,23 +2644,6 @@ export function createMapView({
 
   /* ---------- rumbo y manteo digitalizados desde el mapa ---------- */
 
-  /**
-   * Metros por grado, para pasar a un plano local — la misma aproximación
-   * equirrectangular que usa `toLocalENU` en `structure.js`: de sobra para la
-   * escala de un símbolo digitalizado, que rara vez pasa de unas decenas de
-   * metros en el mapa.
-   */
-  const DIGITIZE_M_PER_DEG_LAT = 110540;
-  const DIGITIZE_M_PER_DEG_LNG = 111320;
-
-  /** Acimut geográfico real de `a` a `b`, en grados [0, 360). */
-  function geoAzimuth(a, b) {
-    const lat0 = ((a[1] + b[1]) / 2) * (Math.PI / 180);
-    const dE = (b[0] - a[0]) * DIGITIZE_M_PER_DEG_LNG * Math.cos(lat0);
-    const dN = (b[1] - a[1]) * DIGITIZE_M_PER_DEG_LAT;
-    return ((Math.atan2(dE, dN) * 180) / Math.PI + 360) % 360;
-  }
-
   /** Arrastre que hace falta para declarar el manteo vertical, en píxeles. */
   const DIGITIZE_DIP_FULL_PX = 120;
 
@@ -2678,7 +2662,7 @@ export function createMapView({
    * el mapa está rotado o basculado.
    */
   function digitizeGeometry(dragScreen) {
-    const { p1, p2, p1Screen, p2Screen } = digitizeDrag;
+    const { p1, p2, p1Screen, p2Screen, mid } = digitizeDrag;
     const midScreen = [(p1Screen[0] + p2Screen[0]) / 2, (p1Screen[1] + p2Screen[1]) / 2];
     const lineVec = [p2Screen[0] - p1Screen[0], p2Screen[1] - p1Screen[1]];
     const lineLen = Math.hypot(lineVec[0], lineVec[1]) || 1;
@@ -2687,7 +2671,6 @@ export function createMapView({
     const perpPx = Math.abs(cross) / lineLen;
     const dip = Math.min(90, (perpPx / DIGITIZE_DIP_FULL_PX) * 90);
 
-    const mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
     const strike = geoAzimuth(p1, p2);
     const candA = (strike + 90) % 360;
     const candB = (strike + 270) % 360;
@@ -2698,17 +2681,17 @@ export function createMapView({
     return { strike, dip, dipAzimuth, mid, midScreen };
   }
 
-  /** Solo arranca si los dos puntos de rumbo ya están puestos. */
+  /** Solo arranca si el borrador ya está en la fase de ajuste del manteo. */
   function beginDigitizeDrag() {
     const d = store.getState().draft;
-    if (!d || d.kind !== 'digitize-strike' || d.coords.length !== 2) {
+    if (!d || d.kind !== 'digitize-dip') {
       digitizeDrag = null;
       return;
     }
     const [p1, p2] = d.coords;
     const p1px = map.project(p1);
     const p2px = map.project(p2);
-    digitizeDrag = { p1, p2, p1Screen: [p1px.x, p1px.y], p2Screen: [p2px.x, p2px.y] };
+    digitizeDrag = { p1, p2, mid: d.mid, p1Screen: [p1px.x, p1px.y], p2Screen: [p2px.x, p2px.y] };
   }
 
   function moveDigitizeDrag(screen) {
@@ -2721,28 +2704,79 @@ export function createMapView({
     // importa: hacia dónde y cuánto.
     preview = [geo.mid, toLngLat(screen)];
     syncDraft();
-    onDigitizePreview(geo);
+    onDigitizePreview({ ...geo, live: true });
   }
 
+  /**
+   * Suelta el arrastre: CONGELA la lectura en el borrador, no crea la medida.
+   *
+   * Es la diferencia con el diseño anterior, de un solo gesto: aquí soltar el
+   * dedo dice «esto es lo que hay hasta ahora», no «esto es definitivo». Se
+   * puede volver a arrastrar cuantas veces haga falta —cada arrastre parte de
+   * la misma traza de rumbo y vuelve a congelar al soltar— y lo que de verdad
+   * guarda la medida es el botón **Done** (`store.finishDraft()`), o al
+   * revés, **Discard** la descarta entera.
+   */
   function endDigitizeDrag(screen, info) {
     if (!digitizeDrag) return;
     const geo = digitizeGeometry(screen);
     digitizeDrag = null;
-    clearPreview();
-    onDigitizePreview(null);
     if (!info.moved) {
-      // Ni un arrastre: se deja la traza de rumbo puesta para volver a
-      // intentarlo, en vez de descartar los dos puntos que ya costó marcar.
-      onEditMessage('Drag away from the strike line to set the dip direction and magnitude.', 'warn');
+      // Ni un arrastre: se repone la guía que hubiera —la lectura ya
+      // congelada, o la vertical por defecto si es la primera vez— y solo se
+      // avisa cuando de verdad no hay ninguna lectura que conservar.
+      refreshDigitizeGuide();
+      if (!store.getState().draft?.reading) {
+        onEditMessage('Drag to set the dip direction and magnitude.', 'warn');
+      }
       return;
     }
-    store.createMeasurement({
-      lngLat: geo.mid,
-      strike: geo.strike,
-      dip: geo.dip,
-      dipAzimuth: geo.dipAzimuth,
-      method: 'digitize',
-    });
+    // Dispara el `store.subscribe` de más abajo, que llama a
+    // `refreshDigitizeGuide()` y deja el palito congelado en su sitio: no
+    // hace falta tocar `preview` aquí también.
+    store.setDigitizeDipReading({ dip: geo.dip, dipAzimuth: geo.dipAzimuth });
+  }
+
+  /**
+   * Longitud real del palito de manteo que se enseña SIN estar arrastrando:
+   * la guía vertical de partida, o la última lectura congelada.
+   *
+   * Se calcula en metros reales y no en píxeles de pantalla —al revés que
+   * durante el arrastre— porque aquí no hay ningún gesto que sentir igual a
+   * cualquier zoom: es un dibujo de referencia, y tiene que seguir viéndose
+   * bien tanto si se aleja como si se acerca el mapa. Mide la mitad de la
+   * traza de rumbo a manteo vertical y se achica hacia cero según decrece el
+   * manteo, así que el símbolo guarda las proporciones sin un tamaño fijo.
+   */
+  function digitizeGuideTip(d) {
+    const [p1, p2] = d.coords;
+    const mitadTraza = (geoDistance(p1, p2) || 1) / 2;
+    const dip = d.reading ? d.reading.dip : 90;
+    const dipAzimuth = d.reading ? d.reading.dipAzimuth : (d.strike + 90) % 360;
+    const tip = destinationPoint(d.mid, dipAzimuth, mitadTraza * (dip / 90));
+    return { tip, strike: d.strike, dip, dipAzimuth };
+  }
+
+  /**
+   * Repone el palito y el número grande fuera de un arrastre: al entrar a la
+   * fase de ajuste, al congelar una lectura, y al abortar un arrastre a medio
+   * camino (segundo dedo). Nunca se llama DURANTE el arrastre —de eso se
+   * encarga `moveDigitizeDrag`, con la magnitud en píxeles— así que no compite
+   * con él por pintar el mismo trazo.
+   */
+  function refreshDigitizeGuide() {
+    if (digitizeDrag) return;
+    const d = store.getState().draft;
+    if (!d || d.kind !== 'digitize-dip') return;
+    const geo = digitizeGuideTip(d);
+    previewKind = 'digitize';
+    preview = [d.mid, geo.tip];
+    syncDraft();
+    // Sin ninguna lectura congelada todavía, el palito es solo una guía
+    // vertical de referencia: no hay ningún número que afirmar, así que no se
+    // enciende el número grande y el mensaje de la barra de estado
+    // (`renderStatus()` en `ui.js`) es lo único que invita a arrastrar.
+    onDigitizePreview(d.reading ? { ...geo, live: false } : null);
   }
 
   /* ---------- cámara: mover la vista sin soltar la herramienta ---------- */
@@ -2825,13 +2859,9 @@ export function createMapView({
     dragMode: () => {
       const st = store.getState();
       if (st.tool === 'vertices') return true;
-      return (
-        st.tool === 'measure' &&
-        st.measureMethod === 'digitize' &&
-        !!st.draft &&
-        st.draft.kind === 'digitize-strike' &&
-        st.draft.coords.length === 2
-      );
+      // Cualquier arrastre en esta fase vale: no es un gesto de una sola vez,
+      // se puede repetir hasta quedar conforme (ver `endDigitizeDrag`).
+      return st.tool === 'measure' && !!st.draft && st.draft.kind === 'digitize-dip';
     },
     lassoMode: () => store.getState().tool === 'select',
     onDragStart: (p) => {
@@ -2853,14 +2883,14 @@ export function createMapView({
       if (st.tool === 'measure') return endDigitizeDrag(p, info);
       return endVertexDrag(p, info);
     },
-    // Un segundo dedo aborta el gesto: la goma del lazo —o la traza a medio
-    // digitalizar— tiene que irse con él.
+    // Un segundo dedo aborta el gesto: la goma del lazo se va con él, y el
+    // arrastre del manteo vuelve a la última lectura congelada —o a la guía
+    // vertical de partida— en vez de borrarla.
     onDragCancel: () => {
       hideLasso();
       if (digitizeDrag) {
         digitizeDrag = null;
-        clearPreview();
-        onDigitizePreview(null);
+        refreshDigitizeGuide();
       }
     },
     // Mantener pulsado abre el menú de propiedades en cualquier herramienta:
@@ -3154,6 +3184,23 @@ export function createMapView({
     // `extendFrom` también repinta el borrador: es lo que marca los extremos
     // de la línea que se va a continuar.
     if (store.changed('draft') || store.changed('extendFrom')) syncDraft();
+    /*
+     * Entrar o salir de la fase de ajuste del manteo de Digitize, o congelar
+     * una lectura nueva: las tres son cambios de `draft` que no vienen de un
+     * arrastre en curso —ese lo pinta `moveDigitizeDrag` cuadro a cuadro— así
+     * que aquí basta reponer la guía. Salir de la fase (Done, Discard, o
+     * cambiar de herramienta) se detecta por `previewKind`, que solo vale
+     * 'digitize' mientras esta guía es la que está puesta: así no se toca el
+     * preview de ningún otro borrador que cambie al mismo tiempo.
+     */
+    if (store.changed('draft')) {
+      const d = store.getState().draft;
+      if (d && d.kind === 'digitize-dip') refreshDigitizeGuide();
+      else if (previewKind === 'digitize') {
+        clearPreview();
+        onDigitizePreview(null);
+      }
+    }
 
     // Durante un arrastre de vértice el índice se gestiona a mano (con la
     // geometría editada excluida), así que no hay que rehacerlo en cada frame.
