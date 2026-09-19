@@ -2,15 +2,17 @@
  * Brújula en vivo, dibujada en SVG.
  *
  * La comparte el método Device de crear medida y la pestaña Compass del
- * Stereograma: en las dos hace falta leer lo mismo —el rumbo como un trazo
- * girado desde el norte, el manteo como un error medido en grados, y ese
- * error como texto y no como adorno—, así que el marco graduado y el texto
- * viven en un solo sitio y no se copian dos veces. Lo que gira en el centro sí
- * difiere a propósito entre los dos: Device dibuja el símbolo de rumbo/manteo
- * del mapa (`style: 'symbol'`), para reconocer en terreno la misma medida que
- * se va a ver después; Compass dibuja una aguja de brújula (`style: 'needle'`,
- * el valor por omisión), porque ahí se está orientando el propio teléfono y
- * no anotando un dato.
+ * Stereograma: las dos necesitan el mismo marco graduado con los cuatro
+ * cardinales, así que vive en un solo sitio y no se copia dos veces. Lo que
+ * gira en el centro, y lo que se lee debajo, sí difieren a propósito entre
+ * los dos, porque miden cosas distintas: Device dibuja el símbolo de
+ * rumbo/manteo del mapa (`style: 'symbol'`) y debajo el dato completo —rumbo,
+ * manteo y el error de cada uno—, para reconocer en terreno la misma medida
+ * que se va a ver después y anotarla. Compass dibuja una aguja de brújula
+ * (`style: 'needle'`, el valor por omisión) y debajo solo el rumbo al que
+ * apunta el teléfono, sin manteo: ahí se está orientando el propio teléfono,
+ * como con cualquier brújula de mano, no midiendo una superficie ni anotando
+ * un dato.
  *
  * **EN TONOS CLAROS, Y NO POR GUSTO.** El resto de la aplicación es oscura
  * porque de noche o bajo techo cansa menos, pero esto se mira a mediodía, al
@@ -20,15 +22,17 @@
  * con el sol de frente, que es la única condición en la que esta pantalla
  * tiene que funcionar de verdad.
  *
- * **Notación**: `rumbo/manteo` con el rumbo por la REGLA DE LA MANO DERECHA
- * —la misma del símbolo que se dibuja en el mapa (`structureSymbols.js`) y la
- * misma que exporta el GeoPackage—, rotulada como tal debajo del número. Un
- * `120/45` no dice por sí solo si los 120 son rumbo RHR o dirección de manteo,
- * y las dos lecturas difieren en 90°: el rótulo no es decoración.
+ * **Notación** (`style: 'symbol'` únicamente): `rumbo/manteo` con el rumbo
+ * por la REGLA DE LA MANO DERECHA —la misma del símbolo que se dibuja en el
+ * mapa (`structureSymbols.js`) y la misma que exporta el GeoPackage—,
+ * rotulada como tal debajo del número. Un `120/45` no dice por sí solo si los
+ * 120 son rumbo RHR o dirección de manteo, y las dos lecturas difieren en
+ * 90°: el rótulo no es decoración.
  */
 
 import { READY_SPREAD_DEG } from './deviceOrientation.js';
 import { structureVariant } from './symbology.js';
+import { norm360 } from './structure.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -199,7 +203,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     x: cx, y: size + 46, 'text-anchor': 'middle', 'font-size': 11.5,
     'font-weight': 600, fill: TENUE, 'letter-spacing': 0.4,
   });
-  notacion.textContent = 'Strike (RHR) / Dip';
+  notacion.textContent = style === 'needle' ? 'Heading from north' : 'Strike (RHR) / Dip';
   svg.appendChild(notacion);
 
   const sub = el('text', {
@@ -208,39 +212,48 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   svg.appendChild(sub);
 
   /**
-   * Refresca la aguja y el texto con una lectura `{strike, dip, dipAzimuth,
-   * strikeSd, dipSd, spread, ready, n}`. `null`/`undefined` la deja apagada,
-   * sin inventar un cero que no se midió.
+   * Refresca la aguja y el texto.
+   *
+   * En `style: 'needle'` la lectura es `{heading}`, el ángulo desde el norte
+   * al que apunta el teléfono —una brújula de verdad, sin manteo que leer—.
+   * En `style: 'symbol'` sigue siendo `{strike, dip, dipAzimuth, strikeSd,
+   * dipSd}`, la medida completa que toma el panel Device. `null`/`undefined`
+   * la deja apagada, sin inventar un cero que no se midió.
    */
   function update(reading) {
-    const graphic = needle || dipSymbol;
+    if (style === 'needle') {
+      const heading = reading && Number.isFinite(reading.heading) ? norm360(reading.heading) : null;
+      if (heading === null) {
+        needle.setAttribute('visibility', 'hidden');
+        label.textContent = '—';
+        sub.textContent = '';
+        return;
+      }
+      needle.setAttribute('visibility', 'visible');
+      needle.setAttribute('transform', `rotate(${heading} ${cx} ${cy})`);
+      label.textContent = `${String(Math.round(heading) % 360).padStart(3, '0')}°`;
+      sub.textContent = cuadrante(heading);
+      return;
+    }
+
     if (!reading || !Number.isFinite(reading.strike) || !Number.isFinite(reading.dip)) {
-      graphic.setAttribute('visibility', 'hidden');
+      dipSymbol.setAttribute('visibility', 'hidden');
       label.textContent = '—';
       sub.textContent = '';
       return;
     }
-    graphic.setAttribute('visibility', 'visible');
+    dipSymbol.setAttribute('visibility', 'visible');
     const az = Number.isFinite(reading.dipAzimuth) ? reading.dipAzimuth : reading.strike + 90;
-    if (needle) {
-      // La aguja gira con la dirección de manteo, no con el rumbo: es la única
-      // de las dos que apunta a un lado sin ambigüedad, así que es lo que
-      // tiene que leerse de un vistazo como en cualquier brújula real. Sin
-      // manteo medido (`dipAzimuth` ausente) se usa el rumbo + 90° por
-      // defecto, la misma convención que usa el resto de la app.
-      needle.setAttribute('transform', `rotate(${az} ${cx} ${cy})`);
-    } else {
-      // El símbolo, en cambio, gira por el RUMBO —como en el mapa—, y elige
-      // variante igual que `structureVariant()`: horizontal, vertical o
-      // inclinado con el tic ya fijo hacia el lado del manteo bajo la RHR.
-      dipSymbol.setAttribute('transform', `rotate(${reading.strike} ${cx} ${cy})`);
-      const variante = structureVariant(reading.dip, false);
-      const [strikeLine, tickRight, tickLeft, ring] = dipSymbol.children;
-      strikeLine.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
-      tickRight.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
-      tickLeft.setAttribute('visibility', variante === 'vertical' ? 'visible' : 'hidden');
-      ring.setAttribute('visibility', variante === 'horizontal' ? 'visible' : 'hidden');
-    }
+    // El símbolo gira por el RUMBO —como en el mapa—, y elige variante igual
+    // que `structureVariant()`: horizontal, vertical o inclinado con el tic
+    // ya fijo hacia el lado del manteo bajo la RHR.
+    dipSymbol.setAttribute('transform', `rotate(${reading.strike} ${cx} ${cy})`);
+    const variante = structureVariant(reading.dip, false);
+    const [strikeLine, tickRight, tickLeft, ring] = dipSymbol.children;
+    strikeLine.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
+    tickRight.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
+    tickLeft.setAttribute('visibility', variante === 'vertical' ? 'visible' : 'hidden');
+    ring.setAttribute('visibility', variante === 'horizontal' ? 'visible' : 'hidden');
     const strike = String(Math.round(reading.strike) % 360).padStart(3, '0');
     label.textContent = `${strike}/${Math.round(reading.dip)}`;
 
@@ -250,7 +263,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     }
     // Hacia dónde cae el manteo: es lo primero que se comprueba de una medida
     // en la libreta, y con la sola cifra de rumbo RHR hay que deducirlo. Es
-    // el mismo `az` que ya orientó la aguja, arriba.
+    // el mismo `az` que ya orientó el símbolo, arriba.
     if (reading.dip > 0.5) trozos.push(`dips ${cuadrante(az)}`);
     sub.textContent = trozos.join(' · ');
   }
