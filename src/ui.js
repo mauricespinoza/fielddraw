@@ -1446,8 +1446,8 @@ const FLYOUT_MARGIN = 8;
  * contradigan cuando una de las dos cambie.
  *
  * Después se mete dentro de la pantalla a la fuerza. Sin esto, el volante de
- * Topology —siete botones— se salía por abajo en un iPad apaisado y por la
- * derecha en un móvil con el botón cerca del borde.
+ * Topology se salía por abajo en un iPad apaisado y por la derecha en un
+ * móvil con el botón cerca del borde.
  */
 function placeFlyout(toggle, flyout) {
   const barra = $('toolbar');
@@ -4528,6 +4528,16 @@ function renderToolbar() {
   const haySeleccion = s.selection.length > 0;
   $('sep-delete').classList.toggle('hidden', !haySeleccion);
   $('t-delete').classList.toggle('hidden', !haySeleccion);
+
+  /*
+   * Snap y Follow trace solo ayudan mientras se traza una línea o un
+   * polígono: fuera de eso no hay nada que ajustar y sólo estorbarían entre
+   * Deshacer/Rehacer y el resto de acciones de esquina.
+   */
+  const editandoFeature = hasDraft && (s.draft.kind === 'line' || s.draft.kind === 'polygon');
+  $('sep-snap').classList.toggle('hidden', !editandoFeature);
+  $('t-snap').classList.toggle('hidden', !editandoFeature);
+  $('t-trace').classList.toggle('hidden', !editandoFeature);
 }
 
 function renderStatus() {

@@ -192,6 +192,24 @@
         Rehacer y el siguiente botón visible.
       -->
       <div class="side-actions" id="side-actions">
+        <button class="tool" id="t-snap" title="Snap to existing geometry">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M4 20 20 4M9 15l6-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            <rect x="8.5" y="8.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          <span>Snap</span>
+        </button>
+        <button class="tool" id="t-trace" title="Follow trace: run the new line along the edge of an existing feature">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path d="M3 17c4 0 5-10 9-10s5 5 9 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <circle cx="3" cy="17" r="2" fill="currentColor" />
+            <circle cx="21" cy="12" r="2" fill="currentColor" />
+          </svg>
+          <span>Follow trace</span>
+        </button>
+
+        <div class="tool-sep" id="sep-snap"></div>
+
         <button class="tool" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
             <path d="M4 9h11a5 5 0 0 1 0 10H9M4 9l4-4M4 9l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
@@ -335,21 +353,6 @@
               <circle cx="11.5" cy="19" r="2" fill="currentColor" />
             </svg>
             <span>Topology</span>
-          </button>
-          <button class="tool" id="t-snap" title="Snap to existing geometry">
-            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-              <path d="M4 20 20 4M9 15l6-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-              <rect x="8.5" y="8.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1.8" />
-            </svg>
-            <span>Snap</span>
-          </button>
-          <button class="tool" id="t-trace" title="Follow trace: run the new line along the edge of an existing feature">
-            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-              <path d="M3 17c4 0 5-10 9-10s5 5 9 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-              <circle cx="3" cy="17" r="2" fill="currentColor" />
-              <circle cx="21" cy="12" r="2" fill="currentColor" />
-            </svg>
-            <span>Follow trace</span>
           </button>
           <button class="tool" id="t-merge" title="Merge the selected features" disabled>
             <!-- La unión de dos elementos: el contorno exterior de los dos juntos
