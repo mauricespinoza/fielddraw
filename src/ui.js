@@ -2973,7 +2973,7 @@ function syncDeviceCapture() {
   }
 
   $('device-panel').classList.remove('hidden');
-  if (!deviceCompass) deviceCompass = buildCompass($('device-compass'));
+  if (!deviceCompass) deviceCompass = buildCompass($('device-compass'), { style: 'symbol' });
   renderDevicePanel();
 
   if (stopDeviceCapture) return; // ya está escuchando
