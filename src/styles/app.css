@@ -2180,10 +2180,19 @@ input[type='radio'] {
   padding-right: 10px;
   font-size: 15px;
   line-height: 1;
+  /*
+   * Los atajos de teclado no existen sin teclado: oculto salvo en PC (ratón
+   * + hover), donde se reaparece más abajo junto al resto de gestos de PC.
+   */
+  display: none;
 }
 
 /* Con un ratón, señalar que un elemento responde al clic. */
 @media (hover: hover) and (pointer: fine) {
+  #btn-shortcuts {
+    display: inline-flex;
+  }
+
   .chip,
   .layer-toggle,
   .shortcut-row kbd {
