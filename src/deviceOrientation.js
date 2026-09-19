@@ -494,3 +494,66 @@ export function startOrientationCapture({ onReading, onError }) {
     clearTimeout(fallbackTimer);
   };
 }
+
+/* ---------- brújula simple, de referencia ---------- */
+
+/**
+ * Arranca una lectura de brújula simple: solo `heading`, el ángulo desde el
+ * norte al que apunta el teléfono (0°–360°, creciendo hacia el Este), sin el
+ * resto del aparato de `startOrientationCapture` de aquí arriba —promedio de
+ * normales, dispersión, anclaje de norte en iOS para la postura vertical—,
+ * que existe para medir el manteo de una superficie con el teléfono apoyado
+ * contra ella. Esto es una brújula de referencia: se sostiene como una
+ * brújula de verdad, a ras, y no contra una roca, así que esa postura
+ * vertical que motiva todo lo demás no se da aquí.
+ *
+ * `heading` es el rumbo del lado superior del teléfono —el mismo eje que
+ * `alphaFromHeading` usa para iOS—, y en Android sale de la misma fórmula
+ * `360 − alpha` con el `alpha` ya referenciado al norte que trae el evento
+ * `deviceorientationabsolute`.
+ *
+ * @param {{onReading: (r: {heading: number}) => void, onError?: (msg: string) => void}} handlers
+ */
+export function startHeadingCapture({ onReading, onError }) {
+  if (!deviceOrientationSupported()) {
+    onError?.('This device or browser has no orientation sensor available.');
+    return () => {};
+  }
+
+  let referenced = false;
+
+  function onEvent(e) {
+    const heading = e.webkitCompassHeading;
+    if (heading !== undefined) {
+      // -1 es el valor que da iOS cuando el compás todavía no calibró.
+      if (heading < 0 || (e.webkitCompassAccuracy ?? 0) < 0) return;
+      referenced = true;
+      onReading({ heading: norm360(heading) });
+      return;
+    }
+    if (e.absolute !== true || !Number.isFinite(e.alpha)) return;
+    referenced = true;
+    onReading({ heading: norm360(360 - e.alpha) });
+  }
+
+  window.addEventListener('deviceorientationabsolute', onEvent);
+  window.addEventListener('deviceorientation', onEvent);
+
+  // Igual que en `startOrientationCapture`: si nada referenciado al norte
+  // llegó en un par de segundos, este teléfono o este navegador no expone
+  // magnetómetro, y conviene decirlo en vez de dejar la lectura pegada en
+  // "leyendo…" para siempre.
+  const fallbackTimer = setTimeout(() => {
+    if (!referenced) {
+      onError?.(
+        'No compass-referenced orientation arrived — this device may lack a magnetometer, or the browser is blocking it.',
+      );
+    }
+  }, 2500);
+
+  return function stop() {
+    window.removeEventListener('deviceorientationabsolute', onEvent);
+    window.removeEventListener('deviceorientation', onEvent);
+    clearTimeout(fallbackTimer);
+  };
+}

@@ -16,13 +16,18 @@ import { featuresToSpots, uploadBreakdown, uploadableCount } from './upload.js';
  * Panel de StraboSpot: sesión, elegir proyecto y dataset, bajar spots y subir
  * el dibujo como un dataset nuevo.
  *
- * Sobre las credenciales: se piden en el propio formulario y viven en memoria
- * mientras dura la pestaña (ver `api.js`). No se guardan en localStorage ni se
- * ofrece "recordarme", porque la API usa HTTP Basic y eso obligaría a dejar la
- * contraseña escrita en el disco de una tablet que va a terreno.
+ * Sobre las credenciales: se piden en el propio formulario y la contraseña
+ * vive en memoria mientras dura la pestaña (ver `api.js`), nunca en
+ * localStorage — la API usa HTTP Basic y eso obligaría a dejarla escrita en
+ * el disco de una tablet que va a terreno. El correo es distinto: no es
+ * secreto, y volver a escribirlo en cada sesión es solo fricción, así que
+ * "Remember me" lo guarda en localStorage y el campo se rellena solo con el
+ * último usado.
  */
 
 const $ = (id) => document.getElementById(id);
+
+const LAST_EMAIL_KEY = 'fielddraw.strabo.lastEmail';
 
 let onMessage = () => {};
 let onBusy = () => {};
@@ -61,6 +66,9 @@ export function initStraboPanel({ message, busy }) {
   wireSizeSlider('strabo-size-observations', 'observationSize');
   $('strabo-size-reset').addEventListener('click', () => store.resetStraboStyle());
 
+  // El correo del último inicio de sesión, si "Remember me" estaba marcado.
+  const lastEmail = localStorage.getItem(LAST_EMAIL_KEY);
+  if (lastEmail) $('strabo-email').value = lastEmail;
 
   store.subscribe(() => {
     if (store.changed('features') || store.changed('strabo')) render();
@@ -301,6 +309,8 @@ async function doSignIn() {
     await api.signIn(email, password);
     // La contraseña no se conserva en el campo una vez usada.
     $('strabo-password').value = '';
+    if ($('strabo-remember').checked) localStorage.setItem(LAST_EMAIL_KEY, email);
+    else localStorage.removeItem(LAST_EMAIL_KEY);
     await loadProjects();
     onMessage(`Signed in to StraboSpot as ${email}.`, 'info');
   } catch (err) {

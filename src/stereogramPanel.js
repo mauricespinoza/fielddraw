@@ -9,13 +9,13 @@ import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
 import { countsByType, meanPole, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
-import { buildCompass, compassHint } from './compassWidget.js';
+import { buildCompass } from './compassWidget.js';
 import { formatStrikeDip, quadrant } from './structure.js';
 import {
   deviceOrientationSupported,
   needsOrientationPermission,
   requestOrientationPermission,
-  startOrientationCapture,
+  startHeadingCapture,
 } from './deviceOrientation.js';
 import { downloadBlob } from './persistence.js';
 
@@ -251,15 +251,12 @@ function startCompass() {
   const note = $('stereo-compass-note');
   const begin = () => {
     if (activeTab !== 'compass' || !panelOpen) return;
-    note.textContent = 'Hold the phone flat against a surface to read it.';
-    stopCompassCapture = startOrientationCapture({
-      onReading: (r) => {
-        compassWidget.update(r);
-        // El consejo lo redacta `compassHint`, el mismo que usa el panel
-        // Device: dos textos distintos sobre la misma lectura harían dudar de
-        // cuál de los dos manda.
-        note.textContent = compassHint(r);
-      },
+    // Esta pestaña es una brújula de referencia, no una medida: solo el
+    // ángulo desde el norte al que apunta el teléfono, sostenido como
+    // cualquier brújula — a ras, no contra una roca.
+    note.textContent = 'Hold the phone flat, screen up, pointing the way you want to read.';
+    stopCompassCapture = startHeadingCapture({
+      onReading: (r) => compassWidget.update(r),
       onError: (msg) => {
         note.textContent = msg;
       },
