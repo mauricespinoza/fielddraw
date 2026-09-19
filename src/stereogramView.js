@@ -17,7 +17,7 @@
  * solo los pinta.
  */
 
-import { greatCirclePath, schmidtNet } from './stereogram.js';
+import { greatCirclePath, lineVector, schmidtNet, smallCircleSegments } from './stereogram.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -30,6 +30,10 @@ const TENUE = '#5b6876';
    (negro, verde, azul, rojo), así que el vector medio nunca se confunde con
    el polo de una medida real. */
 const MEDIA = '#c026d3';
+/* Verde azulado, el acento de toda la app (`--accent` en app.css): un tercer
+   tono que tampoco usa ningún tipo del catálogo, para que el eje beta no se
+   confunda ni con una medida real ni con el vector medio. */
+const BETA = '#0d9488';
 
 const el = (name, attrs = {}) => {
   const n = document.createElementNS(SVG_NS, name);
@@ -102,7 +106,8 @@ function net(cx, cy, R) {
  * @param {Array<{x:number,y:number,color:string,id:string,strike:number,dip:number}>} points
  *   — posición del POLO ya en coordenadas relativas al centro y radio 1.
  * @param {{width?, height?, radius?, highlighted?: Set<string>,
- *          showPoles?: boolean, showPlanes?: boolean}} opts
+ *          showPoles?: boolean, showPlanes?: boolean, showMean?: boolean,
+ *          meanVector?: object|null, showBeta?: boolean, betaVector?: object|null}} opts
  */
 export function renderStereogram(svg, points, opts = {}) {
   const {
@@ -117,6 +122,10 @@ export function renderStereogram(svg, points, opts = {}) {
     // casilla en vez de la de Polos, que sigue gobernando los polos reales.
     showMean = false,
     meanVector = null,
+    // El eje beta (`S.betaAxis`), otro punto aparte: es el eje de un
+    // pliegue, no un polo ni un promedio de polos.
+    showBeta = false,
+    betaVector = null,
   } = opts;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('width', width);
@@ -202,8 +211,32 @@ export function renderStereogram(svg, points, opts = {}) {
    * blanca sobre el círculo magenta es deliberadamente distinta de cualquier
    * polo (un círculo liso, en el color del tipo): nunca hay que dudar cuál de
    * los puntos es el promedio y cuál una medida de verdad.
+   *
+   * El CONO DE 95% DE CONFIANZA (`meanVector.alpha95`, de `fisherConfidence`
+   * en `stereogram.js`) va DEBAJO de esa mira, como un óvalo punteado: es la
+   * misma familia de curva que un ciclograma —un círculo menor alrededor del
+   * vector medio, en vez de alrededor del polo de un plano— así que sale de
+   * la misma `smallCircleSegments`. Con menos de 3 polos, o un cúmulo tan
+   * concentrado que el cono se cierra a 0°, no hay nada que dibujar.
    */
   if (showMean && meanVector) {
+    if (Number.isFinite(meanVector.alpha95) && meanVector.alpha95 > 0.05) {
+      const eje = lineVector(meanVector.trend, meanVector.plunge);
+      const cono = el('g', { class: 'stereo-mean-cone', fill: 'none', 'stroke-linecap': 'round' });
+      for (const seg of smallCircleSegments(eje, meanVector.alpha95, { R: 1, steps: 120 })) {
+        cono.appendChild(
+          el('polyline', {
+            points: seg.map((q) => `${cx + q.x * radius},${cy + q.y * radius}`).join(' '),
+            stroke: MEDIA,
+            'stroke-width': 1.5,
+            'stroke-dasharray': '6 4',
+            opacity: 0.75,
+          }),
+        );
+      }
+      svg.appendChild(cono);
+    }
+
     const mx = cx + meanVector.x * radius;
     const my = cy + meanVector.y * radius;
     const media = el('g', { class: 'stereo-mean' });
@@ -219,6 +252,45 @@ export function renderStereogram(svg, points, opts = {}) {
       }),
     );
     svg.appendChild(media);
+  }
+
+  /*
+   * EJE BETA: el mismo trato que el vector medio —encima de todo—, pero con
+   * su propio color y su propia forma (un rombo, ni el círculo del vector
+   * medio ni el redondel de un polo) para que los tres nunca se confundan
+   * entre sí. Debajo va su CINTURÓN —el círculo máximo del que el eje es la
+   * normal—, la misma curva que mostraría el diagrama beta clásico si se
+   * trazaran los ciclogramas de cada plano y se leyera dónde se cruzan.
+   */
+  if (showBeta && betaVector) {
+    const eje = lineVector(betaVector.trend, betaVector.plunge);
+    const cinturon = el('g', { class: 'stereo-beta-girdle', fill: 'none', 'stroke-linecap': 'round' });
+    for (const seg of smallCircleSegments(eje, 90, { R: 1, steps: 120 })) {
+      cinturon.appendChild(
+        el('polyline', {
+          points: seg.map((q) => `${cx + q.x * radius},${cy + q.y * radius}`).join(' '),
+          stroke: BETA,
+          'stroke-width': 1.6,
+          'stroke-dasharray': '2 5',
+          opacity: 0.85,
+        }),
+      );
+    }
+    svg.appendChild(cinturon);
+
+    const bx = cx + betaVector.x * radius;
+    const by = cy + betaVector.y * radius;
+    const S = 10; // medio lado del rombo
+    svg.appendChild(
+      el('polygon', {
+        class: 'stereo-beta',
+        points: `${bx},${by - S} ${bx + S},${by} ${bx},${by + S} ${bx - S},${by}`,
+        fill: BETA,
+        stroke: TINTA,
+        'stroke-width': 1.6,
+        'stroke-linejoin': 'round',
+      }),
+    );
   }
 
   // Las coordenadas de cada punto ya en el sistema del `viewBox`, para que

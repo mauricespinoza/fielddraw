@@ -7,7 +7,7 @@
 
 import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
-import { countsByType, meanPole, stereogramData } from './stereogram.js';
+import { betaAxis, countsByType, meanPole, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
 import { buildCompass } from './compassWidget.js';
 import { formatStrikeDip, quadrant } from './structure.js';
@@ -35,6 +35,8 @@ let showPlanes = true;
  * signifique algo, y encenderlo de entrada lo pondría a competir con el
  * cúmulo mismo apenas se abre la pestaña. */
 let showMean = false;
+/** El eje beta, lo mismo: apagado de salida por la misma razón. */
+let showBeta = false;
 
 export function initStereogramPanel({ message } = {}) {
   onMessage = message || onMessage;
@@ -65,6 +67,10 @@ export function initStereogramPanel({ message } = {}) {
   });
   $('stereo-show-mean').addEventListener('change', (e) => {
     showMean = e.target.checked;
+    renderPlot();
+  });
+  $('stereo-show-beta').addEventListener('change', (e) => {
+    showBeta = e.target.checked;
     renderPlot();
   });
 
@@ -114,39 +120,61 @@ function showTab(tab) {
 function renderPlot() {
   const st = store.getState();
   const data = stereogramData(st.features, st.selection);
-  // Del mismo cúmulo que se está mirando —la selección del mapa, o todo si
-  // no hay ninguna—, nunca de los tipos que la leyenda deja fuera: mezclar
-  // estratificación y diaclasas en un solo promedio daría un rumbo y manteo
-  // que no describe ninguna de las dos fábricas.
-  const media = meanPole(data.points);
+  // El vector medio y el eje beta se calculan del cúmulo que el lazo tiene
+  // marcado, si hay algo lassado — es la forma directa de promediar solo un
+  // subconjunto sin pasar por «Select these on the map» y reabrir la
+  // pestaña—, y si no del mismo cúmulo que se está mirando: la selección del
+  // mapa, o todo si no hay ninguna. Nunca de los tipos que la leyenda deja
+  // fuera: mezclar estratificación y diaclasas en un solo promedio daría un
+  // rumbo y manteo que no describe ninguna de las dos fábricas.
+  const usandoLazo = highlighted.size > 0;
+  const statSource = usandoLazo ? data.points.filter((p) => highlighted.has(p.id)) : data.points;
+  const media = meanPole(statSource);
+  const beta = betaAxis(statSource);
   lastPlot = renderStereogram($('stereo-chart'), data.points, {
     highlighted,
     showPoles,
     showPlanes,
     showMean,
     meanVector: media,
+    showBeta,
+    betaVector: beta,
   });
 
   $('stereo-source-note').textContent = data.usingSelection
     ? `Plotting ${data.points.length} of ${data.total} measurement(s) — the current map selection.`
     : `Plotting all ${data.total} measurement(s) — select some on the map to plot only those.`;
 
+  const deQue = usandoLazo ? ` of the ${statSource.length} lassoed` : '';
   const meanValue = $('stereo-mean-value');
   if (showMean && media) {
+    const cono = Number.isFinite(media.alpha95) ? ` · α95 = ${media.alpha95.toFixed(1)}°` : '';
     meanValue.textContent =
-      `Mean vector: ${formatStrikeDip(media.strike, media.dip)} · dips ${quadrant(media.dipAzimuth)} · R = ${media.r.toFixed(2)} (n = ${media.n})`;
+      `Mean vector${deQue}: ${formatStrikeDip(media.strike, media.dip)} · dips ${quadrant(media.dipAzimuth)} · R = ${media.r.toFixed(2)}${cono} (n = ${media.n})`;
     meanValue.classList.remove('hidden');
   } else if (showMean) {
     // Casilla encendida pero nada que promediar: sin puntos, o con un cúmulo
     // tan disperso que el vector medio se cancela — se dice por qué en vez
     // de dejar el hueco en blanco.
     meanValue.textContent =
-      data.points.length === 0
+      statSource.length === 0
         ? 'Mean vector: no measurements plotted.'
         : 'Mean vector: the poles are too scattered to average.';
     meanValue.classList.remove('hidden');
   } else {
     meanValue.classList.add('hidden');
+  }
+
+  const betaValue = $('stereo-beta-value');
+  if (showBeta && beta) {
+    betaValue.textContent =
+      `Beta axis${deQue}: trend/plunge ${Math.round(beta.trend)}/${Math.round(beta.plunge)} · girdle fit ${Math.round(beta.girdle * 100)}% (n = ${beta.n})`;
+    betaValue.classList.remove('hidden');
+  } else if (showBeta) {
+    betaValue.textContent = 'Beta axis: needs at least 2 planes to intersect.';
+    betaValue.classList.remove('hidden');
+  } else {
+    betaValue.classList.add('hidden');
   }
 
   const counts = countsByType(data.points);
