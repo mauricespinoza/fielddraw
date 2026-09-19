@@ -11,12 +11,7 @@ import {
 } from './scale.js';
 import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
 import { COMPASS_DIP_SIGMA_DEG, COMPASS_STRIKE_SIGMA_DEG, measureThickness } from './thickness.js';
-import {
-  DEFAULT_MAX_OFFSET_M,
-  initSectionPanel,
-  renderSectionPanel,
-  runSection,
-} from './sectionPanel.js';
+import { initSectionPanel, renderSectionPanel, runSection } from './sectionPanel.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
@@ -1264,6 +1259,7 @@ const POPOVERS = [
   'area-menu',
   'dem-notice',
   'gps-required-dialog',
+  'project-dips-menu',
 ];
 
 /**
@@ -1687,10 +1683,10 @@ function openSectionFromProfile() {
   }
 
   /*
-   * Con selección se proyecta lo seleccionado y sin límite de distancia: quien
-   * eligió con el lazo ya decidió qué le interesa. Sin selección se toman todas
-   * las medidas dentro de dos kilómetros del corte, porque proyectar un manteo
-   * tomado a veinte no es un dato.
+   * Solo se proyecta lo que ya estuviera seleccionado con el lazo —nunca "todo
+   * lo que caiga cerca"—, y el botón "Project dips" de la propia vista es el
+   * camino normal para elegir el resto. Sin nada elegido, el corte se abre
+   * solo con la topografía: es un lienzo en blanco a la espera de ese botón.
    */
   const seleccionadas = store
     .selectedFeatures()
@@ -1699,9 +1695,61 @@ function openSectionFromProfile() {
 
   store.requestSection({
     coords: perfil.coords,
-    measurementIds: seleccionadas.length ? seleccionadas : null,
-    maxOffset: seleccionadas.length ? null : DEFAULT_MAX_OFFSET_M,
+    measurementIds: seleccionadas,
+    maxOffset: null,
+    projection: store.getState().dipProjection,
   });
+}
+
+/* ---------- elegir qué manteos van al corte ---------- */
+
+/** Refleja `dipProjection` en el desplegable "Project dips". */
+function syncProjectDipsMenu() {
+  const p = store.getState().dipProjection;
+  $('dip-proj-orthogonal').checked = p.method === 'orthogonal';
+  $('dip-proj-plunge').checked = p.method === 'plunge';
+  if (document.activeElement !== $('dip-proj-trend')) $('dip-proj-trend').value = String(p.trend);
+  if (document.activeElement !== $('dip-proj-plunge-val')) {
+    $('dip-proj-plunge-val').value = String(p.plunge);
+  }
+  $('dip-proj-trend').disabled = p.method !== 'plunge';
+  $('dip-proj-plunge-val').disabled = p.method !== 'plunge';
+}
+
+/**
+ * Botón "Select dips on map" del desplegable: cierra el corte, pasa a Elegir
+ * y deja el mapa a la vista para marcar los manteos. `beginPickDips` guarda
+ * el método elegido; `renderPickDipsBar` es quien confirma o cancela después.
+ */
+function pickDipsOnMap() {
+  const s = store.getState().section;
+  if (!s) return;
+  const method = $('dip-proj-plunge').checked ? 'plunge' : 'orthogonal';
+  const trend = Number($('dip-proj-trend').value) || 0;
+  const plunge = Number($('dip-proj-plunge-val').value) || 0;
+  store.setDipProjection({ method, trend, plunge });
+  store.beginPickDips({ coords: s.coords, method, trend, plunge });
+  closeOverlays();
+}
+
+/** Refresca la barra flotante de confirmación mientras se eligen manteos. */
+function renderPickDipsBar() {
+  const st = store.getState();
+  const bar = $('pickdips-bar');
+  if (!st.pickDips) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  const n = store
+    .selectedFeatures()
+    .filter((f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement').length;
+  $('pickdips-count').textContent = `${n} selected`;
+  $('pickdips-confirm').disabled = n === 0;
+  $('pickdips-note').textContent =
+    st.pickDips.method === 'plunge'
+      ? `Select the dip measurements to project along ${Math.round(st.pickDips.trend)}/${Math.round(st.pickDips.plunge)}, then press Project.`
+      : 'Select the dip measurements to project onto the section, then press Project.';
 }
 
 /* ---------- escala de trabajo ---------- */
@@ -5058,6 +5106,19 @@ export function initUI() {
 
   $('btn-close-profile').addEventListener('click', () => store.clearProfile());
   $('btn-section').addEventListener('click', openSectionFromProfile);
+  $('btn-project-dips').addEventListener('click', () => {
+    syncProjectDipsMenu();
+    togglePanel('project-dips-menu');
+  });
+  $('btn-close-project-dips').addEventListener('click', () => closeOverlays());
+  for (const id of ['dip-proj-orthogonal', 'dip-proj-plunge']) {
+    $(id).addEventListener('change', syncProjectDipsMenu);
+  }
+  $('dip-proj-pick').addEventListener('click', pickDipsOnMap);
+  $('pickdips-confirm').addEventListener('click', () => {
+    if (!store.confirmPickDips()) showBanner('Select at least one dip measurement first.');
+  });
+  $('pickdips-cancel').addEventListener('click', () => store.cancelPickDips());
   $('btn-profile-csv').addEventListener('click', downloadProfileCSV);
   $('btn-profile-png').addEventListener('click', downloadProfilePNG);
   $('btn-profile-svg').addEventListener('click', downloadProfileSVG);
@@ -5198,7 +5259,12 @@ export function initUI() {
       const pedido = store.getState().pendingSection;
       if (pedido) runSection(pedido);
     }
-    if (store.changed('section') || store.changed('sectionOpts')) renderSectionPanel();
+    if (store.changed('section') || store.changed('sectionOpts') || store.changed('pickDips')) {
+      renderSectionPanel();
+    }
+    if (store.changed('pickDips') || (store.getState().pickDips && store.changed('selection'))) {
+      renderPickDipsBar();
+    }
     if (store.changed('pendingThickness')) {
       const par = store.getState().pendingThickness;
       if (par) runThickness(par);

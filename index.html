@@ -866,6 +866,49 @@
         </p>
       </div>
 
+      <!-- Qué manteos van al corte, y cómo se deslizan hasta él. Sale del
+           botón "Project dips" del perfil estructural (`z-index` propio en
+           app.css: por encima del propio corte, que es pantalla entera).
+           "Select dips on map" cierra el corte y pasa a Elegir sobre el mapa
+           —ver `beginPickDips` en store.js—; la barra flotante
+           `pickdips-bar` es la que confirma o cancela esa selección. -->
+      <div class="dropdown hidden" id="project-dips-menu">
+        <header>
+          <h2>Project dips onto the section</h2>
+          <button class="icon-btn close-x" id="btn-close-project-dips" aria-label="Close">✕</button>
+        </header>
+        <fieldset>
+          <legend>Projection</legend>
+          <label>
+            <input type="radio" name="dip-projection" id="dip-proj-orthogonal" checked />
+            Orthogonal — slide each dip perpendicular to the section
+          </label>
+          <label>
+            <input type="radio" name="dip-projection" id="dip-proj-plunge" />
+            Along a trend/plunge — for a known fold axis or lineation
+          </label>
+        </fieldset>
+        <label class="field">
+          <span>Trend</span>
+          <span class="tol-row">
+            <input type="number" id="dip-proj-trend" min="0" max="360" step="1" value="0" />
+            <span class="unit">°</span>
+          </span>
+        </label>
+        <label class="field">
+          <span>Plunge</span>
+          <span class="tol-row">
+            <input type="number" id="dip-proj-plunge-val" min="0" max="90" step="1" value="30" />
+            <span class="unit">°</span>
+          </span>
+        </label>
+        <button class="pill wide accent" id="dip-proj-pick">Select dips on map</button>
+        <p class="hint footnote">
+          Only measurements with an elevation from the model can be projected along a trend/plunge:
+          the slide happens in 3D, not just sideways on the map.
+        </p>
+      </div>
+
       <div class="props-menu hidden" id="props-menu">
         <header>
           <h2 id="props-title">Properties</h2>
@@ -1313,6 +1356,7 @@
           <h2>Structural section</h2>
           <span class="sv-meta" id="section-meta"></span>
           <span class="sv-spacer"></span>
+          <button class="pill accent" id="btn-project-dips" title="Choose which dip measurements to project onto this section, and how">Project dips</button>
           <label class="sv-field">
             <span>V.E.</span>
             <input type="number" id="section-exag" min="0.2" max="20" step="0.1" value="1" />
@@ -1434,6 +1478,17 @@
       <div class="banner hidden" id="banner">
         <span id="banner-text"></span>
         <button class="icon-btn" id="banner-close">✕</button>
+      </div>
+
+      <!-- Visible SOLO mientras se eligen los manteos que van al corte (ver
+           `beginPickDips`/`confirmPickDips` en store.js): el corte se quita de
+           en medio para dejar ver el mapa, y esta barra es lo único que dice
+           qué se está haciendo y cómo se vuelve. -->
+      <div class="pickdips-bar hidden" id="pickdips-bar">
+        <span id="pickdips-note">Select the dip measurements to project, then press Project.</span>
+        <span class="count" id="pickdips-count">0 selected</span>
+        <button class="pill accent" id="pickdips-confirm" disabled>Project dips</button>
+        <button class="pill" id="pickdips-cancel">Cancel</button>
       </div>
 
       <div class="busy hidden" id="busy"><span class="spinner"></span><span id="busy-text"></span></div>

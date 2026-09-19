@@ -1762,6 +1762,31 @@ input[type='radio'] {
   display: none !important;
 }
 
+/* ---------- elegir manteos para el corte estructural ---------- */
+.pickdips-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 16px);
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(90vw, 640px);
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pickdips-bar .count {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ---------- indicador de trabajo en curso ---------- */
 .busy {
   position: absolute;
@@ -2258,7 +2283,10 @@ input[type='radio'] {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #0d1117;
+  /* Blanco, a juego con el papel del propio corte (ver `theme: 'light'` en
+     `renderSectionPanel`): con el fondo oscuro de antes, el margen entre el
+     SVG y su marco se veía como un reborde negro alrededor de la figura. */
+  background: #ffffff;
 }
 
 .sv-chart {
@@ -2340,6 +2368,12 @@ input[type='radio'] {
  */
 #stereo-panel-plot .sv-chart-wrap {
   background: #e9edf2;
+}
+
+/* Por encima del propio corte (`.section-view`, z-index 34): sale de un
+   botón que vive dentro de esa vista de pantalla completa. */
+#project-dips-menu {
+  z-index: 36;
 }
 
 /* Lazo del estereograma: igual idea que `.lasso-free` sobre el mapa, pero
