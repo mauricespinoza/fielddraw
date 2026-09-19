@@ -811,6 +811,19 @@ body,
   border-color: rgba(45, 212, 191, 0.5);
 }
 
+/*
+ * La fila Project/Layers/Units/... de arriba a la derecha: solo el icono, el
+ * texto pasa a `title`/`aria-label`. Cuadrada y no una píldora larga, porque
+ * sin palabra dentro una píldora ancha deja aire vacío a los lados del icono.
+ */
+.pill.icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+}
+
 /* ---------- brújula en vivo (Device, Stereogram) ---------- */
 /*
  * El widget se trae su propio fondo claro (ver `compassWidget.js`): en
@@ -1749,6 +1762,31 @@ input[type='radio'] {
   display: none !important;
 }
 
+/* ---------- elegir manteos para el corte estructural ---------- */
+.pickdips-bar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + 16px);
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(90vw, 640px);
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.pickdips-bar .count {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* ---------- indicador de trabajo en curso ---------- */
 .busy {
   position: absolute;
@@ -2245,7 +2283,10 @@ input[type='radio'] {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #0d1117;
+  /* Blanco, a juego con el papel del propio corte (ver `theme: 'light'` en
+     `renderSectionPanel`): con el fondo oscuro de antes, el margen entre el
+     SVG y su marco se veía como un reborde negro alrededor de la figura. */
+  background: #ffffff;
 }
 
 .sv-chart {
@@ -2327,6 +2368,12 @@ input[type='radio'] {
  */
 #stereo-panel-plot .sv-chart-wrap {
   background: #e9edf2;
+}
+
+/* Por encima del propio corte (`.section-view`, z-index 34): sale de un
+   botón que vive dentro de esa vista de pantalla completa. */
+#project-dips-menu {
+  z-index: 36;
 }
 
 /* Lazo del estereograma: igual idea que `.lasso-free` sobre el mapa, pero
@@ -2546,6 +2593,11 @@ input[type='radio'] {
     min-height: 40px;
     padding: 8px 14px;
     font-size: 13px;
+  }
+
+  .top-right .pill.icon-pill {
+    width: 40px;
+    padding: 0;
   }
 
   /* Barra de herramientas: tira horizontal al pie, sobre la de estado. */

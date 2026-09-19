@@ -189,6 +189,23 @@ let state = {
   pendingSection: null,
   section: null,
   sectionOpts: { exaggeration: 1, showIntersections: true, showLabels: true },
+  /**
+   * Cómo se desliza un manteo hasta el corte: perpendicular (`'orthogonal'`,
+   * de fábrica) o a lo largo de una tendencia/inclinación conocida
+   * (`'plunge'`), para estructuras con un eje —un pliegue, una lineación—
+   * donde deslizarlo perpendicular lo sacaría de la superficie que ocupa.
+   * Se recuerda entre una sección y la siguiente porque quien fija un eje de
+   * pliegue para su área de trabajo lo usa en todos los cortes que haga ahí.
+   */
+  dipProjection: { method: 'orthogonal', trend: 0, plunge: 30 },
+  /**
+   * Selección de medidas en curso PARA un corte, mientras se decide qué
+   * manteos proyectar: {coords, method, trend, plunge}, o `null` fuera de
+   * ese modo. Sale de la vista del corte a la del mapa —herramienta Elegir—
+   * y vuelve al confirmar la selección (ver `confirmPickDips`); cancela sin
+   * tocar el corte que ya hubiera, si lo hay.
+   */
+  pickDips: null,
   /** Traza recién terminada de la que hay que calcular el perfil. */
   pendingProfile: null,
   /** Puntos recién marcados de los que hay que resolver rumbo y manteo. */
@@ -998,15 +1015,19 @@ export function startThickness(id) {
 /**
  * Pide construir el corte a partir de una traza.
  *
- * `measurementIds` acota qué medidas se proyectan. Con selección se respeta tal
- * cual —el usuario ya decidió cuáles le interesan y hasta dónde estirar la
- * proyección—; sin selección se toman todas las que caigan dentro de
- * `maxOffset`, porque proyectar sobre el corte un manteo medido a veinte
- * kilómetros no es un dato, es un adorno.
+ * `measurementIds` es SIEMPRE la selección explícita de quien pide el corte:
+ * un corte sin nada elegido no construye nada, en vez de adivinar "todo lo
+ * que caiga cerca" — ver `beginPickDips`, que es el único camino normal hasta
+ * aquí desde la interfaz.
  */
-export function requestSection({ coords, measurementIds = null, maxOffset = null }) {
+export function requestSection({ coords, measurementIds, maxOffset = null, projection = null }) {
   if (!Array.isArray(coords) || coords.length < 2) return false;
-  set({ pendingSection: { coords, measurementIds, maxOffset } });
+  // Un arreglo vacío es válido —un corte recién abierto, solo con
+  // topografía, antes de que se pida "Project dips"—; lo que no vale es
+  // `null`/`undefined`, que era como se pedía antes "todo lo que caiga
+  // cerca" y es justo lo que ya no se quiere adivinar.
+  if (!Array.isArray(measurementIds)) return false;
+  set({ pendingSection: { coords, measurementIds, maxOffset, projection } });
   return true;
 }
 
@@ -1020,6 +1041,52 @@ export function setSection(section) {
 
 export function clearSection() {
   set({ section: null, pendingSection: null });
+}
+
+/** Recuerda el método de proyección elegido, para la próxima vez que se pida. */
+export function setDipProjection(patch) {
+  set({ dipProjection: { ...state.dipProjection, ...patch } });
+}
+
+/**
+ * Abre el modo de selección: sale al mapa con la herramienta Elegir puesta y
+ * la selección vacía, a la espera de que se marquen los manteos que van al
+ * corte. `coords` es la traza del perfil sobre la que se va a proyectar.
+ */
+export function beginPickDips({ coords, method, trend, plunge }) {
+  if (!Array.isArray(coords) || coords.length < 2) return false;
+  // `setTool` es quien sabe cerrar un borrador a medias, soltar el ancla de
+  // espesor pendiente, etc. — los mismos efectos que cualquier otro cambio de
+  // herramienta necesita, y que poner `tool` a mano aquí se saltaría.
+  setTool('select');
+  set({ selection: [] });
+  // El corte que ya hubiera NO se borra: si se cancela la selección, se
+  // recupera tal cual estaba (ver `renderSectionPanel`, que oculta la vista
+  // mientras `pickDips` está puesto sin tocar `section`).
+  set({ pickDips: { coords, method, trend, plunge } });
+  return true;
+}
+
+export function cancelPickDips() {
+  set({ pickDips: null });
+}
+
+/**
+ * Cierra la selección y pide el corte con lo elegido. Sin nada seleccionado
+ * no hay qué proyectar, así que no hace nada y deja el modo puesto: quien
+ * llama decide si eso merece un aviso.
+ */
+export function confirmPickDips() {
+  const pick = state.pickDips;
+  if (!pick || state.selection.length === 0) return false;
+  const ok = requestSection({
+    coords: pick.coords,
+    measurementIds: state.selection.slice(),
+    maxOffset: null,
+    projection: { method: pick.method, trend: pick.trend, plunge: pick.plunge },
+  });
+  if (ok) set({ pickDips: null });
+  return ok;
 }
 
 /** Enciende o apaga una intersección del corte. */

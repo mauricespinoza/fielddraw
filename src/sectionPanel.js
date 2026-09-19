@@ -27,16 +27,6 @@ let onBusy = () => {};
 /** Muestreador del DEM, inyectado por `ui.js`: es el mismo que usa el perfil. */
 let samplerFor = null;
 
-/**
- * Distancia máxima al corte cuando NO hay selección, en metros.
- *
- * Con selección se respeta lo elegido: el usuario ya decidió qué medidas le
- * interesan y hasta dónde estirar la proyección. Sin ella hay que poner un
- * límite, porque proyectar sobre el corte un manteo tomado a veinte kilómetros
- * no es un dato, es un adorno que además desplaza la interpretación.
- */
-export const DEFAULT_MAX_OFFSET_M = 2000;
-
 export function initSectionPanel({ message, busy, sampler }) {
   onMessage = message || onMessage;
   onBusy = busy || onBusy;
@@ -80,17 +70,20 @@ export async function runSection(pending) {
     return;
   }
   const st = store.getState();
-  const { coords, measurementIds, maxOffset } = pending || {};
+  const { coords, measurementIds, maxOffset, projection } = pending || {};
   if (!Array.isArray(coords) || coords.length < 2) {
     store.clearPendingSection();
     return;
   }
 
+  // `measurementIds` es siempre la lista explícita a proyectar —vacía es un
+  // corte solo con topografía, no "todas"— así que nunca se completa con el
+  // resto de medidas del dibujo (ver `requestSection` en store.js).
   const todas = st.features.filter(
     (f) => f.geometry && f.geometry.type === 'Point' && f.properties.geomKind === 'measurement',
   );
-  const ids = measurementIds && measurementIds.length ? new Set(measurementIds) : null;
-  const elegidas = ids ? todas.filter((f) => ids.has(f.properties.id)) : todas;
+  const ids = new Set(measurementIds || []);
+  const elegidas = todas.filter((f) => ids.has(f.properties.id));
 
   building = true;
   onBusy('Reading elevations of the measurements…');
@@ -120,9 +113,18 @@ export async function runSection(pending) {
       measurements: conCota,
       features: lineas,
       maxOffset: maxOffset === null || maxOffset === undefined ? Infinity : maxOffset,
+      projection,
     });
 
-    if (section.dips.length === 0 && section.intersections.length === 0) {
+    // Con medidas pedidas EXPLÍCITAMENTE (desde "Project dips") y ninguna
+    // proyectada, algo falló —lejos del corte, sin cota, mal orientadas— y
+    // hay que decirlo. Un corte recién abierto sin medidas todavía (la lista
+    // llega vacía a propósito) no es ese caso: es solo topografía.
+    if (
+      (measurementIds || []).length > 0 &&
+      section.dips.length === 0 &&
+      section.intersections.length === 0
+    ) {
       onMessage(
         'Nothing fell on that section: no measurement within reach and no mapped line crossing it.',
       );
@@ -132,8 +134,10 @@ export async function runSection(pending) {
     store.setSection(section);
     const sinCota = section.dips.filter((d) => !Number.isFinite(d.z)).length;
     onMessage(
-      `${section.dips.length} measurement(s) projected and ${section.intersections.length} crossing(s) found.` +
-        (sinCota ? ` ${sinCota} had no elevation in the model and are not drawn.` : ''),
+      section.dips.length || section.intersections.length
+        ? `${section.dips.length} measurement(s) projected and ${section.intersections.length} crossing(s) found.` +
+            (sinCota ? ` ${sinCota} had no elevation in the model and are not drawn.` : '')
+        : 'Section ready — use "Project dips" to choose which measurements go on it.',
       'info',
     );
   } catch (err) {
@@ -150,7 +154,10 @@ export async function runSection(pending) {
 export function renderSectionPanel() {
   const st = store.getState();
   const panel = $('section-view');
-  if (!st.section) {
+  // Mientras se eligen los manteos en el mapa (`pickDips`) la vista se quita
+  // de en medio, aunque ya hubiera un corte construido: es al mapa a donde
+  // hay que ver, y el corte anterior sigue intacto para cuando se cancele.
+  if (!st.section || st.pickDips) {
     panel.classList.add('hidden');
     return;
   }
@@ -171,6 +178,11 @@ export function renderSectionPanel() {
     exaggeration: o.exaggeration,
     showIntersections: o.showIntersections,
     showLabels: o.showLabels,
+    // Papel blanco: se interpreta a la luz del día, junto al afloramiento —el
+    // mismo motivo por el que la brújula en vivo (`compassWidget.js`) también
+    // se dibuja clara y no oscura— y es lo que sale impreso o pegado en un
+    // informe, donde un fondo negro gasta tinta y desentona con el resto.
+    theme: 'light',
   });
 
   renderDipList(s);

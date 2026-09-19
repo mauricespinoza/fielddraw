@@ -3,9 +3,14 @@
  *
  * La comparte el método Device de crear medida y la pestaña Compass del
  * Stereograma: en las dos hace falta leer lo mismo —el rumbo como un trazo
- * girado desde el norte, el manteo como un tic a un lado, y su error como
- * texto y no como adorno—, así que la forma de dibujarlo vive en un solo
- * sitio y no se copia dos veces.
+ * girado desde el norte, el manteo como un error medido en grados, y ese
+ * error como texto y no como adorno—, así que el marco graduado y el texto
+ * viven en un solo sitio y no se copian dos veces. Lo que gira en el centro sí
+ * difiere a propósito entre los dos: Device dibuja el símbolo de rumbo/manteo
+ * del mapa (`style: 'symbol'`), para reconocer en terreno la misma medida que
+ * se va a ver después; Compass dibuja una aguja de brújula (`style: 'needle'`,
+ * el valor por omisión), porque ahí se está orientando el propio teléfono y
+ * no anotando un dato.
  *
  * **EN TONOS CLAROS, Y NO POR GUSTO.** El resto de la aplicación es oscura
  * porque de noche o bajo techo cansa menos, pero esto se mira a mediodía, al
@@ -23,6 +28,7 @@
  */
 
 import { READY_SPREAD_DEG } from './deviceOrientation.js';
+import { structureVariant } from './symbology.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -57,9 +63,15 @@ const CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
  * leer aquí, no se veían en ninguna parte.
  *
  * @param {SVGElement} svg
- * @param {{size?: number}} opts — `size` es el diámetro del lienzo de la rosa.
+ * @param {{size?: number, style?: 'needle'|'symbol'}} opts — `size` es el
+ *   diámetro del lienzo de la rosa. `style` decide qué se dibuja girando: la
+ *   AGUJA DE BRÚJULA de siempre (`'needle'`, el valor por omisión, para la
+ *   pestaña Compass del Stereograma) o el SÍMBOLO DE RUMBO/MANTEO del mapa
+ *   (`'symbol'`, para el panel Device al tomar una medida) — ver la nota bajo
+ *   `needle`/`dipSymbol` más abajo sobre por qué son dos dibujos distintos y
+ *   no uno reetiquetado.
  */
-export function buildCompass(svg, { size = 240 } = {}) {
+export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   const alto = size + 88; // la rosa, y debajo el número con sus dos rótulos
   svg.replaceChildren();
   svg.setAttribute('viewBox', `0 0 ${size} ${alto}`);
@@ -126,20 +138,56 @@ export function buildCompass(svg, { size = 240 } = {}) {
    * que apunta a un lado sin ambigüedad —el rumbo por sí solo es una recta,
    * no una flecha— y es la que de verdad se quiere leer de un vistazo.
    */
-  const needle = el('g', { class: 'compass-needle', visibility: 'hidden' });
-  const L = R - 14; // qué tan larga es la aguja
-  const W = 9; // medio ancho en el centro, donde el rombo es más ancho
-  const cola = el('polygon', {
-    points: `${cx},${cy + L} ${cx + W},${cy} ${cx - W},${cy}`,
-    fill: TINTA, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
-  });
-  const punta = el('polygon', {
-    points: `${cx},${cy - L} ${cx + W},${cy} ${cx - W},${cy}`,
-    fill: MANTEO, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
-  });
-  const hub = el('circle', { cx, cy, r: 4, fill: PAPEL, stroke: TINTA, 'stroke-width': 1.4 });
-  needle.append(cola, punta, hub);
-  svg.appendChild(needle);
+  let needle = null;
+  let dipSymbol = null;
+  const L = R - 14; // qué tan larga es la aguja, o el trazo de rumbo
+
+  if (style === 'needle') {
+    needle = el('g', { class: 'compass-needle', visibility: 'hidden' });
+    const W = 9; // medio ancho en el centro, donde el rombo es más ancho
+    const cola = el('polygon', {
+      points: `${cx},${cy + L} ${cx + W},${cy} ${cx - W},${cy}`,
+      fill: TINTA, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
+    });
+    const punta = el('polygon', {
+      points: `${cx},${cy - L} ${cx + W},${cy} ${cx - W},${cy}`,
+      fill: MANTEO, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
+    });
+    const hub = el('circle', { cx, cy, r: 4, fill: PAPEL, stroke: TINTA, 'stroke-width': 1.4 });
+    needle.append(cola, punta, hub);
+    svg.appendChild(needle);
+  } else {
+    /*
+     * EL SÍMBOLO DE RUMBO Y MANTEO DEL MAPA, NO UNA AGUJA DE BRÚJULA.
+     *
+     * Aquí se lee la medida que se está a punto de guardar, con el mismo
+     * trazo y el mismo tic que `structureSymbols.js` dibuja luego sobre el
+     * mapa: quien toma el dato con el teléfono tiene que reconocer la misma
+     * convención con la que lo va a ver después, no una aguja que ese símbolo
+     * nunca tuvo. Gira por el RUMBO (regla de la mano derecha), con el tic
+     * siempre hacia el lado del manteo que la propia convención ya fija.
+     */
+    dipSymbol = el('g', { class: 'dip-symbol', visibility: 'hidden' });
+    const TICK = L * 0.55;
+    const strikeLine = el('line', {
+      x1: cx, y1: cy - L, x2: cx, y2: cy + L,
+      stroke: TINTA, 'stroke-width': 3, 'stroke-linecap': 'round',
+    });
+    const tickRight = el('line', {
+      x1: cx, y1: cy, x2: cx + TICK, y2: cy,
+      stroke: MANTEO, 'stroke-width': 3, 'stroke-linecap': 'round',
+    });
+    const tickLeft = el('line', {
+      x1: cx, y1: cy, x2: cx - TICK, y2: cy,
+      stroke: MANTEO, 'stroke-width': 3, 'stroke-linecap': 'round', visibility: 'hidden',
+    });
+    const ring = el('circle', {
+      cx, cy, r: TICK * 0.85, fill: 'none', stroke: TINTA, 'stroke-width': 2.4, visibility: 'hidden',
+    });
+    const hub = el('circle', { cx, cy, r: 3, fill: TINTA });
+    dipSymbol.append(strikeLine, tickRight, tickLeft, ring, hub);
+    svg.appendChild(dipSymbol);
+  }
 
   const label = el('text', {
     x: cx, y: size + 26, 'text-anchor': 'middle', 'font-size': 30,
@@ -165,20 +213,34 @@ export function buildCompass(svg, { size = 240 } = {}) {
    * sin inventar un cero que no se midió.
    */
   function update(reading) {
+    const graphic = needle || dipSymbol;
     if (!reading || !Number.isFinite(reading.strike) || !Number.isFinite(reading.dip)) {
-      needle.setAttribute('visibility', 'hidden');
+      graphic.setAttribute('visibility', 'hidden');
       label.textContent = '—';
       sub.textContent = '';
       return;
     }
-    needle.setAttribute('visibility', 'visible');
-    // La aguja gira con la dirección de manteo, no con el rumbo: es la única
-    // de las dos que apunta a un lado sin ambigüedad, así que es lo que tiene
-    // que leerse de un vistazo como en cualquier brújula real. Sin manteo
-    // medido (`dipAzimuth` ausente) no hay a dónde apuntar y se usa el rumbo
-    // + 90° por defecto, la misma convención que usa el resto de la app.
+    graphic.setAttribute('visibility', 'visible');
     const az = Number.isFinite(reading.dipAzimuth) ? reading.dipAzimuth : reading.strike + 90;
-    needle.setAttribute('transform', `rotate(${az} ${cx} ${cy})`);
+    if (needle) {
+      // La aguja gira con la dirección de manteo, no con el rumbo: es la única
+      // de las dos que apunta a un lado sin ambigüedad, así que es lo que
+      // tiene que leerse de un vistazo como en cualquier brújula real. Sin
+      // manteo medido (`dipAzimuth` ausente) se usa el rumbo + 90° por
+      // defecto, la misma convención que usa el resto de la app.
+      needle.setAttribute('transform', `rotate(${az} ${cx} ${cy})`);
+    } else {
+      // El símbolo, en cambio, gira por el RUMBO —como en el mapa—, y elige
+      // variante igual que `structureVariant()`: horizontal, vertical o
+      // inclinado con el tic ya fijo hacia el lado del manteo bajo la RHR.
+      dipSymbol.setAttribute('transform', `rotate(${reading.strike} ${cx} ${cy})`);
+      const variante = structureVariant(reading.dip, false);
+      const [strikeLine, tickRight, tickLeft, ring] = dipSymbol.children;
+      strikeLine.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
+      tickRight.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
+      tickLeft.setAttribute('visibility', variante === 'vertical' ? 'visible' : 'hidden');
+      ring.setAttribute('visibility', variante === 'horizontal' ? 'visible' : 'hidden');
+    }
     const strike = String(Math.round(reading.strike) % 360).padStart(3, '0');
     label.textContent = `${strike}/${Math.round(reading.dip)}`;
 

@@ -177,33 +177,104 @@ export function apparentPlunge(trendDeg, plungeDeg, sectionAzimuthDeg) {
 }
 
 /**
+ * Proyección a lo largo de una tendencia/inclinación (down-plunge), en vez de
+ * la perpendicular de siempre.
+ *
+ * Se usa para estructuras con un eje conocido —un pliegue, una lineación—
+ * donde deslizar el dato PERPENDICULAR al corte lo saca de la superficie que
+ * en realidad ocupa. Aquí en cambio se desliza el punto en 3D siguiendo la
+ * dirección `trend`/`plunge` hasta topar con el plano vertical que contiene
+ * el tramo del corte: la posición a lo largo del perfil y la cota cambian las
+ * dos, porque es un desplazamiento en el espacio y no solo en el mapa.
+ *
+ * Sin cota no hay tercera dimensión que seguir, así que sin ella no se puede
+ * proyectar por esta vía: se descarta en vez de fingir un desplazamiento solo
+ * horizontal que no es lo que este modo promete.
+ *
+ * @returns {{s: number, z: number, offset: number, side: number}|null}
+ */
+function projectAlongPlunge(trace, lngLat, elevation, trendDeg, plungeDeg) {
+  if (!Number.isFinite(elevation)) return null;
+  const [px, py] = trace.frame.toXY(lngLat);
+  const trendRad = trendDeg * RAD;
+  // Vector horizontal unitario de la tendencia (x = este, y = norte, como el
+  // resto del marco métrico de `localFrame`).
+  const hx = Math.sin(trendRad);
+  const hy = Math.cos(trendRad);
+  const tanPlunge = Math.tan(plungeDeg * RAD);
+
+  let mejor = null;
+  for (let i = 1; i < trace.xy.length; i++) {
+    const [ax, ay] = trace.xy[i - 1];
+    const [bx, by] = trace.xy[i];
+    const rx = bx - ax;
+    const ry = by - ay;
+    const dx = px - ax;
+    const dy = py - ay;
+    // Corte de la recta de tendencia (desde el punto) con la recta del tramo,
+    // resuelto de una vez para sus dos parámetros: `t` a lo largo del tramo,
+    // `k` a lo largo de la tendencia (con signo: + hacia donde apunta `trend`).
+    const det = hx * ry - hy * rx;
+    if (Math.abs(det) < 1e-9) continue; // el tramo va paralelo a la tendencia: no se cruzan
+    const t = (-dx * hy + hx * dy) / det;
+    const k = (rx * dy - ry * dx) / det;
+    if (t < 0 || t > 1) continue; // el cruce cae fuera de este tramo del corte
+    const dist = Math.abs(k);
+    if (!mejor || dist < mejor.dist) {
+      mejor = {
+        s: trace.cum[i - 1] + t * (trace.cum[i] - trace.cum[i - 1]),
+        // Avanzar en el sentido de `trend` desciende `tan(plunge)` por metro
+        // horizontal; retroceder (k negativo) asciende, por la misma cuenta.
+        z: elevation - k * tanPlunge,
+        offset: dist,
+        side: k >= 0 ? 1 : -1,
+        dist,
+      };
+    }
+  }
+  return mejor;
+}
+
+/**
  * Proyecta medidas de rumbo y manteo sobre la traza.
  *
  * @param {Array} measurements  features de punto con strike/dip y `elevation`
  * @param {SectionTrace} trace
  * @param {object} [opts]
  * @param {number} [opts.maxOffset]  descarta lo que esté más lejos del corte
+ * @param {'orthogonal'|'plunge'} [opts.method]  cómo se desliza el dato hasta
+ *   el corte: perpendicular (de siempre) o a lo largo de un trend/plunge.
+ * @param {number} [opts.trend]   solo con `method: 'plunge'`
+ * @param {number} [opts.plunge]  solo con `method: 'plunge'`
  * @returns {Array} una entrada por medida proyectada, ordenada por `s`
  */
-export function projectMeasurements(measurements, trace, { maxOffset = Infinity } = {}) {
+export function projectMeasurements(
+  measurements,
+  trace,
+  { maxOffset = Infinity, method = 'orthogonal', trend = 0, plunge = 0 } = {},
+) {
   const out = [];
   for (const m of measurements) {
     const lngLat = m.lngLat || (m.geometry && m.geometry.coordinates);
     if (!lngLat) continue;
-    const p = trace.project(lngLat);
-    if (!p || p.offset > maxOffset) continue;
 
     const props = m.properties || m;
     const strike = Number(props.strike);
     const dip = Number(props.dip);
     if (!Number.isFinite(strike) || !Number.isFinite(dip)) continue;
 
+    const p =
+      method === 'plunge'
+        ? projectAlongPlunge(trace, lngLat, m.elevation, trend, plunge)
+        : trace.project(lngLat);
+    if (!p || p.offset > maxOffset) continue;
+
     const az = trace.azimuthAt(p.s);
     out.push({
       id: props.id,
       lngLat,
       s: p.s,
-      z: Number.isFinite(m.elevation) ? m.elevation : null,
+      z: Number.isFinite(p.z) ? p.z : Number.isFinite(m.elevation) ? m.elevation : null,
       offset: p.offset,
       side: p.side,
       strike,
@@ -346,10 +417,11 @@ export function verticalRange(samples, { below = 0.5, above = 0.15 } = {}) {
  * @param {Array} opts.measurements   medidas con su cota ya resuelta
  * @param {Array} opts.features       el dibujo, para las intersecciones
  * @param {number} [opts.maxOffset]
+ * @param {object} [opts.projection]  `{method, trend, plunge}`, ver `projectMeasurements`
  */
-export function buildSection({ coords, profile, measurements = [], features = [], maxOffset }) {
+export function buildSection({ coords, profile, measurements = [], features = [], maxOffset, projection }) {
   const trace = new SectionTrace(coords);
-  const dips = projectMeasurements(measurements, trace, { maxOffset });
+  const dips = projectMeasurements(measurements, trace, { maxOffset, ...projection });
   const cruces = intersections(trace, features);
   const { zMin, zMax } = verticalRange(profile ? profile.samples : []);
   return {
