@@ -2535,9 +2535,24 @@ function aboutSection(parent, titulo) {
  * Se dibuja una sola vez, al arrancar: ni la versión ni el registro de
  * cambios dependen de nada que pase durante la sesión.
  */
+/** Cuántas versiones recientes traen el detalle completo de sus cambios;
+ * las anteriores se resumen a una sola línea — ver la nota en `renderAbout`. */
+const ABOUT_DETAILED_RELEASES = 2;
+
 function renderAbout() {
   const body = $('about-body');
   body.replaceChildren();
+
+  // El mismo dibujo que la pestaña del navegador y el icono del lanzador:
+  // referenciado, no reescrito a mano una tercera vez (ver la nota de
+  // `icons/favicon.svg` sobre por qué las tres copias tienen que coincidir).
+  const logo = document.createElement('img');
+  logo.className = 'about-logo';
+  logo.src = 'icons/favicon.svg';
+  logo.width = 72;
+  logo.height = 72;
+  logo.alt = 'FieldDraw';
+  body.appendChild(logo);
 
   const version = document.createElement('p');
   version.className = 'about-version';
@@ -2578,20 +2593,33 @@ function renderAbout() {
   body.appendChild(tools);
 
   aboutSection(body, 'Novedades');
-  for (const entrada of CHANGELOG) {
+  /*
+   * Detalle completo solo de las últimas `ABOUT_DETAILED_RELEASES` versiones
+   * —lo que de verdad se viene a leer después de una actualización—; el
+   * resto del historial se resume a una línea. Con más de treinta versiones
+   * en `CHANGELOG`, listar cada cambio de cada una convertía «Novedades» en
+   * un muro de texto donde lo reciente se perdía igual que lo viejo.
+   */
+  CHANGELOG.forEach((entrada, i) => {
     const h = document.createElement('p');
     h.className = 'about-release';
     h.textContent = `v${entrada.version}`;
     body.appendChild(h);
     const ul = document.createElement('ul');
     ul.className = 'about-list';
-    for (const item of entrada.items) {
+    if (i < ABOUT_DETAILED_RELEASES) {
+      for (const item of entrada.items) {
+        const li = document.createElement('li');
+        li.textContent = item;
+        ul.appendChild(li);
+      }
+    } else {
       const li = document.createElement('li');
-      li.textContent = item;
+      li.textContent = 'Bug fixes and small improvements.';
       ul.appendChild(li);
     }
     body.appendChild(ul);
-  }
+  });
 }
 
 /** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */

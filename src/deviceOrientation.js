@@ -508,9 +508,21 @@ export function startOrientationCapture({ onReading, onError }) {
  * vertical que motiva todo lo demás no se da aquí.
  *
  * `heading` es el rumbo del lado superior del teléfono —el mismo eje que
- * `alphaFromHeading` usa para iOS—, y en Android sale de la misma fórmula
- * `360 − alpha` con el `alpha` ya referenciado al norte que trae el evento
+ * `alphaFromHeading` usa para iOS, y el que se sigue con la parte delantera
+ * del teléfono apuntando hacia donde se quiere leer, como con cualquier
+ * brújula de mano—, y en Android sale de la misma fórmula `360 − alpha` con
+ * el `alpha` ya referenciado al norte que trae el evento
  * `deviceorientationabsolute`.
+ *
+ * **Suavizado, para que marque robusta Y rápidamente a la vez.** El
+ * magnetómetro solo, sin filtrar, tiembla varios grados de una muestra a la
+ * siguiente —un volantazo de la aguja que no es cómo se lee una brújula de
+ * verdad—, así que cada lectura se promedia con las anteriores por una media
+ * móvil exponencial sobre el CÍRCULO (el seno y el coseno del ángulo, no el
+ * ángulo mismo): promediar ángulos sin más rompe justo al cruzar 0°/360°, que
+ * es tan buen rumbo como cualquier otro. Con el sensor entregando decenas de
+ * muestras por segundo, el peso elegido converge en unas pocas décimas de
+ * segundo — se nota firme sin notarse lenta.
  *
  * @param {{onReading: (r: {heading: number}) => void, onError?: (msg: string) => void}} handlers
  */
@@ -521,6 +533,21 @@ export function startHeadingCapture({ onReading, onError }) {
   }
 
   let referenced = false;
+  /** Media móvil exponencial del rumbo, como un vector unitario (x=cos, y=sin). */
+  let suave = null;
+  const PESO = 0.3;
+
+  function suavizar(heading) {
+    const rad = (heading * Math.PI) / 180;
+    const x = Math.cos(rad);
+    const y = Math.sin(rad);
+    if (!suave) {
+      suave = { x, y };
+    } else {
+      suave = { x: suave.x + PESO * (x - suave.x), y: suave.y + PESO * (y - suave.y) };
+    }
+    return norm360((Math.atan2(suave.y, suave.x) * 180) / Math.PI);
+  }
 
   function onEvent(e) {
     const heading = e.webkitCompassHeading;
@@ -528,12 +555,12 @@ export function startHeadingCapture({ onReading, onError }) {
       // -1 es el valor que da iOS cuando el compás todavía no calibró.
       if (heading < 0 || (e.webkitCompassAccuracy ?? 0) < 0) return;
       referenced = true;
-      onReading({ heading: norm360(heading) });
+      onReading({ heading: suavizar(norm360(heading)) });
       return;
     }
     if (e.absolute !== true || !Number.isFinite(e.alpha)) return;
     referenced = true;
-    onReading({ heading: norm360(360 - e.alpha) });
+    onReading({ heading: suavizar(norm360(360 - e.alpha)) });
   }
 
   window.addEventListener('deviceorientationabsolute', onEvent);

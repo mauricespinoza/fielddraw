@@ -2079,6 +2079,17 @@ input[type='radio'] {
   width: min(460px, 92vw);
 }
 
+/* El mismo dibujo que la pestaña del navegador y el icono del lanzador
+   (`icons/favicon.svg`), aquí bastante más grande: es la única de las tres
+   apariciones pensada para mirarse de cerca y no de reojo. */
+.about-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  margin-bottom: 10px;
+}
+
 .about-version {
   margin: 0;
   color: var(--accent);

@@ -152,8 +152,157 @@ export function meanPole(points) {
   const trend = norm360(Math.atan2(sx / largo, sy / largo) * DEG);
   const { strike, dip, dipAzimuth } = strikeDipFromPole(trend, plunge);
   const xy = schmidtPoint(trend, plunge, 1);
+  const n = points.length;
+  const { k, alpha95 } = fisherConfidence(n, largo);
 
-  return { trend, plunge, strike, dip, dipAzimuth, r: largo / points.length, n: points.length, ...xy };
+  return { trend, plunge, strike, dip, dipAzimuth, r: largo / n, n, k, alpha95, ...xy };
+}
+
+/**
+ * Parámetro de concentración de Fisher (`k`) y semiángulo del cono de 95% de
+ * confianza (`alpha95`) alrededor de la dirección media verdadera, a partir
+ * de cuántos polos entraron (`n`) y el largo de su vector resultante SIN
+ * normalizar (`resultante`, entre 0 y `n`).
+ *
+ * Es la fórmula de Fisher (1953) que trae cualquier libro de estadística
+ * direccional (p.ej. Davis, *Statistics and Data Analysis in Geology*), la
+ * misma que usan Stereonet/OSXStereonet para dibujar el óvalo alrededor del
+ * vector medio: con menos de 3 polos no hay de dónde sacar una dispersión, y
+ * con el cúmulo en la máxima concentración posible (`resultante` ≈ `n`, los
+ * polos prácticamente idénticos) el cono se cierra a 0° en vez de dividir por
+ * cero.
+ */
+function fisherConfidence(n, resultante) {
+  if (n < 3) return { k: NaN, alpha95: NaN };
+  const dispersión = n - resultante;
+  if (dispersión < 1e-9) return { k: Infinity, alpha95: 0 };
+  const k = (n - 1) / dispersión;
+  const término = (1 / 0.05) ** (1 / (n - 1)) - 1;
+  const cosAlpha = 1 - (dispersión / resultante) * término;
+  const alpha95 = Math.acos(Math.min(1, Math.max(-1, cosAlpha))) * DEG;
+  return { k, alpha95 };
+}
+
+/**
+ * Eje beta (eje de pliegue) de un conjunto de polos, por el MÉTODO DE LOS
+ * AUTOVALORES.
+ *
+ * Los polos de un pliegue cilíndrico —uno con un eje recto, aunque las capas
+ * se curven a su alrededor— caen todos sobre un mismo círculo máximo (el
+ * "cinturón" o girdle): cada polo es perpendicular a su plano, y todo plano
+ * que contiene al eje del pliegue tiene su polo perpendicular A ESE EJE. La
+ * normal de ese cinturón —la dirección menos representada entre los
+ * polos— ES el eje del pliegue.
+ *
+ * Esa normal es el AUTOVECTOR DE MENOR AUTOVALOR del tensor de orientación
+ * `T = Σ vᵢ⊗vᵢ` de los polos: es el mismo método que usa cualquier programa
+ * de estereograma moderno (Stereonet, Orient) para no depender de trazar dos
+ * ciclogramas a mano y leer dónde se cruzan —que es exactamente lo que da
+ * este cálculo con solo 2 polos, como caso límite exacto—.
+ *
+ * `girdle` dice qué tan bien se ajustan los polos a ese cinturón —el índice
+ * `G` de Vollmer (1990), el que compara los TRES autovalores y no solo el
+ * menor—: 1 es un cinturón perfecto (los polos repartidos a lo largo de un
+ * círculo máximo), cerca de 0 es o bien un cúmulo apretado en un solo punto
+ * —dos polos casi idénticos también hacen que el menor autovalor se anule,
+ * pero eso no es un cinturón, es la falta total de dispersión— o una nube
+ * pareja sin ninguna dirección privilegiada. Ninguna de esas dos se puede
+ * distinguir mirando solo el autovalor menor; hace falta el del medio
+ * también.
+ */
+export function betaAxis(points) {
+  if (points.length < 2) return null;
+  let Sxx = 0;
+  let Syy = 0;
+  let Szz = 0;
+  let Sxy = 0;
+  let Sxz = 0;
+  let Syz = 0;
+  for (const p of points) {
+    const v = lineVector(p.trend, p.plunge);
+    Sxx += v.x * v.x;
+    Syy += v.y * v.y;
+    Szz += v.z * v.z;
+    Sxy += v.x * v.y;
+    Sxz += v.x * v.z;
+    Syz += v.y * v.z;
+  }
+  const { values, vectorFor } = eigenSym3(Sxx, Syy, Szz, Sxy, Syz, Sxz);
+  const menor = values[2]; // `values` ya viene en orden decreciente
+  let axis = vectorFor(menor);
+  if (!axis) return null; // autovalor repetido de sobra: no hay una sola dirección que reportar
+  if (axis.z > 0) axis = { x: -axis.x, y: -axis.y, z: -axis.z };
+
+  const plunge = Math.asin(Math.min(1, Math.max(-1, -axis.z))) * DEG;
+  const trend = norm360(Math.atan2(axis.x, axis.y) * DEG);
+  const xy = schmidtPoint(trend, plunge, 1);
+  // El total es siempre `n`: cada polo aporta 1 de largo unitario a la
+  // diagonal del tensor (Sxx+Syy+Szz = Σ|vᵢ|² = n), así que los tres
+  // autovalores normalizados por `n` sirven de sobra sin volver a sumarlos.
+  const total = points.length;
+  const girdle = total > 1e-9 ? Math.max(0, Math.min(1, (2 * (values[1] - menor)) / total)) : 0;
+  return { trend, plunge, n: points.length, girdle, ...xy };
+}
+
+/**
+ * Autovalores (orden decreciente) y una función para pedir el autovector de
+ * cualquiera de ellos, de la matriz simétrica 3×3:
+ * ```
+ *  a  d  f
+ *  d  b  e
+ *  f  e  c
+ * ```
+ * Los autovalores salen de la solución trigonométrica cerrada para matrices
+ * simétricas 3×3 —no hace falta iterar—. El autovector de un autovalor `λ`
+ * es el producto cruz de dos filas cualesquiera de `(A − λI)`, y de las tres
+ * combinaciones posibles se usa la que dé el cruce más largo: con filas casi
+ * paralelas ese cruce se acerca a cero y el resultado se vuelve ruido, así
+ * que se prueban las tres y se elige la que sí tenga un largo de sobra.
+ */
+function eigenSym3(a, b, c, d, e, f) {
+  const p1 = d * d + e * e + f * f;
+  let values;
+  if (p1 < 1e-18) {
+    // Ya diagonal: los autovalores son los de la diagonal, sin más cuenta.
+    values = [a, b, c].sort((x, y) => y - x);
+  } else {
+    const q = (a + b + c) / 3;
+    const p2 = (a - q) ** 2 + (b - q) ** 2 + (c - q) ** 2 + 2 * p1;
+    const p = Math.sqrt(p2 / 6);
+    const B = [(a - q) / p, d / p, f / p, d / p, (b - q) / p, e / p, f / p, e / p, (c - q) / p];
+    const det = B[0] * (B[4] * B[8] - B[5] * B[7]) - B[1] * (B[3] * B[8] - B[5] * B[6]) + B[2] * (B[3] * B[7] - B[4] * B[6]);
+    const r = Math.min(1, Math.max(-1, det / 2));
+    const phi = Math.acos(r) / 3;
+    const eig1 = q + 2 * p * Math.cos(phi);
+    const eig3 = q + 2 * p * Math.cos(phi + (2 * Math.PI) / 3);
+    const eig2 = 3 * q - eig1 - eig3; // la traza es la suma de los tres
+    values = [eig1, eig2, eig3];
+  }
+
+  function vectorFor(lambda) {
+    const m = [a - lambda, d, f, d, b - lambda, e, f, e, c - lambda];
+    const row = (i) => ({ x: m[i * 3], y: m[i * 3 + 1], z: m[i * 3 + 2] });
+    const filas = [row(0), row(1), row(2)];
+    const pares = [
+      [filas[0], filas[1]],
+      [filas[0], filas[2]],
+      [filas[1], filas[2]],
+    ];
+    let mejor = null;
+    let mejorLargo = -1;
+    for (const [u, v] of pares) {
+      const w = cross(u, v);
+      const largo = Math.hypot(w.x, w.y, w.z);
+      if (largo > mejorLargo) {
+        mejorLargo = largo;
+        mejor = w;
+      }
+    }
+    if (mejorLargo < 1e-9) return null;
+    return { x: mejor.x / mejorLargo, y: mejor.y / mejorLargo, z: mejor.z / mejorLargo };
+  }
+
+  return { values, vectorFor };
 }
 
 /* ---------- geometría de la red y de los ciclogramas ---------- */

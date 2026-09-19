@@ -124,6 +124,91 @@ ok('sin datos, no hay vector medio', S.meanPole([]) === null);
   ok('un solo polo: el vector medio es ese mismo punto', cerca(mp.x, uno[0].x) && cerca(mp.y, uno[0].y));
 }
 
+console.log('== cono de confianza de Fisher (alpha95) ==');
+
+{
+  // Un cúmulo casi idéntico apenas se abre: alpha95 chico y k grande.
+  const apretado = [[35, 28], [45, 32], [38, 31], [42, 29], [40, 30], [39, 29]].map(([s, d], i) =>
+    S.stereogramPoint({ properties: { id: `a${i}`, type: 'bedding', strike: s, dip: d } }));
+  const mp = S.meanPole(apretado);
+  ok('cúmulo apretado: alpha95 menor a 5°', mp.alpha95 < 5, `${mp.alpha95}`);
+  ok('cúmulo apretado: k grande', mp.k > 100, `${mp.k}`);
+
+  // Un cúmulo repartido por toda la red: alpha95 grande, k chico.
+  const disperso = [[0, 10], [90, 80], [180, 40], [270, 60], [45, 20], [300, 70]].map(([s, d], i) =>
+    S.stereogramPoint({ properties: { id: `b${i}`, type: 'bedding', strike: s, dip: d } }));
+  const mpDisperso = S.meanPole(disperso);
+  ok('cúmulo disperso: alpha95 mayor a 30°', mpDisperso.alpha95 > 30, `${mpDisperso.alpha95}`);
+  ok('cúmulo disperso: k chico', mpDisperso.k < apretado.length, `${mpDisperso.k}`);
+
+  // Con menos de 3 polos no hay de dónde sacar una dispersión.
+  const dos = [S.stereogramPoint({ properties: { id: 'x', type: 'bedding', strike: 0, dip: 30 } }),
+    S.stereogramPoint({ properties: { id: 'y', type: 'bedding', strike: 10, dip: 32 } })];
+  ok('menos de 3 polos: alpha95 no definido', Number.isNaN(S.meanPole(dos).alpha95));
+
+  // Polos exactamente idénticos: concentración máxima, cono cerrado a 0°.
+  const iguales = [
+    S.stereogramPoint({ properties: { id: 'p', type: 'bedding', strike: 10, dip: 20 } }),
+    S.stereogramPoint({ properties: { id: 'q', type: 'bedding', strike: 10, dip: 20 } }),
+    S.stereogramPoint({ properties: { id: 'r', type: 'bedding', strike: 10, dip: 20 } }),
+  ];
+  const mpIguales = S.meanPole(iguales);
+  ok('polos idénticos: cono cerrado a 0°', mpIguales.alpha95 === 0, `${mpIguales.alpha95}`);
+  ok('polos idénticos: k infinito', mpIguales.k === Infinity);
+}
+
+console.log('== eje beta (eje de pliegue) ==');
+
+{
+  // Dos planos de un "diagrama beta" clásico: su eje es la intersección,
+  // perpendicular a los dos polos a la vez.
+  const dosPlanos = [
+    S.stereogramPoint({ properties: { id: 'a', type: 'bedding', strike: 0, dip: 40 } }),
+    S.stereogramPoint({ properties: { id: 'b', type: 'bedding', strike: 90, dip: 40 } }),
+  ];
+  const beta = S.betaAxis(dosPlanos);
+  const v = S.lineVector(beta.trend, beta.plunge);
+  for (const f of dosPlanos) {
+    const pv = S.lineVector(f.trend, f.plunge);
+    const dot = Math.abs(v.x * pv.x + v.y * pv.y + v.z * pv.z);
+    ok('el eje beta es perpendicular a cada polo', dot < 1e-6, `${dot}`);
+  }
+  // El AJUSTE del cinturón (`girdle`, el índice G de Vollmer) es una cuenta
+  // distinta de si el eje da perpendicular a los polos: dos polos SIEMPRE
+  // caen justo en un círculo máximo —cualesquiera dos puntos de la esfera lo
+  // hacen—, pero cuánto lo respalda ESE círculo en particular depende de qué
+  // tan repartidos estén a lo largo de él. Con dos polos ORTOGONALES entre
+  // sí —el reparto máximo posible para solo dos puntos— el ajuste es
+  // perfecto; con los de este par, separados 90°.68 en vez de 90°+algo más
+  // parejo, sale un ajuste bueno pero no perfecto — se prueba el caso
+  // perfecto aparte, con dos polos exactamente ortogonales.
+  ok('con dos planos, el ajuste no es cero', beta.girdle > 0.3, `${beta.girdle}`);
+
+  const sdOrtogonal1 = S.strikeDipFromPole(0, 0); // polo horizontal, apuntando al norte
+  const sdOrtogonal2 = S.strikeDipFromPole(0, 90); // polo vertical
+  const ortogonales = [
+    S.stereogramPoint({ properties: { id: 'o1', type: 'bedding', strike: sdOrtogonal1.strike, dip: sdOrtogonal1.dip } }),
+    S.stereogramPoint({ properties: { id: 'o2', type: 'bedding', strike: sdOrtogonal2.strike, dip: sdOrtogonal2.dip } }),
+  ];
+  ok('dos polos ortogonales: ajuste perfecto', cerca(S.betaAxis(ortogonales).girdle, 1, 1e-6));
+
+  // Un cinturón horizontal (polos todos con plunge 0): el eje del pliegue es
+  // vertical, la normal de ese cinturón.
+  const horizontal = [0, 30, 60, 90, 120, 150, 200, 250, 300].map((t) =>
+    S.stereogramPoint({ properties: { id: `h${t}`, type: 'bedding', strike: t, dip: 90 } }));
+  const betaVert = S.betaAxis(horizontal);
+  ok('cinturón horizontal: eje vertical', cerca(betaVert.plunge, 90, 1e-6), `${betaVert.plunge}`);
+  ok('cinturón horizontal: cinturón bien ajustado', betaVert.girdle > 0.85, `${betaVert.girdle}`);
+
+  // Un cúmulo apretado (sin fábrica de cinturón) da un ajuste pobre: el eje
+  // que sale no significa nada y `girdle` tiene que decirlo.
+  const apretado = [[35, 28], [45, 32], [38, 31], [42, 29]].map(([s, d], i) =>
+    S.stereogramPoint({ properties: { id: `c${i}`, type: 'bedding', strike: s, dip: d } }));
+  ok('cúmulo apretado: mal ajuste de cinturón', S.betaAxis(apretado).girdle < 0.5, `${S.betaAxis(apretado).girdle}`);
+
+  ok('con menos de 2 polos, no hay eje que calcular', S.betaAxis([S.stereogramPoint({ properties: { id: 'z', type: 'bedding', strike: 0, dip: 10 } })]) === null);
+}
+
 console.log('== ciclogramas ==');
 
 const radio = (p) => Math.hypot(p.x, p.y);

@@ -1443,16 +1443,26 @@
             </label>
             <label class="sv-check">
               <input type="checkbox" id="stereo-show-mean" />
-              Mean vector
+              Mean vector, with 95% error cone
             </label>
             <!-- Solo aparece con la casilla encendida y datos que promediar;
                  lo llena `renderPlot()` en stereogramPanel.js. -->
             <p class="hint footnote sv-mean-value hidden" id="stereo-mean-value"></p>
+            <label class="sv-check">
+              <input type="checkbox" id="stereo-show-beta" />
+              Beta axis (fold axis)
+            </label>
+            <!-- Igual que el vector medio: solo aparece con la casilla
+                 encendida y datos de sobra para un eje. -->
+            <p class="hint footnote sv-mean-value hidden" id="stereo-beta-value"></p>
             <h3>By type <span class="sv-count" id="stereo-legend-count"></span></h3>
             <div class="sv-list" id="stereo-legend"></div>
             <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>
             <button class="pill wide" id="btn-stereo-clear-lasso" disabled>Clear lasso</button>
-            <p class="hint footnote">Drag on the net to lasso a cluster of poles.</p>
+            <p class="hint footnote">
+              Drag on the net to lasso a subset of poles — with something lassoed, Mean vector and
+              Beta axis are computed from just those poles.
+            </p>
           </aside>
         </div>
 
