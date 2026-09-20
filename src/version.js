@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.31.0';
+export const APP_VERSION = '0.32.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -28,23 +28,23 @@ export const APP_CONTACT = 'mauricespinoza@udec.cl';
  * explique, así que cada entrada dice para QUÉ sirve y no cómo está hecha.
  */
 export const APP_TOOLS = [
-  ['Create · Line', 'Contactos, fallas, pliegues y diques. El tipo y la certeza —observado, inferido, cubierto— salen de la paleta.'],
-  ['Create · Polygon', 'Unidades de mapa. Cada polígono lleva la unidad activa, con su color y su código.'],
-  ['Create · Dip', 'Rumbo y manteo: con brújula, por tres puntos sobre el DEM, ajustando un plano a una traza dibujada, leído en vivo del giroscopio y el magnetómetro del teléfono, o digitalizado sobre un mapa. Cada medida viaja con su incertidumbre.'],
-  ['Stereogram', 'Red de Schmidt de los manteos seleccionados —o de todos—, con los polos y los ciclogramas coloreados por tipo, cada familia con su casilla, y un vector medio opcional del cúmulo. Lazo propio para marcar un cúmulo y devolverlo a la selección del mapa, y pestaña Compass con la brújula en vivo. Exporta a SVG y PNG, y copia la imagen al portapapeles.'],
-  ['Select', 'Elegir con un toque, o arrastrar el lazo —a mano alzada, o rectangular desde Ajustes—: basta con rozar lo que se quiere. Mantener pulsado abre los atributos.'],
-  ['Topology · Edit Nodes', 'Mover, añadir y borrar vértices de lo ya dibujado.'],
-  ['Topology · Hole', 'Restar un área a un polígono y dejar un hueco.'],
-  ['Topology · Split · Reshape', 'Cortar un elemento con una línea, o redibujar un tramo de su contorno.'],
-  ['Topology · Snap · Follow trace', 'Enganchar a la geometría existente y recorrer el borde de otro elemento.'],
-  ['Topology · Merge', 'Unir dos o más elementos seleccionados del mismo tipo de geometría en uno solo.'],
-  ['Profile', 'Perfil topográfico de una traza, leído del modelo de elevación.'],
-  ['3D', 'Relieve para mirar la ladera. Línea y Polígono siguen dibujando.'],
-  ['Scale', 'Escala de trabajo: elegirla, fijar el mapa a ella y calibrar el tamaño real de la pantalla.'],
-  ['Layers · Units · Symbols', 'Capas y su opacidad —el dibujo repartido en unidades, trazas y medidas—, catálogo de unidades y simbología de toda línea: color y grosor, con ornamento donde lo lleva.'],
-  ['Import · Export', 'GeoPackage, shapefile, GeoJSON y mapas offline (MBTiles/PMTiles); salida a GeoPackage con su QML.'],
-  ['StraboSpot', 'Bajar spots de un dataset —y adoptarlos para editarlos, leyendo su simbología— y subir el dibujo como dataset nuevo, en el modelo de datos nativo.'],
-  ['Project', 'Guardar y abrir el trabajo, y exportar la vista como lámina en SVG, PNG o PDF.'],
+  ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
+  ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
+  ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
+  ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis.'],
+  ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
+  ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
+  ['Topology · Hole', 'Subtract an area from a polygon, leaving a hole.'],
+  ['Topology · Split · Reshape', 'Cut a feature with a line, or redraw part of its outline.'],
+  ['Topology · Snap · Follow trace', 'Snap to existing geometry, or trace along another feature.'],
+  ['Topology · Merge', 'Merge two or more selected features of the same geometry type.'],
+  ['Profile', 'Topographic profile of a line, from the elevation model.'],
+  ['3D', 'Terrain relief to read the slope. Line and Polygon still draw.'],
+  ['Scale', 'Pick a working scale, snap the map to it, calibrate the screen.'],
+  ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
+  ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
+  ['StraboSpot', "Download a dataset's spots, or upload the drawing as a new one."],
+  ['Project', 'Save/open the project, export the map as an SVG/PNG/PDF sheet.'],
 ];
 
 /**
@@ -54,7 +54,36 @@ export const APP_TOOLS = [
  */
 export const CHANGELOG = [
   {
+    version: '0.32.0',
+    // Resumen corto en inglés para el panel About — ver la nota junto a
+    // `ABOUT_DETAILED_RELEASES` en `ui.js` sobre por qué es un campo aparte
+    // y no una traducción de `items`.
+    highlights: [
+      'Redesigned toolbar icons (Units, Symbols, Stereogram, StraboSpot, Settings), 10% bigger.',
+      'StraboSpot sign-in remembers the last email on this device.',
+      'Compass tab: just the heading from north, smoothed for a steady reading.',
+      'Stereogram: mean vector now shows its 95% error cone; the lasso drives Mean vector and a new Beta (fold) axis; About shows the app logo.',
+      'Settings panel: fixed text overflowing its boxes, and trimmed throughout.',
+    ],
+    items: [
+      'Los iconos de la barra superior se rediseñan (Units, Symbols, Stereogram, StraboSpot) y el de Ajustes pasa a ser un engranaje de verdad; los diez crecen un 10%. El icono de atajos de teclado solo se ve en PC (con ratón y hover).',
+      'El login de StraboSpot suma «Remember me»: guarda el correo —nunca la contraseña— en este dispositivo y lo rellena solo la próxima vez.',
+      'La pestaña Compass del estereograma deja de reusar la lectura de rumbo/manteo pensada para apoyar el teléfono contra una roca: ahora es una brújula de verdad, solo el ángulo desde el norte al que apunta el teléfono, con la lectura suavizada (media móvil circular) para que no tiemble con cada muestra del magnetómetro.',
+      'El vector medio del estereograma dibuja su cono de confianza al 95% (Fisher). El lazo pasa a controlar directamente de qué polos se promedia —con algo marcado, Mean vector y el nuevo Beta axis (eje de pliegue, por el método de los autovalores) se calculan solo con esos—.',
+      'El panel About enseña el logo de la app; solo las últimas dos versiones traen el detalle completo de sus cambios, el resto se resume a una línea.',
+      'La marca de la app en la franja superior se reduce al logo, un poco más grande: la autoría y la universidad viven solo en About, sin repetirse encima del mapa.',
+      'El panel de Ajustes tenía varias filas cuyo texto se pintaba fuera de su caja, montado sobre la fila siguiente —un contenedor flex con `min-height` no crecía para un segundo hijo—; corregido, y el texto de todo el panel se recorta a la mitad.',
+    ],
+  },
+  {
     version: '0.31.0',
+    highlights: [
+      'Placing a measurement no longer re-asks its type and unit — that now happens beforehand, in the palette.',
+      'Digitize sets strike with a single drag, like drawing with a ruler.',
+      "Stereogram gets a Mean vector checkbox: the cluster's average strike/dip, with a concentration figure.",
+      'The Device method settles on a reading faster, without accepting a noisier one.',
+      'The live compass needle now looks like a real compass needle.',
+    ],
     items: [
       'El cuadro de tipo y unidad que se abría al colocar una medida se retira: el tipo de superficie y la unidad ya se eligen en la paleta ANTES de tocar el mapa, y preguntarlos otra vez apenas nace la medida era la misma pregunta dos veces, no dos preguntas. Corregirlos después sigue siendo cosa del menú de propiedades (mantener pulsado sobre la medida).',
       'Se quita «Dyke margin» del catálogo de superficies medibles: un dique es un cuerpo, no una superficie suelta, y ya se cartografía como tal —con su propia traza y, si hace falta, su propia unidad—. Tratarlo además como un quinto tipo de medida puntual duplicaba la pregunta que la traza o el polígono ya contestan.',

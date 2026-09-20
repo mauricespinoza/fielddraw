@@ -381,6 +381,8 @@
            (icons/icon-180/192/512.png, generados por tools/make-icons.mjs).
            Las coordenadas están duplicadas en los tres sitios a propósito, y
            por eso cambiar una obliga a cambiar las otras. -->
+      <!-- Solo el logo: quién lo hizo y la universidad viven en el panel
+           About (botón "i"), no repetidos aquí encima del mapa. -->
       <div class="brand" aria-hidden="false">
         <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true">
           <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
@@ -393,11 +395,6 @@
           <line x1="20.2" y1="2.6" x2="15.1" y2="10" stroke="#f87171" stroke-width="2.3" stroke-linecap="round" />
           <path d="M15.1 10 13.1 11.9 14.3 9.3z" fill="#e6edf3" />
         </svg>
-        <span class="brand-text">
-          <strong class="brand-name">Field<em>Draw</em></strong>
-          <span class="brand-by">by Mauricio Espinoza · 2026</span>
-          <span class="brand-uni">Universidad de Concepción</span>
-        </span>
       </div>
 
       <!--
@@ -1208,10 +1205,12 @@
           <label><input type="radio" name="fh" id="fh-drag" /> Drag straight away</label>
         </fieldset>
 
-        <label class="row">
-          <input type="checkbox" id="opt-finger" checked />
-          Allow drawing with a finger
-          <span class="sub">Ignored once an Apple Pencil is detected: from then on the pen draws and fingers navigate.</span>
+        <label class="row column">
+          <span class="opt-row">
+            <input type="checkbox" id="opt-finger" checked />
+            Allow drawing with a finger
+          </span>
+          <span class="sub">Off once an Apple Pencil is detected.</span>
         </label>
 
         <label class="row"><input type="checkbox" id="opt-smooth" checked /> Smooth stroke (Chaikin)</label>
@@ -1229,20 +1228,15 @@
         <label class="row column">
           <span>Follow-trace radius: <strong id="trace-tol-value">22 px</strong></span>
           <input type="range" id="opt-trace-tol" min="6" max="60" step="2" value="22" />
-          <span class="sub">
-            Kept separate from snapping: grabbing the edge you want to follow tolerates more slack
-            than pinning a vertex. If Follow trace will not catch, raise this.
-          </span>
+          <span class="sub">Raise this if Follow trace won't catch the edge.</span>
         </label>
 
-        <label class="row">
-          <input type="checkbox" id="opt-topo" checked />
-          Topological editing
-          <span class="sub">
-            Moving or deleting a vertex shared by adjacent polygons applies to all of them at once,
-            so the common edge never opens and the neighbour needs no rework. Shared vertices are
-            drawn in magenta.
+        <label class="row column">
+          <span class="opt-row">
+            <input type="checkbox" id="opt-topo" checked />
+            Topological editing
           </span>
+          <span class="sub">Editing a shared vertex updates every touching polygon (shown in magenta).</span>
         </label>
 
         <label class="row column">
@@ -1252,21 +1246,14 @@
             <input type="number" id="opt-topo-tol-num" min="0.1" max="1000" step="0.1" value="5" />
             <span class="unit">m</span>
           </span>
-          <span class="sub">
-            Used by the <strong>Topology</strong> button and by polygon merge: vertices closer than
-            this get fused into one. Type a number for values beyond the slider.
-          </span>
+          <span class="sub">Vertices closer than this fuse into one (Topology, Merge).</span>
         </label>
 
         <fieldset>
           <legend>Select by dragging</legend>
           <label><input type="radio" name="selmode" id="sel-lasso" checked /> Freehand lasso</label>
           <label><input type="radio" name="selmode" id="sel-rect" /> Rectangle</label>
-          <span class="sub">
-            Either way, <strong>touching is enough</strong>: anything the shape crosses or covers
-            in part comes along — a contact running off the screen no longer has to be enclosed
-            whole. A plain tap still picks one feature at a time.
-          </span>
+          <span class="sub">Touching is enough — no need to fully enclose a feature.</span>
         </fieldset>
 
         <fieldset>
@@ -1281,26 +1268,17 @@
             <input type="radio" name="demsrc" id="dem-terrarium" checked />
             AWS Terrain Tiles (~30 m)
           </label>
-          <span class="sub">
-            The same tiles that draw the contour lines, so a profile over ground you looked at
-            before heading out works <strong>with no signal</strong>.
-          </span>
+          <span class="sub">Same tiles as the contour lines — works offline.</span>
           <label>
             <input type="radio" name="demsrc" id="dem-opentopo" />
             Copernicus via OpenTopography
           </label>
-          <span class="sub">
-            Better and more recent data, but it needs a free API key and a live connection — it
-            does <strong>not</strong> work in the field.
-          </span>
+          <span class="sub">Better data, but needs an API key and signal.</span>
           <label id="dem-imported-row" hidden>
             <input type="radio" name="demsrc" id="dem-imported" />
             <span id="dem-imported-label">Imported model</span>
           </label>
-          <span class="sub" id="dem-imported-sub" hidden>
-            Your own DEM, brought in from <strong>Import</strong> as Terrain-RGB tiles. Works with
-            no signal and is normally the finest of the three.
-          </span>
+          <span class="sub" id="dem-imported-sub" hidden>Your own DEM — offline, and usually the best of the three.</span>
         </fieldset>
 
         <label class="row column">
@@ -1311,22 +1289,16 @@
         <label class="row column">
           <span>OpenTopography API key</span>
           <input type="text" id="opt-opentopo-key" placeholder="Paste your key" autocomplete="off" spellcheck="false" />
-          <span class="sub">
-            Free from <span class="mono" id="opentopo-signup"></span>. It is kept on this device
-            only: it never travels inside a project file.
-          </span>
+          <span class="sub">Free at <span class="mono" id="opentopo-signup"></span>. Stored on this device only.</span>
         </label>
 
         <label class="row column">
           <span>Profile samples: <strong id="profile-samples-value">200</strong></span>
           <input type="range" id="opt-profile-samples" min="50" max="600" step="25" value="200" />
-          <span class="sub">
-            Points read along the line. More samples do not add detail beyond the DEM's own
-            resolution; they only smooth the curve.
-          </span>
+          <span class="sub">More points smooth the curve but add no real detail.</span>
         </label>
 
-        <button class="pill wide" id="btn-export-geojson">Also export to GeoJSON</button>
+        <button class="pill wide" id="btn-export-geojson">Export drawing as GeoJSON</button>
         <button class="pill danger wide" id="btn-clear">Delete the whole drawing</button>
       </div>
 

@@ -624,10 +624,13 @@ body,
 }
 
 /*
- * Marca de la app: logo y autoría, a la misma altura que la fila de Project /
- * Layers / Units / ... de la derecha, para que ambas se lean como una sola
- * barra. No es interactiva —ni botón ni enlace—, así que no le hace falta
- * nada del vocabulario de foco y teclado que sí necesitan los `.pill`.
+ * Marca de la app: solo el logo, a la misma altura que la fila de Project /
+ * Layers / Units / ... de la derecha, para que las dos se lean como una sola
+ * barra. Quién lo hizo y la universidad viven en el panel About y no aquí
+ * encima del mapa —un dato de crédito no tiene por qué repetirse en las dos
+ * partes—, así que no hace falta ancho para texto. No es interactiva —ni
+ * botón ni enlace—, así que no le hace falta nada del vocabulario de foco y
+ * teclado que sí necesitan los `.pill`.
  */
 .brand {
   position: absolute;
@@ -644,9 +647,8 @@ body,
   z-index: 11;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 5px 14px 5px 6px;
+  justify-content: center;
+  padding: 7px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--panel);
@@ -656,37 +658,9 @@ body,
 }
 
 .brand-logo {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   flex: none;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.25;
-  white-space: nowrap;
-}
-
-.brand-name {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: 0.01em;
-}
-
-/* El acento de "Draw" es el mismo teal de `--accent`: la marca queda atada al
-   color con que la propia app pinta rumbo y manteo, no a uno elegido aparte. */
-.brand-name em {
-  font-style: normal;
-  color: var(--accent);
-}
-
-.brand-by,
-.brand-uni {
-  font-size: 9.5px;
-  font-weight: 500;
-  color: var(--muted);
 }
 
 /*
@@ -1506,10 +1480,48 @@ input[type='radio'] {
   flex-direction: column;
   align-items: stretch;
   gap: 4px;
+  /*
+   * `.settings .row` (más abajo) pone `flex-wrap: wrap` para que `.sub` —con
+   * `flex-basis: 100%`— salte a su propia línea en una fila HORIZONTAL. Con
+   * `flex-direction: column` el eje principal pasa a ser el vertical, y esa
+   * misma combinación (columna + wrap) no envuelve líneas: abre una SEGUNDA
+   * COLUMNA al lado de la primera en cuanto un hijo reclama el 100% de una
+   * altura que el contenedor no tiene fijada, y `.sub` terminaba en esa
+   * columna fantasma, desbordado a la derecha del panel entero. Aquí el
+   * apilado ya lo da `flex-direction: column` sin necesidad de envolver
+   * nada, así que se anula.
+   */
+  flex-wrap: nowrap;
+  /*
+   * Y el `min-height: 38px` de `.settings label` de aquí arriba —pensado
+   * para que una fila de un check y su texto no quede más baja que el dedo—
+   * anula la altura automática de ESTE contenedor en vez de ser solo un
+   * piso: con dos o tres hijos apilados (encabezado, control, `.sub`) el
+   * navegador calculaba la altura como si min-height fuera también el techo,
+   * y el último hijo se pintaba fuera de la caja, montado sobre la fila
+   * siguiente del panel. Ninguna fila `.column` es un único blanco de toque
+   * —lleva un control propio (slider, select, campo) con su propio alto—,
+   * así que aquí no hace falta ningún piso.
+   */
+  min-height: auto;
 }
 
 .settings .row {
   flex-wrap: wrap;
+}
+
+/*
+ * La fila del check/radio + su etiqueta, cuando además trae un `.sub` debajo:
+ * ese `.sub` necesita su propia línea completa (ver la nota de arriba en
+ * `.settings label.column`), así que el par check+texto se envuelve aparte
+ * en este `<span>` y el `<label>` que los contiene a los dos pasa a ser
+ * `.row.column` en vez de `.row` a secas.
+ */
+.settings .opt-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
 }
 
 .settings .sub {
@@ -2096,6 +2108,13 @@ input[type='radio'] {
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* El mismo naranjo que ya usa el propio logo de la app (el trazo dibujándose
+   en la tablet): un vistazo rápido lo encuentra entre el resto de texto gris
+   de este panel, que es justo lo que se viene a buscar cuando algo falló. */
+.about-mail {
+  color: #ffb300;
 }
 
 .about-release {
