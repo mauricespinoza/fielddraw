@@ -2560,27 +2560,23 @@ function renderAbout() {
   body.appendChild(version);
 
   aboutHint(body, `${APP_AUTHOR} · ${APP_ORG} · 2026`);
-
-  aboutHint(
-    body,
-    'Versión beta: gratuita para uso académico y docente, sin uso comercial. ' +
-      'Está en desarrollo, así que conviene guardar el proyecto seguido y no ' +
-      'confiarle el único respaldo de una campaña.',
-  );
-  aboutHint(body, 'Implementada con asistencia de inteligencia artificial.');
+  aboutHint(body, 'Beta — free for academic use, not commercial. Built with AI assistance.');
 
   // El correo es lo que se viene a buscar cuando algo falla en terreno, así
-  // que va enlazado y no como texto suelto que haya que copiar a mano.
+  // que va enlazado y no como texto suelto que haya que copiar a mano, y en
+  // naranjo (`.about-mail`) para que un vistazo rápido lo encuentre entre el
+  // resto de texto gris de este panel.
   const contacto = document.createElement('p');
   contacto.className = 'hint';
-  contacto.append(document.createTextNode('Errores y sugerencias: '));
+  contacto.append(document.createTextNode('Bugs & feedback: '));
   const mail = document.createElement('a');
-  mail.href = `mailto:${APP_CONTACT}?subject=${encodeURIComponent(`FieldDraw v${APP_VERSION} — reporte`)}`;
+  mail.className = 'about-mail';
+  mail.href = `mailto:${APP_CONTACT}?subject=${encodeURIComponent(`FieldDraw v${APP_VERSION} — report`)}`;
   mail.textContent = APP_CONTACT;
   contacto.appendChild(mail);
   body.appendChild(contacto);
 
-  aboutSection(body, 'Herramientas');
+  aboutSection(body, 'Tools');
   const tools = document.createElement('dl');
   tools.className = 'about-tools';
   for (const [nombre, texto] of APP_TOOLS) {
@@ -2592,34 +2588,31 @@ function renderAbout() {
   }
   body.appendChild(tools);
 
-  aboutSection(body, 'Novedades');
+  aboutSection(body, "What's new");
   /*
    * Detalle completo solo de las últimas `ABOUT_DETAILED_RELEASES` versiones
-   * —lo que de verdad se viene a leer después de una actualización—; el
-   * resto del historial se resume a una línea. Con más de treinta versiones
-   * en `CHANGELOG`, listar cada cambio de cada una convertía «Novedades» en
-   * un muro de texto donde lo reciente se perdía igual que lo viejo.
+   * —lo que de verdad se viene a leer después de una actualización—, y en
+   * inglés y corto (`entrada.highlights`, no `entrada.items`): ese último es
+   * el registro interno, en español y con el detalle de cómo se investigó
+   * cada arreglo, pensado para quien desarrolla, no para quien abre este
+   * panel a mirar qué cambió. El resto del historial ni se lista: con más de
+   * treinta versiones en `CHANGELOG`, una línea de "arreglos varios" por
+   * cada una seguía siendo un muro de texto, no un resumen.
    */
-  CHANGELOG.forEach((entrada, i) => {
+  for (const entrada of CHANGELOG.slice(0, ABOUT_DETAILED_RELEASES)) {
     const h = document.createElement('p');
     h.className = 'about-release';
     h.textContent = `v${entrada.version}`;
     body.appendChild(h);
     const ul = document.createElement('ul');
     ul.className = 'about-list';
-    if (i < ABOUT_DETAILED_RELEASES) {
-      for (const item of entrada.items) {
-        const li = document.createElement('li');
-        li.textContent = item;
-        ul.appendChild(li);
-      }
-    } else {
+    for (const item of entrada.highlights) {
       const li = document.createElement('li');
-      li.textContent = 'Bug fixes and small improvements.';
+      li.textContent = item;
       ul.appendChild(li);
     }
     body.appendChild(ul);
-  });
+  }
 }
 
 /** Pinta la ayuda a partir de la misma tabla que alimenta el despachador. */
@@ -5102,8 +5095,10 @@ export function initUI() {
     demSelect.appendChild(opt);
   }
   // Texto y no enlace: abrir el navegador desde una PWA en terreno saca de la
-  // app, y la clave se pega igual copiándola desde otro dispositivo.
-  $('opentopo-signup').textContent = OPENTOPO_SIGNUP;
+  // app, y la clave se pega igual copiándola desde otro dispositivo. Solo el
+  // dominio, no la URL entera: es lo que hace falta para encontrar la
+  // página, y una ruta larga sin espacios no tiene dónde partir la línea.
+  $('opentopo-signup').textContent = new URL(OPENTOPO_SIGNUP).host;
 
   $('dem-terrarium').addEventListener('change', () => store.setProfileSource('terrarium'));
   $('dem-imported').addEventListener('change', () => store.setProfileSource('imported'));
