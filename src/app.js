@@ -14,6 +14,7 @@ import {
 } from './ui.js';
 import { openStraboAttrs } from './strabo/panel.js';
 import {
+  loadSavedControlPointStyle,
   loadSavedFeatures,
   loadSavedImportStyle,
   loadSavedOpenTopoKey,
@@ -21,6 +22,7 @@ import {
   loadSavedStraboStyle,
   loadSavedStructureStyle,
   loadSavedUnits,
+  saveControlPointStyle,
   saveFeatures,
   saveImportStyle,
   saveOrnaments,
@@ -61,6 +63,8 @@ const savedOrnaments = loadSavedOrnaments();
 if (savedOrnaments) store.setOrnaments(savedOrnaments);
 const savedStructureStyle = loadSavedStructureStyle();
 if (savedStructureStyle) store.setStructureStyle(savedStructureStyle);
+const savedControlPointStyle = loadSavedControlPointStyle();
+if (savedControlPointStyle) store.setControlPointStyle(savedControlPointStyle);
 const savedStraboStyle = loadSavedStraboStyle();
 if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
 const savedImportStyle = loadSavedImportStyle();
@@ -89,6 +93,7 @@ store.subscribe(() => {
   if (store.changed('units')) saveUnits(store.getState().units);
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
   if (store.changed('structureStyle')) saveStructureStyle(store.getState().structureStyle);
+  if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
   if (!store.changed('features')) return;

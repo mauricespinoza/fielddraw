@@ -281,6 +281,14 @@
             </svg>
             <span>Dip</span>
           </button>
+          <button class="tool" id="t-cpoint" title="Control point: where you stood and what you collected — unit, sample ID, description and purpose. The date and time are stamped for you">
+            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+              <circle cx="12" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.8" />
+              <circle cx="12" cy="10" r="2.4" fill="currentColor" />
+              <path d="M12 17v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <span>Control</span>
+          </button>
       </div>
 
       <div class="tool-flyout" id="flyout-topology">
@@ -1161,11 +1169,11 @@
           <button class="icon-btn close-x" id="btn-close-layers" aria-label="Close layers panel">✕</button>
         </header>
         <p class="hint">
-          The drawing comes apart into its three pieces — units, traces and measurements — so you
-          can put the contacts against the imagery without the unit fills on top, or clear a
-          crowded outcrop of its dip symbols. They always paint in that order (units underneath,
-          measurements on top), which is why they carry no arrows; everything else is listed top
-          to bottom exactly as it is drawn.
+          The drawing comes apart into its four pieces — units, traces, measurements and control
+          points — so you can put the contacts against the imagery without the unit fills on top,
+          or clear a crowded outcrop of its dip symbols. They always paint in that order (units
+          underneath, control points on top), which is why they carry no arrows; everything else
+          is listed top to bottom exactly as it is drawn.
         </p>
         <ul id="layer-list"></ul>
         <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
@@ -1299,6 +1307,11 @@
         </label>
 
         <button class="pill wide" id="btn-export-geojson">Export drawing as GeoJSON</button>
+        <button
+          class="pill wide"
+          id="btn-export-cpoints"
+          title="The control points as a table: sample ID, date and time, unit, purpose, description, notes and coordinates"
+        >Export control points as CSV</button>
         <button class="pill danger wide" id="btn-clear">Delete the whole drawing</button>
       </div>
 

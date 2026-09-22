@@ -2036,6 +2036,33 @@ input[type='radio'] {
   margin: 0;
 }
 
+/* Campo de texto de la paleta (código de muestra, descripción, notas). Ocupa la
+   fila entera: un código de muestra cabe en 44 px, una descripción no. */
+.palette-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 100%;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.palette-text input {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* Selector de unidad del panel de medir: una fila de chips por unidad no cabe
    en la columna angosta, y aquí lo que importa es tocar rápido. */
 .palette-select {

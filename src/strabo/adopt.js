@@ -35,10 +35,12 @@ import {
   polygonTypeFor,
 } from '../adopt.js';
 import {
+  POLYGON_TYPES,
   POLYGON_TYPE_BY_ID,
   STRABO_SOURCE,
   certaintyFor,
 } from '../symbology.js';
+import { CONTROL_POINT_KIND } from '../controlPoints.js';
 
 /**
  * Calidad de la traza de StraboSpot -> certeza de FieldDraw. Es la inversa
@@ -157,6 +159,16 @@ const num = (v) => {
 const texto = (v) => (v === undefined || v === null ? '' : String(v).trim());
 
 /**
+ * Instante de toma declarado por StraboSpot. Sin uno legible se usa el de
+ * ahora, que al menos ordena bien lo importado en esta sesión; la alternativa
+ * —dejarlo vacío— rompería el formato de fecha de la exportación.
+ */
+function capturedAt(value) {
+  const t = Date.parse(texto(value));
+  return Number.isFinite(t) ? t : Date.now();
+}
+
+/**
  * Notas de un elemento adoptado, con su procedencia delante.
  *
  * El nombre del spot es cómo lo tiene anotado el geólogo en su libreta; sin él
@@ -197,10 +209,15 @@ const STRUCTURE_KEEP = [
 /**
  * Traduce un dataset de StraboSpot a elementos del dibujo.
  *
- * Las OBSERVACIONES quedan fuera a propósito: son muestras y anotaciones de
- * terreno, no geometría cartográfica, y el dibujo no tiene dónde ponerlas sin
- * convertirlas en medidas que nadie tomó. Siguen en su capa de StraboSpot, que
- * es donde se consultan.
+ * Las OBSERVACIONES entran como PUNTOS DE CONTROL. Antes se quedaban fuera
+ * —«son muestras y anotaciones de terreno, no geometría cartográfica, y el
+ * dibujo no tiene dónde ponerlas»— y ese «dónde» es justamente lo que ahora
+ * existe: un punto de control tiene los mismos campos que una muestra de
+ * StraboSpot, así que la muestra entra entera y editable, y puede volver a
+ * subir sin haber pasado por una medida que nadie tomó.
+ *
+ * Las FOTOS siguen fuera: son archivos, no cartografía, y el dibujo no las
+ * dibuja.
  *
  * @param {object} data   lo que guarda el store en `strabo`
  * @param {object} opts
@@ -214,8 +231,49 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
   const porNombre = new Map(unidades.map((u) => [normalizeText(u.name), u]));
   const features = [];
   const warnings = [];
-  const stats = { lines: 0, polygons: 0, points: 0, skipped: 0, guessed: 0, newUnits: 0 };
+  const stats = {
+    lines: 0,
+    polygons: 0,
+    points: 0,
+    controlPoints: 0,
+    skipped: 0,
+    guessed: 0,
+    newUnits: 0,
+  };
   const datasetName = (data && data.datasetName) || '';
+
+  /**
+   * Unidad del proyecto que corresponde a un nombre de tag, creándola si hace
+   * falta. Es la misma regla que ya usaban los polígonos —el tag `geologic_unit`
+   * de StraboSpot ES una unidad aquí— extraída para que los puntos de control
+   * la compartan: si no, el mismo nombre acabaría como dos unidades distintas
+   * según por qué capa entró primero.
+   */
+  const unidadPorNombre = (nombre, colorPorOmision) => {
+    if (!nombre) return null;
+    const clave = normalizeText(nombre);
+    let unidad = porNombre.get(clave);
+    if (unidad) return unidad;
+    /*
+     * Sin un tipo del que deducir el color —el caso de una unidad que solo
+     * aparece en observaciones— se reparte la paleta del catálogo en vez de
+     * pintarlas todas del mismo gris: un dataset con trece unidades entraría
+     * si no como trece puntos idénticos, y el color por unidad, que es para lo
+     * que existe la capa, no diría nada. Es un color DE PARTIDA, editable en
+     * Units como cualquier otro.
+     */
+    const paleta = POLYGON_TYPES.map((t) => t.color);
+    unidad = {
+      id: genId(),
+      name: nombre,
+      code: '',
+      color: colorPorOmision || paleta[stats.newUnits % paleta.length],
+    };
+    unidades.push(unidad);
+    porNombre.set(clave, unidad);
+    stats.newUnits++;
+    return unidad;
+  };
 
   /* ---------- medidas de rumbo y manteo ---------- */
 
@@ -288,21 +346,8 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
        * se crea. Sin esto, veinte formaciones distintas entrarían todas como
        * «unidad sedimentaria» y el mapa perdería lo que lo hacía un mapa.
        */
-      const nombre = texto(p.Unit);
-      let unidad = nombre ? porNombre.get(normalizeText(nombre)) : null;
-      if (!unidad && nombre) {
-        const base = POLYGON_TYPE_BY_ID.get(r.type);
-        unidad = {
-          id: genId(),
-          name: nombre,
-          code: '',
-          color: (base && base.color) || '#9e9e9e',
-        };
-        unidades.push(unidad);
-        porNombre.set(normalizeText(nombre), unidad);
-        stats.newUnits++;
-      }
       const base = POLYGON_TYPE_BY_ID.get(r.type);
+      const unidad = unidadPorNombre(texto(p.Unit), base && base.color);
       features.push({
         type: 'Feature',
         id,
@@ -334,6 +379,56 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
       geometry: g,
     });
     stats.lines++;
+  }
+
+  /* ---------- observaciones y muestras -> puntos de control ---------- */
+
+  /*
+   * Un spot con medición Y muestra entra DOS veces: como medida y como punto
+   * de control. No es un duplicado: son dos registros distintos del mismo
+   * afloramiento —cómo estaba orientado el plano, y qué se recogió— y es la
+   * misma separación que hacen las tablas del plugin de QGIS. Fusionarlos
+   * obligaría a que borrar la muestra se llevara el manteo por delante.
+   */
+  for (const f of (data && data.observacion && data.observacion.features) || []) {
+    const p = f.properties || {};
+    const g = f.geometry;
+    if (!g || g.type !== 'Point') {
+      stats.skipped++;
+      continue;
+    }
+    const id = genId();
+    const unidad = unidadPorNombre(texto(p.Unit));
+    const altitud = num(p.Altitude);
+    features.push({
+      type: 'Feature',
+      id,
+      properties: {
+        id,
+        kind: 'point',
+        geomKind: CONTROL_POINT_KIND,
+        source: STRABO_SOURCE,
+        sampleId: texto(p['Sample Code']),
+        sampleDescription: texto(p['Sample Description']),
+        // El propósito viaja con el vocabulario de StraboSpot y no se traduce:
+        // es de allá, y allá vuelve al subirlo.
+        purpose: texto(p.Purpose),
+        note: provenance(p, datasetName),
+        certainty: 'observed',
+        opacity: 1,
+        ...(unidad ? { unitId: unidad.id, unit: unidad.name, code: unidad.code } : {}),
+        ...(altitud !== null ? { altitude: altitud } : {}),
+        /*
+         * La fecha de toma es la que declara StraboSpot, no la de la
+         * importación: el dato se tomó aquel día, y sellarlo con el de hoy
+         * borraría cuándo se estuvo ahí —que es justamente lo que esta fecha
+         * contesta.
+         */
+        createdAt: capturedAt(p.Date),
+      },
+      geometry: g,
+    });
+    stats.controlPoints++;
   }
 
   if (stats.skipped) {

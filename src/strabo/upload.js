@@ -6,9 +6,11 @@ import {
   measurementProvenance,
   planarOrientation,
   pruneEmpty,
+  sampleFor,
   surfaceFeatureFor,
   traceFor,
 } from './mapping.js';
+import { CONTROL_POINT_KIND, purposeLabel } from '../controlPoints.js';
 
 /**
  * Convierte el dibujo de FieldDraw en spots de StraboSpot.
@@ -26,6 +28,14 @@ import {
 
 const esMedida = (f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement';
 
+/**
+ * Un punto de control sube como un spot con su `samples[]`, sin
+ * `orientation_data`: no es una medición, y colgarle una orientación vacía lo
+ * haría aparecer en StraboSpot como un plano que nadie midió.
+ */
+const esPuntoControl = (f) =>
+  f.geometry.type === 'Point' && f.properties.geomKind === CONTROL_POINT_KIND;
+
 const SPOT_TYPE = { Polygon: 'polygon', LineString: 'line', Point: 'point' };
 
 /**
@@ -33,7 +43,10 @@ const SPOT_TYPE = { Polygon: 'polygon', LineString: 'line', Point: 'point' };
  * recibiría igual, pero un punto sin rumbo ni manteo llegaría como un spot
  * vacío que nadie sabría interpretar.
  */
-const subible = (f) => !!f.geometry && !!SPOT_TYPE[f.geometry.type] && (f.geometry.type !== 'Point' || esMedida(f));
+const subible = (f) =>
+  !!f.geometry &&
+  !!SPOT_TYPE[f.geometry.type] &&
+  (f.geometry.type !== 'Point' || esMedida(f) || esPuntoControl(f));
 
 /** Cuántos elementos del dibujo son subibles, para avisar antes de empezar. */
 export function uploadableCount(features) {
@@ -42,9 +55,10 @@ export function uploadableCount(features) {
 
 /** Desglose por tipo, que es lo que se le enseña a quien va a subir. */
 export function uploadBreakdown(features) {
-  const out = { measurements: 0, lines: 0, polygons: 0 };
+  const out = { measurements: 0, controlPoints: 0, lines: 0, polygons: 0 };
   for (const f of features.filter(subible)) {
     if (esMedida(f)) out.measurements++;
+    else if (esPuntoControl(f)) out.controlPoints++;
     else if (f.geometry.type === 'Polygon') out.polygons++;
     else out.lines++;
   }
@@ -58,6 +72,7 @@ function typeLabel(feature) {
     const meta = STRUCTURE_TYPE_BY_ID.get(p.type);
     return meta ? meta.label : p.type || 'measurement';
   }
+  if (esPuntoControl(feature)) return p.purpose ? purposeLabel(p.purpose) : 'Control point';
   if (feature.geometry.type === 'Polygon') return p.unit || p.type || 'unit';
   const meta = LINE_TYPE_BY_ID.get(p.type);
   return meta ? meta.label : p.type || 'line';
@@ -72,6 +87,12 @@ function spotName(feature, counters) {
   // Una medida se nombra por lo que es: `Bedding 045/32` se reconoce de un
   // vistazo en la lista de spots, `Bedding 7` no.
   if (esMedida(feature)) return `${typeLabel(feature)} ${formatStrikeDip(p.strike, p.dip)}`;
+  /*
+   * Un punto de control se nombra por su código de muestra: es como se le
+   * llama en la libreta, en la bolsa y en el laboratorio, y es lo que hay que
+   * poder buscar en la lista de spots. Sin código, se numera por lo que es.
+   */
+  if (esPuntoControl(feature) && p.sampleId) return p.sampleId;
   if (p.unit && feature.geometry.type === 'Polygon') {
     const n = (counters.get(p.unit) || 0) + 1;
     counters.set(p.unit, n);
@@ -141,7 +162,7 @@ function unitFor(f, units) {
   if (f.geometry.type === 'Polygon') {
     return units.find((u) => u.id === p.type) || (p.unit ? { id: p.type, name: p.unit, code: p.code } : null);
   }
-  if (esMedida(f) && p.unitId) {
+  if ((esMedida(f) || esPuntoControl(f)) && p.unitId) {
     return units.find((u) => u.id === p.unitId) || (p.unit ? { id: p.unitId, name: p.unit, code: p.code } : null);
   }
   return null;
@@ -177,17 +198,27 @@ export function featuresToSpots(features, meta = {}) {
      * editar la medición desde el formulario.
      */
     const notas = esMedida(f) ? measurementProvenance(p) : (p.notes || p.note || '').trim();
+    /*
+     * La fecha del spot es la de TOMA del dato en un punto de control —está
+     * sellada desde que se colocó— y la de ahora en el resto. Subir una
+     * muestra recogida la semana pasada con la fecha de hoy convertiría la
+     * jornada de terreno en el día en que hubo señal para volcarla.
+     */
+    const fecha = esPuntoControl(f) && Number.isFinite(p.createdAt)
+      ? new Date(p.createdAt).toISOString().replace(/\.\d{3}Z$/, '.000Z')
+      : iso;
 
     const propiedades = {
       id,
       name,
-      date: iso,
-      time: iso,
+      date: fecha,
+      time: fecha,
       modified_timestamp: now,
       notes: notas,
 
       // Lo que hace que StraboSpot lo entienda, según la geometría.
       ...(esMedida(f) ? { orientation_data: [planarOrientation(p, newStraboId())] } : {}),
+      ...(esPuntoControl(f) ? { samples: [sampleFor(p, newStraboId(), fecha)] } : {}),
       ...(f.geometry.type === 'LineString' ? { trace: traceFor(p) } : {}),
       ...(f.geometry.type === 'Polygon' ? { surface_feature: surfaceFeatureFor(p) } : {}),
 

@@ -15,6 +15,13 @@ import {
   sanitizeStructureStyle,
 } from './symbology.js';
 import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
+import {
+  CONTROL_POINT_KIND,
+  CONTROL_POINT_TOOL,
+  PURPOSE_BY_ID,
+  defaultControlPointStyle,
+  sanitizeControlPointStyle,
+} from './controlPoints.js';
 
 /** Unidades sembradas para que la paleta no arranque vacía. */
 const DEFAULT_CODES = {
@@ -49,12 +56,18 @@ function newId() {
  * cientos de símbolos de rumbo y manteo para leer la traza que hay debajo, es
  * lo que uno hace todo el rato en QGIS, y aquí no se podía.
  *
- * El ORDEN DE PINTADO entre las tres no se negocia y por eso no llevan flechas
+ * El ORDEN DE PINTADO entre ellas no se negocia y por eso no llevan flechas
  * en el panel: las unidades son manchas de fondo, las trazas van encima de
- * ellas o no se leen, y las medidas encima de todo porque son puntos chicos.
- * Cualquier otro orden produce un mapa peor, no un mapa distinto.
+ * ellas o no se leen, y las medidas y los puntos de control encima de todo
+ * porque son puntos chicos. Cualquier otro orden produce un mapa peor, no un
+ * mapa distinto.
+ *
+ * Los puntos de control van en capa propia y no con las medidas: contestan otra
+ * pregunta —dónde se estuvo y qué se recogió, no cómo estaba orientado el
+ * plano— y en una jornada de muestreo son los únicos que hay que ver.
  */
 export const DRAWING_LAYERS = [
+  { id: 'geology-control-points', kind: 'control-points', label: 'Control points' },
   { id: 'geology-dips', kind: 'dips', label: 'Dips (measurements)' },
   { id: 'geology-faults', kind: 'faults', label: 'Faults, contacts & folds' },
   { id: 'geology-units', kind: 'units', label: 'Units (polygons)' },
@@ -249,6 +262,25 @@ let state = {
   /** Tamaño y etiquetas de los símbolos de rumbo/manteo. */
   structureStyle: defaultStructureStyle(),
 
+  /* ---------- puntos de control ---------- */
+
+  /**
+   * Lo que lleva escrito la paleta de puntos de control y que hereda el punto
+   * siguiente. La unidad y el propósito se quedan puestos entre un punto y el
+   * otro —son los que se repiten a lo largo de una jornada—; el código de
+   * muestra, la descripción y las notas se VACÍAN al colocar el punto: dos
+   * muestras con el mismo código son dos muestras que en el laboratorio ya no
+   * se pueden separar, y heredarlo en silencio es la forma más fácil de
+   * producirlas.
+   */
+  controlPointUnit: null,
+  controlPointPurpose: '',
+  controlPointSampleId: '',
+  controlPointSampleDescription: '',
+  controlPointNote: '',
+  /** Tamaño del punto, zoom mínimo y por qué campo se rotula. */
+  controlPointStyle: defaultControlPointStyle(),
+
   /* ---------- perfil topográfico ---------- */
 
   /**
@@ -441,6 +473,7 @@ export const DRAWING_TOOLS = [
   'reshape',
   'profile',
   'measure',
+  'control-point',
 ];
 
 /**
@@ -659,6 +692,16 @@ export function addVertex(p) {
       thicknessFrom: null,
       pendingThickness: { from: desde, to: p },
     });
+    return;
+  }
+
+  /*
+   * Punto de control: un solo toque lo deja puesto. No hay nada que muestrear
+   * ni que cerrar —los campos ya están escritos en la paleta—, así que el toque
+   * es la última parte del gesto y no la primera.
+   */
+  if (state.tool === CONTROL_POINT_TOOL) {
+    createControlPoint({ lngLat: p });
     return;
   }
 
@@ -1289,6 +1332,121 @@ export function createMeasurement({
   return feature;
 }
 
+/* ---------- puntos de control ---------- */
+
+export const setControlPointStyle = (patch) =>
+  set({ controlPointStyle: sanitizeControlPointStyle({ ...state.controlPointStyle, ...patch }) });
+
+const texto = (v) => (v === undefined || v === null ? '' : String(v));
+
+/**
+ * Escribe en la paleta del punto siguiente.
+ *
+ * El propósito se valida contra la lista cerrada: es lo que va al formulario de
+ * StraboSpot en la subida, y un valor de fuera de su lista llega allá como un
+ * campo vacío. Cualquier otra cosa se guarda como texto tal cual.
+ */
+export function setControlPointField(patch = {}) {
+  const next = {};
+  if (patch.unit !== undefined) next.controlPointUnit = patch.unit || null;
+  if (patch.purpose !== undefined) {
+    next.controlPointPurpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
+  }
+  if (patch.sampleId !== undefined) next.controlPointSampleId = texto(patch.sampleId);
+  if (patch.sampleDescription !== undefined) {
+    next.controlPointSampleDescription = texto(patch.sampleDescription);
+  }
+  if (patch.note !== undefined) next.controlPointNote = texto(patch.note);
+  set(next);
+}
+
+/**
+ * Crea un punto de control donde se tocó, con lo que llevara escrito la paleta.
+ *
+ * La fecha y la hora no se piden: `createdAt` las estampa aquí, que es el
+ * instante en que se está en el afloramiento, y la exportación las formatea.
+ * Pedirlas sería pedir que se copie a mano lo que el reloj ya sabe, y encima
+ * tarde: al volver del terreno.
+ */
+export function createControlPoint({
+  lngLat,
+  unitId,
+  sampleId,
+  sampleDescription,
+  purpose,
+  note,
+  altitude,
+} = {}) {
+  if (!Array.isArray(lngLat) || !Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) {
+    return null;
+  }
+  const id = newId();
+  // Igual que en una medida, `unitId` distingue "no se pasó" —hereda la
+  // paleta— de "se pasó null", que es no etiquetar el punto a propósito.
+  const unit = state.units.find(
+    (u) => u.id === (unitId !== undefined ? unitId : state.controlPointUnit),
+  );
+  const proposito = purpose !== undefined ? purpose : state.controlPointPurpose;
+  const feature = {
+    type: 'Feature',
+    id,
+    properties: {
+      id,
+      kind: 'point',
+      geomKind: CONTROL_POINT_KIND,
+      sampleId: texto(sampleId !== undefined ? sampleId : state.controlPointSampleId).trim(),
+      sampleDescription: texto(
+        sampleDescription !== undefined ? sampleDescription : state.controlPointSampleDescription,
+      ).trim(),
+      purpose: PURPOSE_BY_ID.has(proposito) ? proposito : '',
+      note: texto(note !== undefined ? note : state.controlPointNote).trim(),
+      // Lo que se anota estando ahí es siempre observado; no existe un punto de
+      // control inferido.
+      certainty: 'observed',
+      opacity: 1,
+      ...(unit ? { unitId: unit.id, unit: unit.name, code: unit.code } : {}),
+      ...(Number.isFinite(altitude) ? { altitude } : {}),
+      createdAt: Date.now(),
+    },
+    geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
+  };
+  pushHistory();
+  set({
+    features: [...state.features, feature],
+    draft: null,
+    selection: [id],
+    // Lo propio de ESTE punto se va con él; la unidad y el propósito siguen
+    // puestos para el siguiente (ver `controlPointSampleId` en el estado).
+    controlPointSampleId: '',
+    controlPointSampleDescription: '',
+    controlPointNote: '',
+    tool: 'select',
+  });
+  return feature;
+}
+
+/** Edita los puntos de control seleccionados. */
+export function updateControlPoint(patch = {}) {
+  const ids = new Set(state.selection);
+  if (ids.size === 0) return;
+  pushHistory();
+  set({
+    features: state.features.map((f) => {
+      if (!ids.has(f.properties.id) || f.properties.geomKind !== CONTROL_POINT_KIND) return f;
+      const props = { ...f.properties };
+      if (patch.sampleId !== undefined) props.sampleId = texto(patch.sampleId).trim();
+      if (patch.sampleDescription !== undefined) {
+        props.sampleDescription = texto(patch.sampleDescription).trim();
+      }
+      if (patch.purpose !== undefined) {
+        props.purpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
+      }
+      if (patch.note !== undefined) props.note = texto(patch.note).trim();
+      return { ...f, properties: props };
+    }),
+  });
+}
+
 /**
  * Cambia rumbo o manteo de las medidas seleccionadas. Va aparte de
  * `updateSelectedProps` porque los dos números tienen dominio propio y porque
@@ -1512,7 +1670,9 @@ export function assignUnitToSelection(unitId) {
         if (!unit) return f;
         return { ...f, properties: { ...f.properties, type: unit.id, unit: unit.name, code: unit.code } };
       }
-      if (f.properties.geomKind === 'measurement') {
+      // Una medida y un punto de control llevan la unidad igual: como etiqueta
+      // opcional, no como tipo. En el punto de control además decide su color.
+      if (f.properties.geomKind === 'measurement' || f.properties.geomKind === CONTROL_POINT_KIND) {
         if (!unit) {
           const { unitId: _unitId, unit: _unit, code: _code, ...rest } = f.properties;
           return { ...f, properties: rest };
@@ -1555,7 +1715,10 @@ export function updateUnit(id, patch) {
     if (f.geometry.type === 'Polygon' && f.properties.type === id) {
       return { ...f, properties: { ...f.properties, unit: unit.name, code: unit.code } };
     }
-    if (f.properties.geomKind === 'measurement' && f.properties.unitId === id) {
+    if (
+      (f.properties.geomKind === 'measurement' || f.properties.geomKind === CONTROL_POINT_KIND) &&
+      f.properties.unitId === id
+    ) {
       return { ...f, properties: { ...f.properties, unit: unit.name, code: unit.code } };
     }
     return f;
@@ -1566,11 +1729,13 @@ export function updateUnit(id, patch) {
 export function removeUnit(id) {
   if (state.units.length <= 1) return;
   const units = state.units.filter((u) => u.id !== id);
-  // Una medida solo referencia la unidad por id: hay que quitarle la etiqueta
-  // entera o quedaría apuntando a una unidad que ya no existe. Un polígono no
-  // se toca aquí: su unidad se resuelve más abajo, cambiándole el tipo.
+  // Una medida y un punto de control solo referencian la unidad por id: hay que
+  // quitarles la etiqueta entera o quedarían apuntando a una unidad que ya no
+  // existe. Un polígono no se toca aquí: su unidad se resuelve más abajo,
+  // cambiándole el tipo.
+  const conEtiqueta = new Set(['measurement', CONTROL_POINT_KIND]);
   const features = state.features.map((f) => {
-    if (f.properties.geomKind !== 'measurement' || f.properties.unitId !== id) return f;
+    if (!conEtiqueta.has(f.properties.geomKind) || f.properties.unitId !== id) return f;
     const { unitId: _unitId, unit: _unit, code: _code, ...rest } = f.properties;
     return { ...f, properties: rest };
   });
@@ -1579,6 +1744,7 @@ export function removeUnit(id) {
     features,
     polygonType: state.polygonType === id ? units[0].id : state.polygonType,
     measureUnit: state.measureUnit === id ? null : state.measureUnit,
+    controlPointUnit: state.controlPointUnit === id ? null : state.controlPointUnit,
   });
 }
 
@@ -1683,6 +1849,7 @@ export function loadProject({
   units,
   ornaments,
   structureStyle,
+  controlPointStyle,
   importStyle,
   settings,
   layers,
@@ -1700,6 +1867,7 @@ export function loadProject({
   if (Array.isArray(units) && units.length) patch.units = units;
   if (ornaments) patch.ornaments = sanitizeOrnaments(ornaments);
   if (structureStyle) patch.structureStyle = sanitizeStructureStyle(structureStyle);
+  if (controlPointStyle) patch.controlPointStyle = sanitizeControlPointStyle(controlPointStyle);
   if (importStyle) patch.importStyle = sanitizeImportStyle(importStyle);
   if (settings) {
     for (const k of SETTING_KEYS) {

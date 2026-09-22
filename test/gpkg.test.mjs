@@ -169,5 +169,40 @@ console.log('== procedencia de una traza proyectada ==');
   ok('y nombra el otro modelo cuando toca', o.includes('OpenTopography'), o);
 }
 
+/*
+ * El esquema y los INSERT tienen que hablar de las MISMAS columnas.
+ *
+ * Es una comprobación sobre el texto del módulo y no sobre su resultado porque
+ * exportar de verdad exige el wasm de sql.js, que aquí no corre. Vale la pena
+ * igual: este desajuste ya rompió la exportación dos veces —primero con
+ * unit/code y después con pole_sd— y no rompe solo la tabla afectada, sino el
+ * archivo ENTERO: sqlite rechaza la sentencia al prepararla, aunque esa tabla
+ * no tenga ni una fila que escribir, así que no se descarga nada y el único
+ * rastro es un mensaje de error con el nombre de una columna.
+ */
+console.log('== esquema y columnas de escritura ==');
+{
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/gpkg/index.js', import.meta.url), 'utf8');
+
+  const declaradas = new Map();
+  for (const m of src.matchAll(/CREATE TABLE (\w+) \(([\s\S]*?)\n\);/g)) {
+    const cols = m[2]
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('--') && !/^(CONSTRAINT|PRAGMA)/.test(l))
+      .map((l) => l.split(/\s+/)[0]);
+    declaradas.set(m[1], new Set(cols));
+  }
+
+  for (const m of src.matchAll(/name: '(geol_\w+)',[\s\S]*?columns: \[([\s\S]*?)\],/g)) {
+    const tabla = m[1];
+    const escritas = [...m[2].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+    const faltan = escritas.filter((c) => !(declaradas.get(tabla) || new Set()).has(c));
+    ok(`${tabla}: toda columna que se escribe está declarada`, faltan.length === 0, faltan.join());
+  }
+  ok('se revisaron las cuatro tablas', declaradas.size >= 4, [...declaradas.keys()].join());
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

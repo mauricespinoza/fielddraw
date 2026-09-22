@@ -2,6 +2,7 @@ const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
 const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
 const STRUCTURE_STYLE_KEY = 'fielddraw.structure-style.v1';
+const CONTROL_POINT_STYLE_KEY = 'fielddraw.control-point-style.v1';
 const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
 const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
 
@@ -83,6 +84,25 @@ export function saveStructureStyle(style) {
 export function loadSavedStructureStyle() {
   try {
     const raw = localStorage.getItem(STRUCTURE_STYLE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveControlPointStyle(style) {
+  try {
+    localStorage.setItem(CONTROL_POINT_STYLE_KEY, JSON.stringify(style));
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedControlPointStyle() {
+  try {
+    const raw = localStorage.getItem(CONTROL_POINT_STYLE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
