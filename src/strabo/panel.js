@@ -127,6 +127,7 @@ const suggestedDatasetName = () => `FieldDraw ${new Date().toISOString().slice(0
 function describe(breakdown) {
   const partes = [
     [breakdown.measurements, 'measurement'],
+    [breakdown.controlPoints, 'control point'],
     [breakdown.lines, 'line'],
     [breakdown.polygons, 'polygon'],
   ]
@@ -459,7 +460,10 @@ function offerAdopt(cuantos) {
       'Their StraboSpot symbology is read on the way in: a reverse fault becomes a thrust with ' +
       'its teeth, trace quality becomes the certainty pattern, and geologic-unit tags become map ' +
       'units. Everything adopted is drawn in one colour so it stays apart from what you mapped ' +
-      'here. Undo puts it back.',
+      'here. Undo puts it back.\n\n' +
+      'Observations and samples come in as control points, keeping their sample ID, ' +
+      'description, purpose and the date they were taken; measurements stay measurements. ' +
+      'Photos are not imported.',
   );
   if (!seguir) return;
 
@@ -472,6 +476,7 @@ function offerAdopt(cuantos) {
   if (r.stats.points) partes.push(`${r.stats.points} measurement(s)`);
   if (r.stats.lines) partes.push(`${r.stats.lines} line(s)`);
   if (r.stats.polygons) partes.push(`${r.stats.polygons} polygon(s)`);
+  if (r.stats.controlPoints) partes.push(`${r.stats.controlPoints} control point(s)`);
   const resumen = `${partes.join(', ')} from StraboSpot are now editable.`;
   onMessage(r.warnings.length ? `${resumen} ${r.warnings.join(' ')}` : resumen, 'info');
   render();

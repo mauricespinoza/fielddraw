@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { downloadBlob } from './persistence.js';
 import { certaintyFor } from './symbology.js';
+import { CONTROL_POINT_KIND } from './controlPoints.js';
 
 /**
  * Proyectos de FieldDraw: un único JSON con el dibujo, las unidades, la
@@ -29,6 +30,7 @@ export function serializeProject(name = '') {
     units: st.units,
     ornaments: st.ornaments,
     structureStyle: st.structureStyle,
+    controlPointStyle: st.controlPointStyle,
     importStyle: st.importStyle,
     settings: store.currentSettings(),
     layers: store.currentLayerState(),
@@ -95,6 +97,7 @@ export function parseProject(text) {
       units: Array.isArray(raw.units) ? raw.units : null,
       ornaments: raw.ornaments || null,
       structureStyle: raw.structureStyle || null,
+      controlPointStyle: raw.controlPointStyle || null,
       importStyle: raw.importStyle || null,
       settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
       layers: Array.isArray(raw.layers) ? raw.layers : null,
@@ -134,6 +137,21 @@ function sanitizeFeatures(list, warnings) {
      * un GeoJSON ajeno con geometría de punto.
      */
     if (g.type === 'Point') {
+      /*
+       * Un punto de control no lleva rumbo ni manteo —es dónde se estuvo, no
+       * cómo estaba orientado el plano— así que la exigencia de abajo lo
+       * borraría entero al abrir el proyecto. Sus campos se normalizan a texto
+       * porque un JSON editado a mano puede traer números o nulos donde la
+       * interfaz espera cadenas.
+       */
+      if (props.geomKind === CONTROL_POINT_KIND) {
+        for (const k of ['sampleId', 'sampleDescription', 'purpose', 'note']) {
+          props[k] = props[k] === undefined || props[k] === null ? '' : String(props[k]);
+        }
+        props.certainty = 'observed';
+        out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });
+        continue;
+      }
       if (!Number.isFinite(Number(props.strike)) || !Number.isFinite(Number(props.dip))) {
         sinMedida++;
         continue;

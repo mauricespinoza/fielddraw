@@ -236,6 +236,42 @@ export function measurementProvenance(props) {
   return [nota, cola].filter(Boolean).join(' — ');
 }
 
+/**
+ * Muestra de un punto de control, en el objeto `samples[]` del spot.
+ *
+ * Las claves son las que escribe la propia app de StraboSpot, comprobadas
+ * contra un export real de un proyecto suyo (columnas «Sample …» de la hoja
+ * Spots): `sample_id_name` es el «Sample Specific ID/Name» del formulario,
+ * `sample_description` su descripción y `main_sampling_purpose` el propósito,
+ * que por eso se elige de una lista cerrada con SUS valores y no se escribe a
+ * mano.
+ *
+ * **La fecha de recolección es la de la toma y no la de la subida**: el punto
+ * se tomó el día que se caminó el afloramiento, y volcarlo una semana después
+ * no lo convierte en un dato de hoy.
+ *
+ * Lo que NO se escribe: `material_type`, `inplaceness_of_sample`,
+ * `degree_of_weathering` y `oriented_sample`. Son observaciones del formulario
+ * de StraboSpot que aquí nadie hizo, y rellenarlas con su valor más frecuente
+ * —«roca intacta», «definitivamente in situ»— sería afirmar algo que nadie
+ * miró. Quedan vacías y se contestan allá, que es donde se preguntan.
+ *
+ * `sample_type` sí va: es lo que hace que el registro se vea como una muestra
+ * en el formulario, y `individual_sample` es el valor con el que su propia app
+ * escribe las muestras de mano.
+ */
+export function sampleFor(props, id, collectedAtISO) {
+  return pruneEmpty({
+    id,
+    sample_type: 'individual_sample',
+    sample_id_name: (props.sampleId || '').trim() || undefined,
+    sample_description: (props.sampleDescription || '').trim() || undefined,
+    main_sampling_purpose: props.purpose || undefined,
+    collection_date: collectedAtISO,
+    collection_time: collectedAtISO,
+  });
+}
+
 /** Objeto `trace` de una línea. */
 export function traceFor(props) {
   const base = TRACE_BY_LINE_TYPE[props.type];

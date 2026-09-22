@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.32.0';
+export const APP_VERSION = '0.33.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,6 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
+  ['Create · Control', 'Control points: unit, sample ID, description, purpose and notes. Date and time are stamped for you, the colour follows the unit and the label is yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
@@ -53,6 +54,28 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.33.0',
+    highlights: [
+      'New Create ▸ Control tool: control points with unit, sample ID, description, sampling purpose and notes.',
+      'The date and time of capture are stamped when you place the point and written out on export — never typed by hand.',
+      'Control points are coloured by their unit, and you choose what the map label shows (sample ID, unit, purpose…).',
+      'They export as a GeoPackage layer with its QGIS symbology, and as a CSV for the spreadsheet.',
+      'StraboSpot observations and samples now come in as control points, and go back up as native samples.',
+      'Fixed: exporting a GeoPackage failed outright — the points table was missing a column it was writing.',
+    ],
+    items: [
+      'Nueva herramienta Create ▸ Control: puntos de control con Unit, Sample ID, Sample Description, Purpose y Notes. La litología va en las notas y no en un campo propio: es prosa, y el modelo de muestra de StraboSpot no tiene dónde ponerla.',
+      'El propósito del muestreo es una lista cerrada con los valores de StraboSpot (`main_sampling_purpose`), no texto libre: el valor viaja tal cual a su formulario, y uno escrito a mano llega allá como un campo vacío.',
+      'La fecha y la hora de toma se sellan solas al colocar el punto y se escriben al exportar, en la hora local del equipo; en el GeoPackage viaja además la misma marca en ISO/UTC. No se piden nunca: copiar a mano lo que el reloj ya sabe, y encima al volver del terreno, es la forma más fácil de equivocarse.',
+      'El código de muestra, la descripción y las notas se vacían al colocar cada punto; la unidad y el propósito se quedan puestos para el siguiente. Heredar el código en silencio produce dos muestras que en el laboratorio ya no se pueden separar.',
+      'Los puntos se dibujan del color de su unidad —el mismo catálogo que pinta los polígonos— y el rótulo del mapa se elige en la paleta: Sample ID, unidad, código, propósito, notas o ninguno.',
+      'Exportación a GeoPackage en su propia capa `geol_control_points`, con estilo QGIS categorizado por unidad y etiquetado por el campo elegido, y exportación a CSV (con BOM, para que Excel no rompa los acentos) desde Ajustes.',
+      'Las observaciones y muestras que se bajan de StraboSpot entran ahora como puntos de control —con su código, descripción, propósito y la fecha en que se tomaron— en vez de quedarse en una capa de solo consulta. Las mediciones siguen entrando como mediciones; las fotos no se importan.',
+      'Un punto de control sube a StraboSpot como muestra nativa: Sample ID alimenta su «Sample Specific ID/Name», la descripción su homóloga, el propósito su lista, y la unidad el tag `geologic_unit`. La fecha de recolección es la de la toma, no la de la subida. Lo que nadie observó —tipo de material, grado de meteorización, si estaba in situ— se deja vacío en vez de rellenarlo con su valor más frecuente.',
+      'Corregido un fallo que rompía la exportación a GeoPackage ENTERA: la tabla de medidas escribía una columna (`pole_sd`) que su esquema no declaraba, y sqlite rechaza la sentencia al prepararla aunque no haya ni una fila que escribir, así que no se descargaba ningún archivo. Un test nuevo compara esquema e inserciones tabla por tabla para que no vuelva a pasar.',
+    ],
+  },
   {
     version: '0.32.0',
     // Resumen corto en inglés para el panel About — ver la nota junto a

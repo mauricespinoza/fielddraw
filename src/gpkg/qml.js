@@ -287,6 +287,111 @@ ${symbols.join('\n')}
 </qgis>`;
 }
 
+/** Círculo relleno con borde oscuro: el símbolo de un punto de control. */
+function filledCircleMarkerLayer(color, sizeMm = '3') {
+  return `        <layer class="SimpleMarker" enabled="1" locked="0" pass="0">
+          <Option type="Map">
+            <Option name="angle" type="QString" value="0"/>
+            <Option name="color" type="QString" value="${hexToRgba(color)}"/>
+            <Option name="name" type="QString" value="circle"/>
+            <Option name="offset" type="QString" value="0,0"/>
+            <Option name="outline_color" type="QString" value="${hexToRgba(shade(color, 0.45))}"/>
+            <Option name="outline_style" type="QString" value="solid"/>
+            <Option name="outline_width" type="QString" value="0.3"/>
+            <Option name="outline_width_unit" type="QString" value="MM"/>
+            <Option name="size" type="QString" value="${sizeMm}"/>
+            <Option name="size_unit" type="QString" value="MM"/>
+          </Option>
+        </layer>`;
+}
+
+/**
+ * QML de los puntos de control: una regla por UNIDAD, con el color de esa
+ * unidad, y el rótulo del campo que se eligió en la app.
+ *
+ * Se categoriza por el NOMBRE de la unidad y no por su id porque el id no viaja
+ * a la tabla: quien abra la capa en QGIS lee «Abanico» en la leyenda, que es lo
+ * que necesita para armar la carta, y no un identificador interno.
+ *
+ * La regla ELSE del final no es un descarte: un punto de control sin unidad es
+ * un punto legítimo —se estuvo ahí y todavía no se sabe de qué unidad es— y sin
+ * ella desaparecería del mapa en vez de dibujarse en gris.
+ *
+ * @param {Array<{value: string, label: string, color: string}>} unidades
+ * @param {?string} labelColumn columna por la que rotular, o null para no rotular
+ */
+export function buildControlPointQML(unidades, labelColumn, noUnitColor = '#b0bec5') {
+  const rules = [];
+  const symbols = [];
+  unidades.forEach((u, i) => {
+    rules.push(
+      `      <rule key="${uuid()}" symbol="${i}" label="${xmlEscape(u.label)}" filter="&quot;unit&quot; = '${String(u.value).replace(/'/g, "''")}'"/>`,
+    );
+    symbols.push(markerSymbol(String(i), filledCircleMarkerLayer(u.color), false));
+  });
+  const iElse = symbols.length;
+  rules.push(`      <rule key="${uuid()}" symbol="${iElse}" label="No unit" filter="ELSE"/>`);
+  symbols.push(markerSymbol(String(iElse), filledCircleMarkerLayer(noUnitColor), false));
+
+  const labeling = labelColumn
+    ? `
+  <labeling type="simple">
+    <settings>
+      <text-style fieldName="${xmlEscape(labelColumn)}" isExpression="0" fontFamily="Arial" fontSize="8" textColor="0,0,0,255">
+        <text-buffer bufferDraw="1" bufferSize="0.8" bufferColor="255,255,255,255"/>
+      </text-style>
+      <placement placement="1" dist="1.6" quadOffset="3"/>
+    </settings>
+  </labeling>`
+    : '';
+
+  return `<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.34.0" styleCategories="Symbology|Labeling">
+  <renderer-v2 type="RuleRenderer" forceraster="0" symbollevels="0" enableorderby="0" referencescale="-1">
+    <rules key="${uuid()}">
+${rules.join('\n')}
+    </rules>
+    <symbols>
+${symbols.join('\n')}
+    </symbols>
+  </renderer-v2>${labeling}
+  <layerGeometryType>0</layerGeometryType>
+</qgis>`;
+}
+
+/** SLD de los puntos de control: un círculo del color de cada unidad. */
+export function buildControlPointSLD(unidades) {
+  const reglas = unidades
+    .map(
+      (u) => `      <se:Rule>
+        <se:Name>${xmlEscape(u.label)}</se:Name>
+        <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+          <ogc:PropertyIsEqualTo>
+            <ogc:PropertyName>unit</ogc:PropertyName>
+            <ogc:Literal>${xmlEscape(u.value)}</ogc:Literal>
+          </ogc:PropertyIsEqualTo>
+        </ogc:Filter>
+        <se:PointSymbolizer>
+          <se:Graphic>
+            <se:Mark>
+              <se:WellKnownName>circle</se:WellKnownName>
+              <se:Fill>
+                <se:SvgParameter name="fill">${u.color}</se:SvgParameter>
+              </se:Fill>
+              <se:Stroke>
+                <se:SvgParameter name="stroke">${shade(u.color, 0.45)}</se:SvgParameter>
+                <se:SvgParameter name="stroke-width">1</se:SvgParameter>
+              </se:Stroke>
+            </se:Mark>
+            <se:Size>10</se:Size>
+          </se:Graphic>
+        </se:PointSymbolizer>
+      </se:Rule>`,
+    )
+    .join('\n');
+  return sldDocument('geol_control_points', reglas);
+}
+
 /**
  * SLD de las medidas. Es la red de seguridad del QML y por eso es más pobre:
  * SLD no tiene un marcador con forma de línea, así que se usa una cruz rotada

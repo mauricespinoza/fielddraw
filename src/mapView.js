@@ -60,6 +60,12 @@ import {
   structureLayers,
 } from './structureSymbols.js';
 import {
+  CONTROL_POINT_LAYER_IDS,
+  applyControlPointStyle,
+  controlPointLayers,
+} from './controlPointSymbols.js';
+import { CONTROL_POINT_KIND } from './controlPoints.js';
+import {
   STRABO_INTERACTIVE_LAYER_IDS,
   STRABO_LAYER_IDS,
   STRABO_LINES_SOURCE,
@@ -127,6 +133,7 @@ const BASE = {
   // El halo de una medida seleccionada es translúcido por diseño; sin esta
   // entrada, el deslizador de la capa lo subiría a opaco y taparía el símbolo.
   'structure-selected': 0.35,
+  'control-point-selected': 0.35,
 };
 
 const basemapLayerId = (id) => `bm-${id}`;
@@ -149,7 +156,13 @@ function mlIdsFor(layer) {
   if (layer.kind === 'units') return GEOLOGY_UNIT_LAYER_IDS;
   if (layer.kind === 'faults') return [...GEOLOGY_TRACE_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
   if (layer.kind === 'dips') return STRUCTURE_LAYER_IDS;
-  return [...GEOLOGY_LAYER_IDS, ...ORNAMENT_LAYER_IDS, ...STRUCTURE_LAYER_IDS];
+  if (layer.kind === 'control-points') return CONTROL_POINT_LAYER_IDS;
+  return [
+    ...GEOLOGY_LAYER_IDS,
+    ...ORNAMENT_LAYER_IDS,
+    ...STRUCTURE_LAYER_IDS,
+    ...CONTROL_POINT_LAYER_IDS,
+  ];
 }
 
 /**
@@ -613,6 +626,16 @@ export function createMapView({
       }
     } catch (err) {
       console.warn('[estructural]', err);
+    }
+
+    // Puntos de control: mismo origen que el dibujo, color por unidad. Encima
+    // de las medidas, que es donde los pone el panel de capas.
+    for (const l of controlPointLayers(
+      store.getState().controlPointStyle,
+      store.getState().units,
+      store.getState().importStyle,
+    )) {
+      map.addLayer(l);
     }
     applyUnitColors();
     applyLineColors();
@@ -3216,6 +3239,10 @@ export function createMapView({
       if (store.getState().strabo) fitToStrabo();
     }
     if (store.changed('structureStyle')) applyStructureStyle(map, store.getState().structureStyle);
+    if (store.changed('controlPointStyle') || store.changed('units')) {
+      const st3 = store.getState();
+      applyControlPointStyle(map, st3.controlPointStyle, st3.units, st3.importStyle);
+    }
     /*
      * El color único de lo adoptado desde StraboSpot toca las tres familias:
      * el relleno y el contorno de los polígonos, la traza de las líneas y los
@@ -3228,6 +3255,7 @@ export function createMapView({
       applyOrnamentStyle(map, st2.ornaments, st2.importStyle);
       applyImportStyle(map, st2.importStyle);
       applyStructureStyle(map, st2.structureStyle, st2.importStyle);
+      applyControlPointStyle(map, st2.controlPointStyle, st2.units, st2.importStyle);
     }
     if (store.changed('straboStyle')) applyStraboStyle(map, store.getState().straboStyle);
     if (store.changed('straboFilters')) {
@@ -3297,6 +3325,14 @@ export function createMapView({
           'all',
           ['==', ['geometry-type'], 'Point'],
           ['==', ['get', 'geomKind'], 'measurement'],
+          ['in', ['get', 'id'], seleccion],
+        ]);
+      }
+      if (map.getLayer('control-point-selected')) {
+        map.setFilter('control-point-selected', [
+          'all',
+          ['==', ['geometry-type'], 'Point'],
+          ['==', ['get', 'geomKind'], CONTROL_POINT_KIND],
           ['in', ['get', 'id'], seleccion],
         ]);
       }

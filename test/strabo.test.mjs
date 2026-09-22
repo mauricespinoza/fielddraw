@@ -231,7 +231,10 @@ console.log('== subida: features de FieldDraw -> spots nativos ==');
   const units = [{ id: 'unit-1', name: 'Fm. Cura-Mallin', code: 'Kcm', color: '#ffb74d' }];
 
   ok('cuenta lo subible', uploadableCount(features) === 3);
-  ok('desglosa por tipo', JSON.stringify(uploadBreakdown(features)) === JSON.stringify({ measurements: 1, lines: 1, polygons: 1 }));
+  ok('desglosa por tipo',
+     JSON.stringify(uploadBreakdown(features)) ===
+       JSON.stringify({ measurements: 1, controlPoints: 0, lines: 1, polygons: 1 }),
+     JSON.stringify(uploadBreakdown(features)));
 
   const { collection, count, tags } = featuresToSpots(features, { geologist: 'MEV', field: 'Campana 1', units });
   ok('produce una FeatureCollection', collection.type === 'FeatureCollection' && count === 3);
@@ -585,8 +588,8 @@ console.log('== adoptar un dataset ==');
 
   ok('todo lo adoptado queda marcado como venido de StraboSpot',
      r.features.every((f) => f.properties.source === 'strabospot'));
-  ok('las observaciones no se adoptan: no son geometría cartográfica',
-     r.features.length === 3);
+  ok('la observación entra como punto de control, no como medida',
+     r.features.length === 4 && r.stats.controlPoints === 1, JSON.stringify(r.stats));
   ok('avisa de lo que descartó', r.warnings.some((w) => w.includes('skipped')), r.warnings.join(' | '));
 
   // Una unidad que ya existe no se duplica: el polígono se cuelga de ella.

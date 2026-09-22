@@ -7,8 +7,18 @@ import {
   VERTICAL_DIP_MIN,
 } from '../symbology.js';
 import { formatStrikeDip } from '../structure.js';
+import {
+  CONTROL_POINT_COLUMNS,
+  CONTROL_POINT_NO_UNIT_COLOR,
+  controlPointValues,
+  defaultControlPointStyle,
+  isControlPoint,
+  labelColumnFor,
+} from '../controlPoints.js';
 import { decodeGeoPackageBinary, encodeGeoPackageBinary, envelopeOf } from './wkb.js';
 import {
+  buildControlPointQML,
+  buildControlPointSLD,
   buildLineQML,
   buildLineSLD,
   buildPointQML,
@@ -139,6 +149,25 @@ CREATE TABLE geol_polygons (
   created_at TEXT
 );
 
+CREATE TABLE geol_control_points (
+  fid INTEGER PRIMARY KEY AUTOINCREMENT,
+  geom POINT,
+  -- El código de la muestra, que en StraboSpot es su "Sample Specific ID/Name".
+  sample_id TEXT,
+  -- Fecha y hora de toma, en la hora local del equipo que la tomó. La columna
+  -- created_at de más abajo lleva la misma marca en ISO/UTC: esta es para
+  -- leerla, aquella para compararla entre husos.
+  date TEXT,
+  unit TEXT,
+  code TEXT,
+  purpose TEXT,
+  sample_description TEXT,
+  note TEXT,
+  altitude REAL,
+  source TEXT,
+  created_at TEXT
+);
+
 CREATE TABLE geol_points (
   fid INTEGER PRIMARY KEY AUTOINCREMENT,
   geom POINT,
@@ -154,6 +183,12 @@ CREATE TABLE geol_points (
   n_points INTEGER,
   base_m REAL,
   spread_m REAL,
+  -- Dispersión angular del polo entre las muestras del método Device, en
+  -- grados. Estaba en el INSERT y no en el esquema —el mismo olvido que ya
+  -- había pasado con unit/code— y eso rompía la exportación ENTERA: sqlite
+  -- rechaza la sentencia al prepararla, aunque no haya ni una medida que
+  -- escribir, así que no salía ningún GeoPackage.
+  pole_sd REAL,
   dem_source TEXT,
   -- La unidad en la que se tomó la medida, igual que en los polígonos. Estaban
   -- en el INSERT pero no en el esquema, así que exportar un GeoPackage con
@@ -225,11 +260,34 @@ function bboxOfFeatures(features) {
 }
 
 /**
+ * Las unidades que de verdad aparecen entre los puntos de control, con su
+ * color. Se resuelven por NOMBRE porque es lo que va en la tabla, y el color
+ * sale del catálogo vigente: si el nombre ya no está en él —el punto viene de
+ * un proyecto viejo, o de un tag de StraboSpot que nadie creó aquí— la unidad
+ * se conserva igual, en gris, en vez de perderla.
+ */
+export function controlPointUnits(points, units) {
+  const porNombre = new Map((units || []).filter((u) => u && u.name).map((u) => [u.name, u]));
+  const vistas = new Map();
+  for (const f of points) {
+    const nombre = f.properties.unit;
+    if (!nombre || vistas.has(nombre)) continue;
+    const u = porNombre.get(nombre);
+    vistas.set(nombre, {
+      value: nombre,
+      label: u && u.code ? `${nombre} (${u.code})` : nombre,
+      color: (u && u.color) || CONTROL_POINT_NO_UNIT_COLOR,
+    });
+  }
+  return [...vistas.values()];
+}
+
+/**
  * Genera un GeoPackage válido con las dos tablas de features y, sobre todo,
  * la tabla `layer_styles`: gracias a ella QGIS abre el archivo con la
  * simbología ya puesta, sin que el geólogo tenga que aplicar nada.
  */
-export async function exportGeoPackage(features, units, ornaments) {
+export async function exportGeoPackage(features, units, ornaments, controlPointStyle) {
   const SQL = await loadSql();
   const db = new SQL.Database();
   try {
@@ -250,6 +308,13 @@ export async function exportGeoPackage(features, units, ornaments) {
     const points = features.filter(
       (f) => f.geometry.type === 'Point' && f.properties.geomKind === 'measurement',
     );
+
+    const controlPoints = features.filter((f) => f.geometry.type === 'Point' && isControlPoint(f));
+    const cpStyle = controlPointStyle || defaultControlPointStyle();
+    // El rótulo de QGIS es una COLUMNA de la tabla, no una propiedad del
+    // elemento: es el mismo campo con el otro nombre.
+    const cpLabelColumn = labelColumnFor(cpStyle.labelField);
+    const cpUnidades = controlPointUnits(controlPoints, units);
 
     // Tipos de superficie realmente presentes, para que la leyenda de QGIS no
     // traiga categorías vacías.
@@ -336,6 +401,16 @@ export async function exportGeoPackage(features, units, ornaments) {
         }),
         sld: buildPointSLD(tiposMedidos),
         identifier: 'Medidas de rumbo y manteo',
+      },
+      {
+        name: 'geol_control_points',
+        geomType: 'POINT',
+        rows: controlPoints,
+        columns: [...CONTROL_POINT_COLUMNS.map((c) => c.gpkg), 'created_at'],
+        valuesOf: (p) => controlPointValues(p),
+        qml: buildControlPointQML(cpUnidades, cpLabelColumn, CONTROL_POINT_NO_UNIT_COLOR),
+        sld: buildControlPointSLD(cpUnidades),
+        identifier: 'Puntos de control y muestras',
       },
     ];
 

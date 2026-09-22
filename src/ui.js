@@ -46,6 +46,14 @@ import {
   startOrientationCapture,
 } from './deviceOrientation.js';
 import { buildCompass, compassHint } from './compassWidget.js';
+import {
+  CONTROL_POINT_LABEL_FIELDS,
+  SAMPLING_PURPOSES,
+  controlPointsCSV,
+  formatCaptureDate,
+  isControlPoint,
+  purposeLabel,
+} from './controlPoints.js';
 import { closeStereogram, initStereogramPanel, isStereogramOpen } from './stereogramPanel.js';
 import { chaikin, simplifyDP } from './simplify.js';
 import {
@@ -208,6 +216,72 @@ function numberField(label, value, { min, max, step }, onInput) {
     if (Number.isFinite(v)) onInput(v);
   });
   wrap.append(l, input);
+  return wrap;
+}
+
+/**
+ * Campo de texto compacto para la paleta. Emite en `input`, igual que el
+ * numérico: lo escrito tiene que estar puesto antes de que el dedo llegue al
+ * mapa, sin un `change` que dependa de salir del campo.
+ */
+function textField(label, value, { placeholder = '', title = '', event = 'input' } = {}, onInput) {
+  const wrap = document.createElement('label');
+  wrap.className = 'palette-text';
+  if (title) wrap.title = title;
+  const l = document.createElement('span');
+  l.textContent = label;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value || '';
+  input.placeholder = placeholder;
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  /*
+   * `change` para editar algo que YA existe: cada pulsación escribe en el
+   * dibujo y apila un paso de deshacer, así que con `input` corregir un código
+   * de muestra dejaría seis pasos de historial y deshacer una vez no
+   * desharía nada visible. En la paleta sí es `input`: ahí lo escrito tiene que
+   * estar puesto antes de que el dedo llegue al mapa, y no hay un momento en
+   * que el campo pierda el foco para confirmarlo.
+   */
+  input.addEventListener(event, () => onInput(input.value));
+  wrap.append(l, input);
+  return wrap;
+}
+
+/**
+ * Desplegable de una lista cerrada.
+ *
+ * Un valor que no esté en la lista se añade como opción propia en vez de
+ * ignorarse: llega así desde un proyecto ajeno o desde un dataset de
+ * StraboSpot con un vocabulario más nuevo, y dejar que el desplegable lo
+ * reemplace en silencio por el primero de la lista sería borrar un dato al
+ * abrir el menú.
+ */
+function selectField(label, options, value, onPick, { empty = null } = {}) {
+  const wrap = document.createElement('label');
+  wrap.className = 'palette-text';
+  const l = document.createElement('span');
+  l.textContent = label;
+  const select = document.createElement('select');
+  select.className = 'palette-select';
+  if (empty !== null) {
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = empty;
+    select.appendChild(none);
+  }
+  const conocidos = new Set(options.map((o) => o.id));
+  const lista = value && !conocidos.has(value) ? [...options, { id: value, label: value }] : options;
+  for (const o of lista) {
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = o.label;
+    select.appendChild(opt);
+  }
+  select.value = value || '';
+  select.addEventListener('change', () => onPick(select.value));
+  wrap.append(l, select);
   return wrap;
 }
 
@@ -396,6 +470,84 @@ function buildPalette() {
         numberField('Dip', s.manualDip, { min: 0, max: 90, step: 1 }, (v) => store.setManualDip(v)),
       );
     }
+
+    el.appendChild(scroll);
+    return;
+  }
+
+  /*
+   * Punto de control: lo que se escribe aquí es lo que llevará el punto al
+   * tocar el mapa.
+   *
+   * La paleta NO se reconstruye mientras se escribe —no está entre las claves
+   * que la repintan— porque rehacerla en cada tecla le quitaría el foco al
+   * campo a la primera letra. Los campos escriben directo en el store y el
+   * store no tiene nada que devolver.
+   */
+  if (s.tool === 'control-point') {
+    el.classList.remove('hidden');
+    const scroll = document.createElement('div');
+    scroll.className = 'palette-scroll';
+
+    const muestra = paletteGroup(scroll, 'Sample');
+    muestra.appendChild(
+      textField(
+        'Sample ID',
+        s.controlPointSampleId,
+        {
+          placeholder: 'e.g. ACRC1',
+          title: 'Goes to StraboSpot as the sample’s Specific ID/Name. It is cleared after each point: two samples with the same code cannot be told apart later',
+        },
+        (v) => store.setControlPointField({ sampleId: v }),
+      ),
+    );
+    muestra.appendChild(
+      textField(
+        'Description',
+        s.controlPointSampleDescription,
+        { placeholder: 'e.g. CT · AFT AHe', title: 'Goes to StraboSpot as the sample description' },
+        (v) => store.setControlPointField({ sampleDescription: v }),
+      ),
+    );
+
+    const unidades = paletteGroup(scroll, 'Unit');
+    unitSelect(unidades, s.units, s.controlPointUnit, (id) =>
+      store.setControlPointField({ unit: id }),
+    );
+
+    const proposito = paletteGroup(scroll, 'Purpose');
+    proposito.appendChild(
+      selectField(
+        'Sampling',
+        SAMPLING_PURPOSES,
+        s.controlPointPurpose,
+        (v) => store.setControlPointField({ purpose: v }),
+        { empty: 'Not a sample' },
+      ),
+    );
+
+    const notas = paletteGroup(scroll, 'Notes');
+    notas.appendChild(
+      textField(
+        'Notes',
+        s.controlPointNote,
+        {
+          placeholder: 'lithology, outcrop, what you saw',
+          title: 'The lithology goes here: it is prose, and it travels to StraboSpot as the spot’s notes',
+        },
+        (v) => store.setControlPointField({ note: v }),
+      ),
+    );
+
+    const rotulo = paletteGroup(scroll, 'Label on map');
+    rotulo.appendChild(
+      selectField(
+        'Show',
+        CONTROL_POINT_LABEL_FIELDS,
+        s.controlPointStyle.labelField,
+        (v) => store.setControlPointStyle({ labelField: v }),
+      ),
+    );
 
     el.appendChild(scroll);
     return;
@@ -791,7 +943,13 @@ function layerRow(layer) {
  * se lee mejor que nombrarlas en el orden en que se pintan.
  */
 const LAYER_GROUPS = [
-  { title: null, kinds: ['units', 'faults', 'dips'], order: ['units', 'faults', 'dips'] },
+  // El orden de la lista es el del mapa leído de abajo hacia arriba: las
+  // unidades son el fondo y los puntos de control, lo último que se dibuja.
+  {
+    title: null,
+    kinds: ['units', 'faults', 'dips', 'control-points'],
+    order: ['units', 'faults', 'dips', 'control-points'],
+  },
   { title: 'StraboSpot', kinds: ['strabo'] },
   { title: 'Imported layers', kinds: ['imported'] },
   { title: 'Basemaps', kinds: ['contours', 'hillshade', 'tiles', 'basemap'], nested: true },
@@ -915,6 +1073,29 @@ export function openPropsMenu(screen) {
     const del = document.createElement('button');
     del.className = 'pill danger wide';
     del.textContent = 'Delete measurement';
+    del.addEventListener('click', () => {
+      store.deleteSelected();
+      closePropsMenu();
+    });
+    body.appendChild(del);
+
+    positionPropsMenu(menu, screen);
+    return;
+  }
+
+  /*
+   * Lo mismo para un punto de control solo: lo que se edita son sus campos, y
+   * la certeza, el suavizado o el cierre de contorno no le aplican.
+   */
+  const puntosControl = sel.filter(isControlPoint);
+  if (puntosControl.length === 1 && sel.length === 1) {
+    const p = puntosControl[0].properties;
+    $('props-title').textContent = p.sampleId ? `Control point ${p.sampleId}` : 'Control point';
+    controlPointSection(body, puntosControl[0], () => openPropsMenu(screen));
+
+    const del = document.createElement('button');
+    del.className = 'pill danger wide';
+    del.textContent = 'Delete control point';
     del.addEventListener('click', () => {
       store.deleteSelected();
       closePropsMenu();
@@ -2147,7 +2328,7 @@ async function doExportGeoPackage() {
   setBusy('Building GeoPackage…');
   try {
     const st = store.getState();
-    const bytes = await exportGeoPackage(features, st.units, st.ornaments);
+    const bytes = await exportGeoPackage(features, st.units, st.ornaments, st.controlPointStyle);
     const stamp = new Date().toISOString().slice(0, 10);
     downloadBlob(
       new Blob([bytes], { type: 'application/geopackage+sqlite3' }),
@@ -2162,6 +2343,28 @@ async function doExportGeoPackage() {
   } finally {
     setBusy(null);
   }
+}
+
+/**
+ * Los puntos de control como tabla.
+ *
+ * Va aparte del GeoPackage y no dentro: un CSV es lo que se abre en una
+ * planilla para preparar el envío de muestras al laboratorio, y ahí el
+ * GeoPackage —que es lo que se abre en QGIS— no sirve de nada.
+ */
+function doExportControlPointsCSV() {
+  const puntos = store.getState().features.filter(isControlPoint);
+  if (!puntos.length) {
+    showBanner('No control points yet: place some with Create ▸ Control first.', 'warn');
+    return;
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadText(
+    controlPointsCSV(puntos),
+    `fielddraw-control-points-${stamp}.csv`,
+    'text/csv;charset=utf-8',
+  );
+  showBanner(`${puntos.length} control point(s) exported as CSV.`, 'info');
 }
 
 async function doOpenTiles(file) {
@@ -3843,6 +4046,70 @@ function measureRow(parent, k, v, title) {
  * Bloque de una medida dentro del menú de propiedades: los dos números
  * editables y, debajo, de dónde salieron y cuánto valen.
  */
+/**
+ * Un punto de control ya puesto: sus cuatro campos, su unidad y cuándo se tomó.
+ *
+ * La fecha se enseña y no se edita. Es el sello del momento en que se estuvo
+ * ahí; dejarla corregir convertiría el único dato que nadie escribió —y por eso
+ * el único en el que se puede confiar sin más— en uno más que alguien recordó
+ * mal al volver.
+ */
+function controlPointSection(body, punto, reabrir) {
+  const p = punto.properties;
+
+  const muestra = section(body, 'Sample');
+  muestra.appendChild(
+    textField('Sample ID', p.sampleId, { placeholder: 'e.g. ACRC1', event: 'change' }, (v) =>
+      store.updateControlPoint({ sampleId: v }),
+    ),
+  );
+  muestra.appendChild(
+    textField(
+      'Description',
+      p.sampleDescription,
+      { placeholder: 'e.g. CT · AFT AHe', event: 'change' },
+      (v) => store.updateControlPoint({ sampleDescription: v }),
+    ),
+  );
+  muestra.appendChild(
+    selectField(
+      'Purpose',
+      SAMPLING_PURPOSES,
+      p.purpose,
+      (v) => store.updateControlPoint({ purpose: v }),
+      { empty: 'Not a sample' },
+    ),
+  );
+
+  const notas = section(body, 'Notes');
+  notas.appendChild(
+    textField(
+      'Notes',
+      p.note,
+      { placeholder: 'lithology, outcrop, what you saw', event: 'change' },
+      (v) => store.updateControlPoint({ note: v }),
+    ),
+  );
+
+  const uni = section(body, 'Unit');
+  const uniRow = document.createElement('div');
+  uniRow.className = 'palette-row';
+  unitChips(uniRow, store.getState().units, p.unitId ?? null, (id) => {
+    store.assignUnitToSelection(id);
+    reabrir();
+  });
+  uni.appendChild(uniRow);
+
+  const cuando = section(body, 'Recorded');
+  measureRow(
+    cuando,
+    'Date and time',
+    formatCaptureDate(p.createdAt),
+    'Stamped when the point was placed, in the local time of the device that took it',
+  );
+  if (p.purpose) measureRow(cuando, 'Sampling purpose', purposeLabel(p.purpose));
+}
+
 function measurementSection(body, medida, reabrir) {
   const p = medida.properties;
 
@@ -4461,7 +4728,7 @@ async function doImportGeoPackage(file) {
  * relieve puesto, avisando de la pérdida de precisión en vez de bloquearlos.
  * Ver `DRAWING_TOOLS_3D_OK` en store.js.
  */
-const GEOMETRY_TOOL_BUTTONS = ['t-hole', 't-measure', 't-cut', 't-reshape', 't-profile'];
+const GEOMETRY_TOOL_BUTTONS = ['t-hole', 't-measure', 't-cpoint', 't-cut', 't-reshape', 't-profile'];
 
 /**
  * Qué herramientas hay detrás de cada botón de grupo (Create, Topology), para
@@ -4473,7 +4740,7 @@ const TOOL_GROUPS = {
   create: {
     toggle: 'tg-create',
     flyout: 'flyout-create',
-    tools: new Set(['line', 'polygon', 'measure']),
+    tools: new Set(['line', 'polygon', 'measure', 'control-point']),
   },
   topology: {
     toggle: 'tg-topology',
@@ -4513,6 +4780,7 @@ function renderToolbar() {
     ['t-reshape', 'reshape'],
     ['t-profile', 'profile'],
     ['t-measure', 'measure'],
+    ['t-cpoint', 'control-point'],
   ]) {
     $(id).classList.toggle('active', s.tool === tool);
   }
@@ -4666,6 +4934,9 @@ function renderStatus() {
           ? `${n} nodes along the trace · close it to fit the plane`
           : `Draw along the trace of the ${que} · every node is sampled on the DEM`;
     }
+  } else if (s.tool === 'control-point') {
+    $('status-text').textContent =
+      'Tap where you are standing — the point takes what the panel says, and the date and time are stamped for you';
   } else if (s.tool === 'select') {
     // El arrastre es el lazo, no el desplazamiento: decirlo al revés mandaba a
     // la gente a buscar una herramienta de selección múltiple que ya tenía.
@@ -4889,6 +5160,7 @@ export function initUI() {
   $('t-reshape').addEventListener('click', () => store.setTool('reshape'));
   $('t-profile').addEventListener('click', () => store.setTool('profile'));
   $('t-measure').addEventListener('click', () => store.setTool('measure'));
+  $('t-cpoint').addEventListener('click', () => pickTool('control-point'));
   $('t-3d').addEventListener('click', () => {
     const encender = !store.getState().terrain3d;
     store.setTerrain3d(encender);
@@ -5001,6 +5273,7 @@ export function initUI() {
   $('btn-export-geojson').addEventListener('click', () =>
     downloadGeoJSON(store.getState().features),
   );
+  $('btn-export-cpoints').addEventListener('click', doExportControlPointsCSV);
   $('btn-import').addEventListener('click', () => {
     renderImportMenu();
     togglePanel('import-menu');
@@ -5213,6 +5486,11 @@ export function initUI() {
       store.changed('measureType') ||
       store.changed('measureOverturned') ||
       store.changed('measureUnit') ||
+      // Los campos de TEXTO del punto de control quedan fuera a propósito:
+      // repintar la paleta en cada tecla le quitaría el foco al campo.
+      store.changed('controlPointUnit') ||
+      store.changed('controlPointPurpose') ||
+      store.changed('controlPointStyle') ||
       store.changed('units')
     ) {
       buildPalette();
