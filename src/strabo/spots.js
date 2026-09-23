@@ -375,14 +375,33 @@ export function featureQuality(props) {
  * para que agrupe bien al filtrar por tipo: todas las fallas quedan juntas y el
  * sentido de movimiento las separa dentro del grupo.
  */
+/** Claves de `trace` que a veces llegan sueltas en el spot, sin el objeto. */
+const TRACE_KEYS = [
+  'trace_type', 'geologic_structure_type', 'shear_sense', 'fault_type', 'fault_or_sz_type',
+  'fold_type', 'contact_type', 'depositional_contact_type', 'intrusive_contact_type',
+  'metamorphic_contact_type', 'other_contact_type', 'other_structure_type', 'other_other_feature',
+];
+
 export function featureTypeLabel(props) {
   const p = props || {};
-  const t = p.trace;
+  /*
+   * La traza viene como objeto `trace` en lo que devuelve la API, pero hay
+   * exportaciones —y datasets viejos— que la traen aplanada en el propio
+   * spot. Sin leer también esa forma, una falla llegaba sin tipo y al
+   * adoptarla caía en el tipo de reserva, que es un contacto.
+   */
+  let t = p.trace;
+  if (!(t && typeof t === 'object') && TRACE_KEYS.some((k) => p[k])) {
+    t = Object.fromEntries(TRACE_KEYS.filter((k) => p[k]).map((k) => [k, p[k]]));
+  }
   if (t && typeof t === 'object') {
     const partes = [
       label(t.trace_type),
       label(t.geologic_structure_type),
-      label(t.shear_sense),
+      // El sentido de movimiento. Una falla con el sentido en «unknown» o sin
+      // declarar sigue diciendo «fault» y nada más, que es justo lo que la
+      // lleva a falla indiferenciada al adoptarla.
+      label(t.shear_sense || t.fault_type || t.fault_or_sz_type),
       label(t.fold_type),
       label(t.contact_type),
       label(t.depositional_contact_type || t.intrusive_contact_type || t.metamorphic_contact_type),

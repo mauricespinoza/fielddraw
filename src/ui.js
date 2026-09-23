@@ -1154,6 +1154,110 @@ function renderLayers() {
   });
 }
 
+/* ---------- elegir uno de varios seleccionados ---------- */
+
+/**
+ * Qué selección se cerró a mano con la ✕: la lista no vuelve a salir para
+ * esa MISMA selección, pero sí en cuanto cambia.
+ */
+let pickerDismissedFor = null;
+
+const selectionKey = (ids) => [...ids].sort().join('|');
+
+/** Nombre y detalle de un elemento, como se lee en la lista. */
+function describeFeature(f, s) {
+  const p = f.properties || {};
+  const g = f.geometry || {};
+  if (p.geomKind === 'measurement') {
+    const tipo = STRUCTURE_TYPE_BY_ID.get(p.type);
+    const sentido = p.type === 'fault-plane' ? FAULT_SENSE_BY_ID.get(p.faultSense) : null;
+    return {
+      main: `${tipo ? tipo.label : 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(p.strike, p.dip)}`,
+      sub: p.unit || 'Measurement',
+      color: tipo ? tipo.color : '#888888',
+    };
+  }
+  if (isControlPoint(f)) {
+    const unidad = s.units.find((u) => u.id === p.unitId);
+    return {
+      main: p.name || p.sampleId || 'Control point',
+      sub: [p.sampleId && p.name ? p.sampleId : '', p.unit || ''].filter(Boolean).join(' · ') || 'Control point',
+      color: unidad ? unidad.color : '#9e9e9e',
+    };
+  }
+  if (g.type === 'Polygon' || g.type === 'MultiPolygon') {
+    const unidad = s.units.find((u) => u.id === p.type);
+    return {
+      main: (unidad && unidad.name) || p.unit || 'Polygon',
+      sub: ['Polygon', unidad && unidad.code ? unidad.code : ''].filter(Boolean).join(' · '),
+      color: unidad ? unidad.color : '#999999',
+    };
+  }
+  if (g.type === 'LineString') {
+    const tipo = LINE_TYPE_BY_ID.get(p.type);
+    const cert = CERTAINTY_BY_ID.get(p.certainty);
+    return {
+      main: tipo ? tipo.label : 'Line',
+      sub: [cert ? cert.label : '', p.note ? String(p.note).slice(0, 40) : ''].filter(Boolean).join(' · '),
+      color: effectiveLineColor(p.type, s.ornaments),
+    };
+  }
+  return { main: 'Feature', sub: g.type || '', color: '#888888' };
+}
+
+/**
+ * Lista de lo seleccionado, cuando es más de uno.
+ *
+ * Un rectángulo de selección o un toque sobre elementos apilados —un contacto
+ * encima del borde de un polígono, dos medidas en el mismo afloramiento—
+ * dejan varios elegidos a la vez, y en el mapa no hay forma de decir cuál se
+ * quería. Aquí se ven todos con nombre, y un toque deja solo ese.
+ */
+function renderSelectionPicker() {
+  const panel = $('selection-picker');
+  const s = store.getState();
+  const sel = store.selectedFeatures();
+  if (sel.length < 2 || pickerDismissedFor === selectionKey(s.selection)) {
+    panel.classList.add('hidden');
+    return;
+  }
+  $('selection-picker-title').textContent = `${sel.length} features selected`;
+  const list = $('selection-picker-list');
+  list.replaceChildren();
+  for (const f of sel) {
+    const d = describeFeature(f, s);
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = d.color;
+    const txt = document.createElement('span');
+    txt.className = 'sp-text';
+    const main = document.createElement('span');
+    main.className = 'sp-main';
+    main.textContent = d.main;
+    txt.appendChild(main);
+    if (d.sub) {
+      const sub = document.createElement('span');
+      sub.className = 'sp-sub';
+      sub.textContent = d.sub;
+      txt.appendChild(sub);
+    }
+    b.append(sw, txt);
+    b.addEventListener('click', () => {
+      const propsAbierto = !$('props-menu').classList.contains('hidden');
+      store.setSelection([f.properties.id]);
+      // Si el menú de propiedades estaba abierto sobre la selección entera,
+      // pasa a describir el elegido en el mismo sitio.
+      if (propsAbierto) openPropsMenu(lastPropsScreen);
+    });
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+  panel.classList.remove('hidden');
+}
+
 /* ---------- menú de propiedades de la selección ---------- */
 
 /** Nombre de la unidad que la paleta tiene activa, para los tooltips. */
@@ -1173,7 +1277,11 @@ function section(parent, title) {
   return wrap;
 }
 
+/** Dónde se abrió el menú de propiedades por última vez, para reabrirlo ahí. */
+let lastPropsScreen = null;
+
 export function openPropsMenu(screen) {
+  lastPropsScreen = screen;
   const s = store.getState();
   const sel = store.selectedFeatures();
   if (sel.length === 0) return;
@@ -1703,10 +1811,16 @@ function wireToolbarWidth() {
      * Se mide en limpio —sin la clase puesta— porque lo que hay que saber es
      * si CABRÍA, no si cabe estando escondida.
      */
-    marca.classList.remove('crowded');
-    const m = marca.getBoundingClientRect();
-    if (m.width > 0 && m.right > arriba.getBoundingClientRect().left - 8) {
-      marca.classList.add('crowded');
+    marca.classList.remove('crowded', 'compact');
+    const limite = () => arriba.getBoundingClientRect().left - 8;
+    const noCabe = () => {
+      const m = marca.getBoundingClientRect();
+      return m.width > 0 && m.right > limite();
+    };
+    // Primero cede el nombre; si ni el logo solo cabe, se retira entera.
+    if (noCabe()) {
+      marca.classList.add('compact');
+      if (noCabe()) marca.classList.add('crowded');
     }
   };
   medir();
@@ -3380,6 +3494,37 @@ function syncStructureControls() {
 let stopDeviceCapture = null;
 /** La brújula del panel Device, construida una sola vez sobre su `<svg>`. */
 let deviceCompass = null;
+/**
+ * Lectura CONGELADA con un toque sobre la brújula, o `null` mientras se lee
+ * en vivo.
+ *
+ * Con el teléfono apoyado contra la roca, la mano que lo sostiene no alcanza
+ * cómodamente el botón de abajo, y apartarlo para apretarlo mueve justo lo que
+ * se estaba midiendo. Tocar la brújula —que ocupa medio panel, se acierta con
+ * cualquier dedo— detiene la medida en ese instante: la lectura queda fija, se
+ * puede separar el teléfono y guardarla con calma. Otro toque la reanuda.
+ */
+let deviceHeld = null;
+
+/** Lectura vigente del panel Device: la congelada si la hay, si no la en vivo. */
+const deviceReadingNow = () => deviceHeld || store.getState().deviceReading;
+
+/** Toque sobre la brújula: detiene la medida o la reanuda. */
+function toggleDeviceHold() {
+  if (deviceHeld) {
+    deviceHeld = null;
+  } else {
+    const r = store.getState().deviceReading;
+    // Sin al menos dos muestras no hay medida que detener: sería un número
+    // sin dispersión, que no dice si el teléfono estaba quieto.
+    if (!r || !(r.n >= 2) || !Number.isFinite(r.strike) || !Number.isFinite(r.dip)) {
+      showBanner('Nothing to stop yet — hold the phone against the surface until a reading shows.', 'warn');
+      return;
+    }
+    deviceHeld = { ...r };
+  }
+  renderDevicePanel();
+}
 
 /**
  * El método Device ancla la medida en la posición del GPS, así que sin GPS
@@ -3413,6 +3558,7 @@ function syncDeviceCapture() {
       stopDeviceCapture = null;
       store.setDeviceReading(null);
     }
+    deviceHeld = null;
     $('device-panel').classList.add('hidden');
     return;
   }
@@ -3437,7 +3583,11 @@ function syncDeviceCapture() {
     const st = store.getState();
     if (st.tool !== 'measure' || st.measureMethod !== 'device') return;
     stopDeviceCapture = startOrientationCapture({
-      onReading: (r) => store.setDeviceReading(r),
+      // Con la medida detenida los sensores siguen escuchando —reanudar es
+      // instantáneo—, pero la lectura mostrada no se toca.
+      onReading: (r) => {
+        if (!deviceHeld) store.setDeviceReading(r);
+      },
       onError: (msg) => {
         showBanner(msg, 'warn');
         store.setMeasureMethod('manual');
@@ -3470,8 +3620,9 @@ function syncDeviceCapture() {
 /** Refresca la aguja, el texto y el botón Done del panel Device. */
 function renderDevicePanel() {
   if ($('device-panel').classList.contains('hidden')) return;
-  const r = store.getState().deviceReading;
+  const r = deviceReadingNow();
   if (deviceCompass) deviceCompass.update(r);
+  $('device-compass').classList.toggle('held', !!deviceHeld);
 
   const fix = mapBridge && mapBridge.getGpsFix();
   const note = $('device-gps-note');
@@ -3483,9 +3634,13 @@ function renderDevicePanel() {
   // El mismo consejo que da la pestaña Compass, palabra por palabra: los dos
   // sitios leen los mismos sensores y no pueden discrepar sobre si la lectura
   // vale (ver `compassHint`).
-  $('device-read-note').textContent = compassHint(r);
+  $('device-read-note').textContent = deviceHeld
+    ? `Stopped — ${compassHint(r)}. Tap the compass to resume.`
+    : `${compassHint(r)} · Tap the compass to stop.`;
 
-  const listo = !!(r && r.ready) && !!fix;
+  // Detenida, vale lo que se congeló aunque no hubiera llegado a «firme»: es
+  // una decisión de quien mide, y la dispersión viaja con el dato.
+  const listo = (deviceHeld ? true : !!(r && r.ready)) && !!fix;
   const boton = $('btn-device-done');
   boton.disabled = !listo;
   boton.textContent = listo ? 'Add measurement' : 'Hold steady…';
@@ -3498,13 +3653,13 @@ function renderDevicePanel() {
  * contra la roca y no mirando dónde cae el dedo.
  */
 function commitDeviceReading() {
-  const r = store.getState().deviceReading;
+  const r = deviceReadingNow();
   const fix = mapBridge && mapBridge.getGpsFix();
   if (!fix) {
     openGpsRequiredDialog();
     return;
   }
-  if (!r || !r.ready) {
+  if (!r || (!r.ready && !deviceHeld)) {
     showBanner('Still reading — hold the phone still against the surface a moment longer.', 'warn');
     return;
   }
@@ -3525,6 +3680,10 @@ function commitDeviceReading() {
       gpsAccuracy: Math.round(fix.accuracy),
     },
   });
+  // La siguiente medida arranca en vivo: dejarla detenida guardaría dos veces
+  // el mismo número sobre dos afloramientos distintos.
+  deviceHeld = null;
+  renderDevicePanel();
 }
 
 /**
@@ -5438,6 +5597,17 @@ export function initUI() {
   $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
   $('btn-close-device').addEventListener('click', () => store.setMeasureMethod('manual'));
   $('btn-device-done').addEventListener('click', commitDeviceReading);
+  $('btn-close-selection-picker').addEventListener('click', () => {
+    pickerDismissedFor = selectionKey(store.getState().selection);
+    renderSelectionPicker();
+  });
+  $('device-compass').addEventListener('click', toggleDeviceHold);
+  $('device-compass').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleDeviceHold();
+    }
+  });
   $('btn-close-gps-required').addEventListener('click', closeOverlays);
   $('btn-gps-required-enable').addEventListener('click', () => {
     if (mapBridge) mapBridge.locateMe();
@@ -5760,6 +5930,9 @@ export function initUI() {
     }
     // Si la selección desaparece, el menú de propiedades ya no aplica a nada.
     if (store.changed('selection') && store.getState().selection.length === 0) closePropsMenu();
+    if (store.changed('selection') || store.changed('features') || store.changed('units')) {
+      renderSelectionPicker();
+    }
     if (store.changed('deviceReading')) renderDevicePanel();
     if (
       store.changed('tool') ||

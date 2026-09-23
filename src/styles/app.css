@@ -688,6 +688,47 @@ body,
 }
 
 /*
+ * El nombre junto al logo. Sobrio: sin sombras ni degradados, una sola línea
+ * y el mismo alto de la píldora. Lo interesante está en el contraste de peso
+ * —«Field» fino, «Draw» firme y en el turquesa de la tablet del icono— y en
+ * el espaciado un poco abierto, que lo hace leerse como marca y no como un
+ * rótulo más de la interfaz.
+ */
+.brand:has(.brand-name) {
+  gap: 10px;
+  padding-right: 16px;
+}
+
+.brand-name {
+  display: inline-flex;
+  align-items: baseline;
+  font-size: 19px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.brand-name-a {
+  font-weight: 300;
+  color: var(--text);
+}
+
+.brand-name-b {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Sin sitio para el nombre, queda solo el logo, como antes. */
+.brand.compact .brand-name {
+  display: none;
+}
+
+.brand.compact {
+  gap: 0;
+  padding-right: 7px;
+}
+
+/*
  * Debajo de esto la barra de herramientas ya ocupa buena parte del ancho y la
  * fila de botones de la derecha empieza a envolver: la marca no cabría sin
  * pisar una de las dos, así que se retira y deja el sitio.
@@ -837,6 +878,21 @@ body,
   margin: 0 auto;
   border-radius: 12px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* La del panel Device se toca para detener la medida: que se note. */
+#device-compass {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: 3px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.15s;
+}
+
+/* Detenida: marco de acento alrededor, para que no se confunda con una
+   lectura en vivo que casualmente se quedó quieta. */
+#device-compass.held {
+  outline-color: var(--accent);
 }
 
 .pill.wide {
@@ -1446,6 +1502,108 @@ input[type='radio'] {
   padding: 5px 10px;
   border-radius: 8px;
   font-size: 12px;
+}
+
+/* ---------- elegir uno de varios seleccionados ---------- */
+
+/*
+ * Cuelga arriba a la derecha, bajo la fila de botones, como los desplegables,
+ * pero un escalón por debajo de ellos: si se abre un panel, el panel manda.
+ * A la izquierda caería encima de la paleta, que en Elegir está abierta.
+ */
+.selection-picker {
+  position: absolute;
+  top: calc(var(--safe-t) + 66px);
+  right: calc(var(--safe-r) + 12px);
+  z-index: 21;
+  width: min(300px, 84vw);
+  max-height: 55vh;
+  max-height: 55dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.selection-picker header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.selection-picker h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.selection-picker .footnote {
+  margin: 0;
+}
+
+.selection-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.selection-picker-list button {
+  width: 100%;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.selection-picker-list button:hover,
+.selection-picker-list button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.selection-picker-list .swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.selection-picker-list .sp-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.selection-picker-list .sp-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-picker-list .sp-sub {
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- ajustes ---------- */
