@@ -408,6 +408,10 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
         kind: 'point',
         geomKind: CONTROL_POINT_KIND,
         source: STRABO_SOURCE,
+        // El nombre del spot en StraboSpot («DCR02»), que es como se llama el
+        // punto y no la muestra: sin él, uno sin código de muestra no tenía
+        // cómo identificarse de vuelta.
+        name: texto(p.Name),
         sampleId: texto(p['Sample Code']),
         sampleDescription: texto(p['Sample Description']),
         // El propósito viaja con el vocabulario de StraboSpot y no se traduce:

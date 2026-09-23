@@ -471,12 +471,36 @@ body,
   gap: 6px;
 }
 
+/*
+ * El punto de control lleva bastantes más campos que cualquier otra
+ * herramienta —Name, Sample ID, Sample Description, Unit, Purpose, una nota
+ * larga y la colocación por GPS— y los 106 px de siempre los apretaría todos
+ * en columnas ilegibles. Es la única paleta que necesita esto, así que es un
+ * modificador y no el ancho de fábrica.
+ */
+.palette.palette-wide {
+  width: min(300px, 92vw);
+}
+
 .palette-scroll {
+  /* Crece para llenar el hueco entre el borde de arriba y el botón Done, y
+     puede encogerse por debajo de la altura de su contenido: sin esto último
+     (el `min-height: 0` de un hijo flex es `auto` por omisión) el contenido
+     largo del punto de control empujaría a Done fuera del `overflow: hidden`
+     del contenedor en vez de desplazarse por dentro. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
   scrollbar-width: none;
+}
+
+/* Done de la paleta: fuera de `.palette-scroll`, así que nunca se desplaza
+   fuera de la vista por mucho que crezca el formulario por encima. */
+.palette-done {
+  flex: 0 0 auto;
 }
 
 .palette-scroll::-webkit-scrollbar {
@@ -2061,6 +2085,35 @@ input[type='radio'] {
   font-size: 13px;
   text-transform: none;
   letter-spacing: 0;
+}
+
+/* Notas de campo: la única entrada de la paleta que es prosa y no un código,
+   así que es la única que necesita más de una línea. */
+.palette-textarea {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 100%;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.palette-textarea textarea {
+  width: 100%;
+  min-height: 110px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: 0;
+  resize: vertical;
 }
 
 /* Selector de unidad del panel de medir: una fila de chips por unidad no cabe

@@ -1161,6 +1161,32 @@
           <input type="checkbox" id="structure-labels" checked />
           Write the dip next to each symbol
         </label>
+
+        <hr class="sep" />
+
+        <h2 class="panel-subhead">Control points</h2>
+        <p class="hint">
+          Colour follows the point's unit, same catalogue as the map units. Pick which field the
+          label on the map shows — Sample ID, Name, Unit, Purpose, Notes, or none at all.
+        </p>
+        <label class="field">
+          <span>Symbol size</span>
+          <span class="tol-row">
+            <input type="range" id="cpoint-size" min="0.5" max="2.5" step="0.1" value="1" />
+            <span class="num" id="cpoint-size-num">1.0×</span>
+          </span>
+        </label>
+        <label class="field">
+          <span>Hide below zoom</span>
+          <span class="tol-row">
+            <input type="range" id="cpoint-minzoom" min="0" max="18" step="1" value="10" />
+            <span class="num" id="cpoint-minzoom-num">10</span>
+          </span>
+        </label>
+        <label class="field">
+          <span>Label</span>
+          <select id="cpoint-label" class="palette-select"></select>
+        </label>
       </aside>
 
       <aside class="layer-panel" id="layer-panel">

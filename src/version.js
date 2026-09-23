@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.33.0';
+export const APP_VERSION = '0.34.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,24 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.34.0',
+    highlights: [
+      'Control points get a Name field — the station or outcrop, for a point with no sample to name it by.',
+      'The Create ▸ Control panel is bigger and laid out top to bottom, with a proper multi-line box for Notes.',
+      'Place a control point at your current GPS position, not only by tapping the map.',
+      'A visible Done button closes the point, both while placing one and while editing an existing one.',
+      'Control point label and size settings moved to the Symbology panel, next to the dip symbols.',
+    ],
+    items: [
+      'Puntos de control: nuevo campo Name, el nombre del PUNTO —la estación, el afloramiento— y no el de la muestra. Sube a StraboSpot como el `name` del spot (antes se usaba el código de muestra, o un número si no había ninguno), y es la opción de rótulo que hacía falta para un punto sin muestra: antes no tenía cómo llamarse.',
+      'El panel de Create ▸ Control se agranda y pasa de los 106 px de siempre a una columna propia, más ancha, diagramada de arriba hacia abajo: Name, Sample ID, Sample Description, Unit, Purpose, Notes y Placement, cada uno en su fila.',
+      'Notes deja de ser una sola línea y pasa a un cuadro de varias, con más espacio: la litología es prosa —«granodiorita de bt, grano medio, equigranular»— y recortarla a una línea obligaba a escribir la mitad y confiar en la memoria para el resto.',
+      'Se puede colocar un punto de control en la posición actual del GPS, además de tocando el mapa: el botón «Place at GPS position» usa la última posición de Locate, igual que ya hacía el método Device para rumbo y manteo.',
+      'Un botón Done, ancho y siempre a la vista, cierra la sesión de anotar un punto nuevo (vuelve a Elegir) y cierra la edición de uno ya puesto (el mismo menú de propiedades de siempre, con Done arriba del todo).',
+      'El tamaño del símbolo, el zoom mínimo y qué campo lo rotula en el mapa —antes en la propia paleta de crear— pasan al panel de Symbology, junto a los mismos ajustes de las medidas de rumbo y manteo: es una preferencia de PANTALLA y no un dato del punto, y no tenía por qué preguntarse en cada uno.',
+    ],
+  },
   {
     version: '0.33.0',
     highlights: [

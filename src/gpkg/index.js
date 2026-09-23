@@ -152,6 +152,10 @@ CREATE TABLE geol_polygons (
 CREATE TABLE geol_control_points (
   fid INTEGER PRIMARY KEY AUTOINCREMENT,
   geom POINT,
+  -- El nombre del punto -la estación, el afloramiento- y no el de la muestra:
+  -- un punto sin muestra sigue necesitando cómo llamarse. Es el name con el
+  -- que StraboSpot lista sus spots.
+  name TEXT,
   -- El código de la muestra, que en StraboSpot es su "Sample Specific ID/Name".
   sample_id TEXT,
   -- Fecha y hora de toma, en la hora local del equipo que la tomó. La columna

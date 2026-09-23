@@ -88,11 +88,13 @@ function spotName(feature, counters) {
   // vistazo en la lista de spots, `Bedding 7` no.
   if (esMedida(feature)) return `${typeLabel(feature)} ${formatStrikeDip(p.strike, p.dip)}`;
   /*
-   * Un punto de control se nombra por su código de muestra: es como se le
-   * llama en la libreta, en la bolsa y en el laboratorio, y es lo que hay que
-   * poder buscar en la lista de spots. Sin código, se numera por lo que es.
+   * Un punto de control se nombra por su propio nombre —la estación, el
+   * afloramiento— si lo tiene, y si no por el código de muestra: es como se
+   * le llama en la libreta, en la bolsa y en el laboratorio, y es lo que hay
+   * que poder buscar en la lista de spots. Sin ninguno de los dos, se numera
+   * por lo que es.
    */
-  if (esPuntoControl(feature) && p.sampleId) return p.sampleId;
+  if (esPuntoControl(feature) && (p.name || p.sampleId)) return p.name || p.sampleId;
   if (p.unit && feature.geometry.type === 'Polygon') {
     const n = (counters.get(p.unit) || 0) + 1;
     counters.set(p.unit, n);

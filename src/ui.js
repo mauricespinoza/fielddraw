@@ -250,6 +250,34 @@ function textField(label, value, { placeholder = '', title = '', event = 'input'
 }
 
 /**
+ * Campo de texto LARGO: las notas de campo, que son prosa y no un código.
+ *
+ * Va en `<textarea>` y no en el mismo `<input>` que Sample ID por lo mismo que
+ * las separa en dos grupos distintos: un código de muestra son cinco
+ * caracteres que caben en una línea, y describir la roca —«granodiorita de
+ * bt, grano medio, equigranular, cxs de qz abundantes»— no. Recortarlo a la
+ * altura de una línea es lo que obligaba a escribir la mitad de la nota y
+ * confiar en la memoria para el resto.
+ */
+function textareaField(label, value, { placeholder = '', title = '', event = 'input', rows = 6 } = {}, onInput) {
+  const wrap = document.createElement('label');
+  wrap.className = 'palette-textarea';
+  if (title) wrap.title = title;
+  const l = document.createElement('span');
+  l.textContent = label;
+  const area = document.createElement('textarea');
+  area.rows = rows;
+  area.value = value || '';
+  area.placeholder = placeholder;
+  // A diferencia de un código de muestra, esto sí es prosa: el corrector
+  // ortográfico ayuda en vez de estorbar.
+  area.spellcheck = true;
+  area.addEventListener(event, () => onInput(area.value));
+  wrap.append(l, area);
+  return wrap;
+}
+
+/**
  * Desplegable de una lista cerrada.
  *
  * Un valor que no esté en la lista se añade como opción propia en vez de
@@ -360,10 +388,36 @@ const VERTEX_MODES = [
   { id: 'delete', label: 'Delete', glyph: '✕', help: 'Tap a vertex to remove it' },
 ];
 
+/**
+ * Coloca un punto de control en la posición actual del GPS, sin tocar el mapa.
+ *
+ * Es la alternativa al toque para cuando el punto de interés es, literalmente,
+ * «donde estoy parado»: una muestra se recoge donde se tiene el pie, y ahí
+ * acertar el mismo píxel en la pantalla es peor que fiarse del receptor —el
+ * mismo motivo por el que el método Device ancla la medida en el GPS y no en
+ * el dedo (ver `commitDeviceReading`, más abajo).
+ */
+function placeControlPointAtGps() {
+  const fix = mapBridge && mapBridge.getGpsFix();
+  if (!fix) {
+    showBanner(
+      'No GPS fix yet — press Locate and wait for a position before placing here.',
+      'warn',
+    );
+    return;
+  }
+  store.createControlPoint({ lngLat: fix.lngLat });
+}
+
 function buildPalette() {
   const el = $('palette');
   const s = store.getState();
   el.replaceChildren();
+  // El punto de control lleva bastantes más campos que el resto de las
+  // paletas —incluida una nota larga— y los 106 px de siempre los apretaría
+  // sin remedio; con esta única marca, ningún otro `return` de la función se
+  // olvida de quitarla al salir de la herramienta.
+  el.classList.toggle('palette-wide', s.tool === 'control-point');
 
   // La herramienta de nodos no elige tipo, pero sí modo de edición.
   if (s.tool === 'vertices') {
@@ -489,6 +543,20 @@ function buildPalette() {
     const scroll = document.createElement('div');
     scroll.className = 'palette-scroll';
 
+    const punto = paletteGroup(scroll, 'Point');
+    punto.appendChild(
+      textField(
+        'Name',
+        s.controlPointName,
+        {
+          placeholder: 'e.g. DCR02',
+          title:
+            'The station or outcrop — not the sample. Goes to StraboSpot as the spot’s own name, which is what it needs when there is no sample to name it by. Cleared after each point',
+        },
+        (v) => store.setControlPointField({ name: v }),
+      ),
+    );
+
     const muestra = paletteGroup(scroll, 'Sample');
     muestra.appendChild(
       textField(
@@ -503,7 +571,7 @@ function buildPalette() {
     );
     muestra.appendChild(
       textField(
-        'Description',
+        'Sample Description',
         s.controlPointSampleDescription,
         { placeholder: 'e.g. CT · AFT AHe', title: 'Goes to StraboSpot as the sample description' },
         (v) => store.setControlPointField({ sampleDescription: v }),
@@ -528,7 +596,7 @@ function buildPalette() {
 
     const notas = paletteGroup(scroll, 'Notes');
     notas.appendChild(
-      textField(
+      textareaField(
         'Notes',
         s.controlPointNote,
         {
@@ -539,17 +607,52 @@ function buildPalette() {
       ),
     );
 
-    const rotulo = paletteGroup(scroll, 'Label on map');
-    rotulo.appendChild(
-      selectField(
-        'Show',
-        CONTROL_POINT_LABEL_FIELDS,
-        s.controlPointStyle.labelField,
-        (v) => store.setControlPointStyle({ labelField: v }),
-      ),
-    );
+    /*
+     * DÓNDE CAE EL PUNTO: tocando el mapa, como siempre, o en la posición del
+     * GPS. Una muestra se recoge donde se tiene el pie, y ahí acertar el
+     * mismo píxel en la pantalla es peor que fiarse del receptor — el mismo
+     * motivo por el que el método Device ancla la medida en el GPS y no en el
+     * dedo.
+     */
+    /*
+     * Grupo propio y no `paletteGroup()`: ese devuelve una FILA que envuelve
+     * (`flex-wrap`), y aquí interesa lo contrario —la ayuda y el botón, cada
+     * uno en su propia línea y a lo ancho—, que es lo que da por omisión un
+     * `.palette-group` en columna.
+     */
+    const colocacion = document.createElement('div');
+    colocacion.className = 'palette-group';
+    const colocacionLabel = document.createElement('span');
+    colocacionLabel.className = 'palette-label';
+    colocacionLabel.textContent = 'Placement';
+    colocacion.appendChild(colocacionLabel);
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Tap the map to place it, or use your current GPS position.';
+    colocacion.appendChild(hint);
+    const gpsBtn = document.createElement('button');
+    gpsBtn.type = 'button';
+    gpsBtn.className = 'pill wide';
+    gpsBtn.textContent = 'Place at GPS position';
+    gpsBtn.title = 'Places the point at your current GPS fix instead of where you tap';
+    gpsBtn.addEventListener('click', placeControlPointAtGps);
+    colocacion.appendChild(gpsBtn);
+    scroll.appendChild(colocacion);
 
     el.appendChild(scroll);
+
+    /*
+     * DONE, SIEMPRE A LA VISTA. Va fuera de `.palette-scroll` y no dentro: un
+     * botón que cierra la sesión de anotar tiene que verse sin desplazar,
+     * o nadie sabría que existe hasta tropezar con él al final de la lista.
+     */
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'pill accent wide palette-done';
+    done.textContent = 'Done';
+    done.title = 'Finish placing control points and switch to Select';
+    done.addEventListener('click', () => store.setTool('select'));
+    el.appendChild(done);
     return;
   }
 
@@ -1090,8 +1193,21 @@ export function openPropsMenu(screen) {
   const puntosControl = sel.filter(isControlPoint);
   if (puntosControl.length === 1 && sel.length === 1) {
     const p = puntosControl[0].properties;
-    $('props-title').textContent = p.sampleId ? `Control point ${p.sampleId}` : 'Control point';
+    const titulo = p.name || p.sampleId;
+    $('props-title').textContent = titulo ? `Control point ${titulo}` : 'Control point';
     controlPointSection(body, puntosControl[0], () => openPropsMenu(screen));
+
+    /*
+     * DONE: la forma normal de terminar de anotar el punto. Cada campo ya se
+     * guarda solo al escribirlo (`change`/`input`, según el campo), así que
+     * Done no tiene nada que confirmar — solo cierra, y lo hace de un botón
+     * ancho y a la vista, no del aspa pequeña de la cabecera.
+     */
+    const done = document.createElement('button');
+    done.className = 'pill accent wide';
+    done.textContent = 'Done';
+    done.addEventListener('click', () => closePropsMenu());
+    body.appendChild(done);
 
     const del = document.createElement('button');
     del.className = 'pill danger wide';
@@ -3380,6 +3496,39 @@ function wireStructureControls() {
   );
 }
 
+/**
+ * Qué campo rotula un punto de control es un ajuste de PANTALLA —cómo se ve
+ * el mapa mientras se trabaja— y no un dato del punto, así que vive aquí, con
+ * el resto de la simbología, y no en la paleta donde se anota cada uno.
+ */
+function wireControlPointStyleControls() {
+  $('cpoint-size').addEventListener('input', (e) =>
+    store.setControlPointStyle({ size: Number(e.target.value) }),
+  );
+  $('cpoint-minzoom').addEventListener('input', (e) =>
+    store.setControlPointStyle({ minzoom: Number(e.target.value) }),
+  );
+  const label = $('cpoint-label');
+  for (const f of CONTROL_POINT_LABEL_FIELDS) {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = f.label;
+    label.appendChild(opt);
+  }
+  label.addEventListener('change', () => store.setControlPointStyle({ labelField: label.value }));
+}
+
+function syncControlPointStyleControls() {
+  const st = store.getState().controlPointStyle;
+  const size = $('cpoint-size');
+  if (document.activeElement !== size) size.value = String(st.size);
+  $('cpoint-size-num').textContent = `${st.size.toFixed(1)}×`;
+  const mz = $('cpoint-minzoom');
+  if (document.activeElement !== mz) mz.value = String(st.minzoom);
+  $('cpoint-minzoom-num').textContent = String(st.minzoom);
+  $('cpoint-label').value = st.labelField;
+}
+
 let planeBusy = false;
 
 /**
@@ -4057,6 +4206,16 @@ function measureRow(parent, k, v, title) {
 function controlPointSection(body, punto, reabrir) {
   const p = punto.properties;
 
+  const identidad = section(body, 'Point');
+  identidad.appendChild(
+    textField(
+      'Name',
+      p.name,
+      { placeholder: 'e.g. DCR02', event: 'change', title: 'The station or outcrop, not the sample' },
+      (v) => store.updateControlPoint({ name: v }),
+    ),
+  );
+
   const muestra = section(body, 'Sample');
   muestra.appendChild(
     textField('Sample ID', p.sampleId, { placeholder: 'e.g. ACRC1', event: 'change' }, (v) =>
@@ -4065,7 +4224,7 @@ function controlPointSection(body, punto, reabrir) {
   );
   muestra.appendChild(
     textField(
-      'Description',
+      'Sample Description',
       p.sampleDescription,
       { placeholder: 'e.g. CT · AFT AHe', event: 'change' },
       (v) => store.updateControlPoint({ sampleDescription: v }),
@@ -4083,7 +4242,7 @@ function controlPointSection(body, punto, reabrir) {
 
   const notas = section(body, 'Notes');
   notas.appendChild(
-    textField(
+    textareaField(
       'Notes',
       p.note,
       { placeholder: 'lithology, outcrop, what you saw', event: 'change' },
@@ -5421,6 +5580,8 @@ export function initUI() {
   wireProfilePointer();
   wireStructureControls();
   syncStructureControls();
+  wireControlPointStyleControls();
+  syncControlPointStyleControls();
   wireTraceMenus();
   wireDemNotice();
 
@@ -5490,7 +5651,6 @@ export function initUI() {
       // repintar la paleta en cada tecla le quitaría el foco al campo.
       store.changed('controlPointUnit') ||
       store.changed('controlPointPurpose') ||
-      store.changed('controlPointStyle') ||
       store.changed('units')
     ) {
       buildPalette();
@@ -5583,6 +5743,7 @@ export function initUI() {
       if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
     }
     if (store.changed('structureStyle')) syncStructureControls();
+    if (store.changed('controlPointStyle')) syncControlPointStyleControls();
     if (store.changed('profile')) renderProfilePanel();
     if (store.changed('terrain3d')) {
       renderToolbar();

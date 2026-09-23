@@ -145,7 +145,7 @@ function sanitizeFeatures(list, warnings) {
        * interfaz espera cadenas.
        */
       if (props.geomKind === CONTROL_POINT_KIND) {
-        for (const k of ['sampleId', 'sampleDescription', 'purpose', 'note']) {
+        for (const k of ['name', 'sampleId', 'sampleDescription', 'purpose', 'note']) {
           props[k] = props[k] === undefined || props[k] === null ? '' : String(props[k]);
         }
         props.certainty = 'observed';
