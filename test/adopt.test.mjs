@@ -192,5 +192,28 @@ console.log('== casos límite ==');
   ok('explode de algo desconocido da lista vacía', A.explode({ type: 'Rombo' }).length === 0);
 }
 
+console.log('== fault_type y fault_sense del GeoPackage ==');
+{
+  const r = A.adoptLayer(
+    capa([
+      linea({ type: 'falla', fault_type: 'Thrust', certainty: 'observed' }),
+      linea({ type: 'normal-fault', fault_type: '' }),
+      {
+        type: 'Feature',
+        properties: { type: 'fault-plane', strike: 10, dip: 60, fault_sense: 'Right-lateral' },
+        geometry: { type: 'Point', coordinates: [0, 0] },
+      },
+    ]),
+    { newId: contador() },
+  );
+  const [l1, l2, pt] = r.features;
+  ok('fault_type decide el tipo de la traza', l1.properties.type === 'thrust-fault', l1.properties.type);
+  ok('sin fault_type manda la columna type', l2.properties.type === 'normal-fault');
+  ok('fault_sense vuelve como el sentido del plano de falla', pt.properties.faultSense === 'right-lateral',
+     JSON.stringify(pt.properties));
+  ok('y ninguna de las dos columnas queda como atributo suelto',
+     !('fault_type' in l1.properties) && !('fault_sense' in pt.properties));
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

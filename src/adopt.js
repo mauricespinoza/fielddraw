@@ -24,7 +24,9 @@ import {
   LINE_TYPE_BY_ID,
   POLYGON_TYPES,
   POLYGON_TYPE_BY_ID,
+  FAULT_SENSES,
   certaintyFor,
+  faultLineTypeFrom,
 } from './symbology.js';
 
 /** Certezas admitidas. Cualquier otra cosa cae a «observado». */
@@ -199,7 +201,16 @@ const OWN_KEYS = new Set([
   'id', 'fid', 'kind', 'geomkind', 'type', 'certainty', 'unit', 'code',
   'createdat', 'created_at', 'opacity', 'flip',
   'strike', 'dip', 'dipazimuth', 'method', 'quality', 'overturned',
+  'fault_sense', 'faultsense', 'fault_type', 'faulttype',
 ]);
+
+/** Sentido de un plano de falla desde su columna `fault_sense` (id o etiqueta). */
+function faultSenseOf(props) {
+  const t = normalizeText(field(props, 'fault_sense') ?? field(props, 'faultSense'));
+  if (!t) return '';
+  const s = FAULT_SENSES.find((f) => f.id === t || normalizeText(f.label) === t);
+  return s ? s.id : '';
+}
 
 function extras(props) {
   const out = {};
@@ -263,6 +274,8 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
           stats.skipped++;
           continue;
         }
+        const tipoMedida = normalizeText(field(props, 'type')) || 'bedding';
+        const sentido = tipoMedida === 'fault-plane' ? faultSenseOf(props) : '';
         features.push({
           type: 'Feature',
           id,
@@ -270,7 +283,8 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
             ...comun,
             kind: 'point',
             geomKind: 'measurement',
-            type: normalizeText(field(props, 'type')) || 'bedding',
+            type: tipoMedida,
+            ...(sentido ? { faultSense: sentido } : {}),
             strike,
             dip,
             dipAzimuth: (strike + 90) % 360,
@@ -326,7 +340,14 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
         continue;
       }
 
-      const r = lineTypeFor(props);
+      /*
+       * Una columna `fault_type` —la que escribe el propio GeoPackage de
+       * FieldDraw— manda sobre lo que se adivine del resto: es el tipo de
+       * falla declarado, y sin ella una traza de otra herramienta con
+       * type = «falla» entraría como indiferenciada aunque dijera Thrust.
+       */
+      const declarado = faultLineTypeFrom(field(props, 'fault_type') ?? field(props, 'faultType'));
+      const r = declarado ? { type: declarado, exact: true } : lineTypeFor(props);
       if (!r.exact) stats.guessed++;
       features.push({
         type: 'Feature',

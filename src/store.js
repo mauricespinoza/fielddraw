@@ -8,6 +8,7 @@ import {
   POLYGON_TYPES,
   certaintyFor,
   defaultImportStyle,
+  isFaultLine,
   defaultOrnaments,
   defaultStructureStyle,
   sanitizeFaultSense,
@@ -1684,6 +1685,43 @@ export function updateSelectedProps(patch) {
       return { ...f, properties: props };
     }),
   });
+}
+
+/**
+ * Cambia el tipo de las FALLAS seleccionadas —de inversa a normal, de rumbo a
+ * indiferenciada…— sin redibujarlas.
+ *
+ * Solo toca líneas que ya son fallas y solo acepta un tipo de falla: pasar un
+ * contacto a falla es reinterpretar el mapa, no corregir un dato, y eso se
+ * hace con la paleta. Lo demás de la traza —certeza, flip, geometría, nota—
+ * se conserva; la certeza se revalida contra el tipo nuevo como en cualquier
+ * otro cambio.
+ *
+ * @returns {number} cuántas líneas cambiaron
+ */
+export function setSelectedFaultType(type) {
+  if (!isFaultLine(type) || state.selection.length === 0) return 0;
+  const ids = new Set(state.selection);
+  const cambian = state.features.filter(
+    (f) =>
+      ids.has(f.properties.id) &&
+      f.geometry &&
+      f.geometry.type === 'LineString' &&
+      isFaultLine(f.properties.type) &&
+      f.properties.type !== type,
+  );
+  if (cambian.length === 0) return 0;
+  const cambiar = new Set(cambian.map((f) => f.properties.id));
+  pushHistory();
+  set({
+    features: state.features.map((f) => {
+      if (!cambiar.has(f.properties.id)) return f;
+      const props = { ...f.properties, type };
+      props.certainty = certaintyFor(type, props.certainty);
+      return { ...f, properties: props };
+    }),
+  });
+  return cambian.length;
 }
 
 /**

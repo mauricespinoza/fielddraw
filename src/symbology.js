@@ -51,6 +51,36 @@ export const LINE_TYPES = [
 
 export const LINE_GROUPS = ['Contacts', 'Faults', 'Folds', 'Dykes'];
 
+/**
+ * Tipo de falla de una traza, tal como se escribe en la columna `fault_type`
+ * del GeoPackage. El tipo ya vive en el `type` de la línea —se fija al
+ * dibujarla con la paleta y se cambia desde su menú—; esto es solo su nombre
+ * legible para quien abre la tabla en QGIS.
+ */
+export const FAULT_LINE_KIND = {
+  'thrust-fault': 'Thrust',
+  'normal-fault': 'Normal',
+  'dextral-fault': 'Dextral',
+  'sinistral-fault': 'Sinistral',
+  'undefined-fault': 'Undifferentiated',
+};
+
+export const isFaultLine = (type) => Object.prototype.hasOwnProperty.call(FAULT_LINE_KIND, type);
+
+/** Tipo de línea a partir de un `fault_type` escrito (el propio o uno parecido). */
+export function faultLineTypeFrom(value) {
+  const t = String(value ?? '').trim().toLowerCase();
+  if (!t) return null;
+  for (const [id, kind] of Object.entries(FAULT_LINE_KIND)) {
+    if (kind.toLowerCase() === t || id === t) return id;
+  }
+  if (/thrust|reverse|inversa/.test(t)) return 'thrust-fault';
+  if (/normal/.test(t)) return 'normal-fault';
+  if (/dextral|right/.test(t)) return 'dextral-fault';
+  if (/sinistral|left/.test(t)) return 'sinistral-fault';
+  return null;
+}
+
 export const POLYGON_TYPES = [
   { id: 'intrusive-unit', label: 'Intrusive unit', color: '#E57373' },
   { id: 'volcanic-unit', label: 'Volcanic unit', color: '#BA68C8' },
