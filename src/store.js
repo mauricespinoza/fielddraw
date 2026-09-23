@@ -275,6 +275,7 @@ let state = {
    */
   controlPointUnit: null,
   controlPointPurpose: '',
+  controlPointName: '',
   controlPointSampleId: '',
   controlPointSampleDescription: '',
   controlPointNote: '',
@@ -1352,6 +1353,7 @@ export function setControlPointField(patch = {}) {
   if (patch.purpose !== undefined) {
     next.controlPointPurpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
   }
+  if (patch.name !== undefined) next.controlPointName = texto(patch.name);
   if (patch.sampleId !== undefined) next.controlPointSampleId = texto(patch.sampleId);
   if (patch.sampleDescription !== undefined) {
     next.controlPointSampleDescription = texto(patch.sampleDescription);
@@ -1371,6 +1373,7 @@ export function setControlPointField(patch = {}) {
 export function createControlPoint({
   lngLat,
   unitId,
+  name,
   sampleId,
   sampleDescription,
   purpose,
@@ -1394,6 +1397,9 @@ export function createControlPoint({
       id,
       kind: 'point',
       geomKind: CONTROL_POINT_KIND,
+      // El nombre del PUNTO —la estación, el afloramiento— y no el de la
+      // muestra: un punto sin muestra sigue necesitando cómo llamarse.
+      name: texto(name !== undefined ? name : state.controlPointName).trim(),
       sampleId: texto(sampleId !== undefined ? sampleId : state.controlPointSampleId).trim(),
       sampleDescription: texto(
         sampleDescription !== undefined ? sampleDescription : state.controlPointSampleDescription,
@@ -1417,6 +1423,7 @@ export function createControlPoint({
     selection: [id],
     // Lo propio de ESTE punto se va con él; la unidad y el propósito siguen
     // puestos para el siguiente (ver `controlPointSampleId` en el estado).
+    controlPointName: '',
     controlPointSampleId: '',
     controlPointSampleDescription: '',
     controlPointNote: '',
@@ -1434,6 +1441,7 @@ export function updateControlPoint(patch = {}) {
     features: state.features.map((f) => {
       if (!ids.has(f.properties.id) || f.properties.geomKind !== CONTROL_POINT_KIND) return f;
       const props = { ...f.properties };
+      if (patch.name !== undefined) props.name = texto(patch.name).trim();
       if (patch.sampleId !== undefined) props.sampleId = texto(patch.sampleId).trim();
       if (patch.sampleDescription !== undefined) {
         props.sampleDescription = texto(patch.sampleDescription).trim();

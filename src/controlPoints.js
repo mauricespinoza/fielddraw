@@ -11,11 +11,20 @@
  * Los campos son los de StraboSpot y no unos propios, porque estos puntos suben
  * allá como muestras y tienen que entrar en sus casillas sin traducción:
  *
+ * - **Name**             -> `name` del spot (cómo se llama EL PUNTO, no la
+ *   muestra: la estación, el afloramiento — lo que StraboSpot enseña en la
+ *   lista de spots)
  * - **Sample ID**        -> `sample_id_name`         (Sample Specific ID/Name)
  * - **Sample Description** -> `sample_description`
  * - **Purpose**          -> `main_sampling_purpose`  (lista controlada)
  * - **Unit**             -> tag de proyecto `geologic_unit`
  * - **Notes**            -> `notes` del spot y `sample_notes` de la muestra
+ *
+ * Name y Sample ID contestan preguntas distintas: un mismo afloramiento
+ * («DCR02») puede dar varias muestras con código propio, o ninguna. Sin Name,
+ * un punto sin muestra no tenía cómo llamarse y salía subiendo como «Control
+ * point 3» — un número que no significa nada ni en la libreta ni de vuelta en
+ * StraboSpot.
  *
  * La LITOLOGÍA no es un campo: se escribe en las notas. Un campo aparte obligaría
  * a inventar un destino en StraboSpot que su modelo de muestra no tiene, y la
@@ -65,6 +74,7 @@ export const purposeLabel = (id) => (PURPOSE_BY_ID.get(id) || {}).label || id ||
  * cada una.
  */
 export const CONTROL_POINT_LABEL_FIELDS = [
+  { id: 'name', label: 'Name', prop: 'name', column: 'name' },
   { id: 'sampleId', label: 'Sample ID', prop: 'sampleId', column: 'sample_id' },
   { id: 'unit', label: 'Unit', prop: 'unit', column: 'unit' },
   { id: 'code', label: 'Unit code', prop: 'code', column: 'code' },
@@ -143,6 +153,7 @@ export function formatCaptureDate(ms) {
  * columna SQL; se declaran juntos para que los dos formatos no se separen.
  */
 export const CONTROL_POINT_COLUMNS = [
+  { csv: 'Name', gpkg: 'name', of: (p) => p.name || '' },
   { csv: 'Sample ID', gpkg: 'sample_id', of: (p) => p.sampleId || '' },
   { csv: 'Date', gpkg: 'date', of: (p) => formatCaptureDate(p.createdAt) },
   { csv: 'Unit', gpkg: 'unit', of: (p) => p.unit || '' },

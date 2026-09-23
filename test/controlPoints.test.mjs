@@ -48,6 +48,10 @@ console.log('== modelo ==');
   ok('y el tamaño se acota', estilo.size === CP.CONTROL_POINT_SIZE_LIMITS.max, String(estilo.size));
   ok('el rótulo del mapa y la columna del GeoPackage son el mismo campo',
      CP.labelColumnFor('sampleId') === 'sample_id' && CP.labelColumnFor('none') === null);
+  ok('Name es una opción de rótulo, para el punto sin muestra que igual necesita nombre',
+     CP.LABEL_FIELD_BY_ID.has('name') && CP.labelColumnFor('name') === 'name');
+  ok('Name va primero en las columnas: es la identidad del punto, antes que la de la muestra',
+     CP.CONTROL_POINT_COLUMNS[0].csv === 'Name' && CP.CONTROL_POINT_COLUMNS[0].gpkg === 'name');
 }
 
 console.log('== CSV ==');
@@ -74,8 +78,8 @@ console.log('== CSV ==');
 
   ok('lleva BOM, o Excel en Windows rompe los acentos', csv.startsWith('﻿'));
   ok('solo exporta puntos de control', lineas.length === 2, `-> ${lineas.length}`);
-  ok('el encabezado empieza por el código de muestra y la fecha',
-     lineas[0].startsWith('Sample ID,Date,Unit,Code,Purpose'), lineas[0]);
+  ok('el encabezado empieza por el nombre del punto y el código de muestra',
+     lineas[0].startsWith('Name,Sample ID,Date,Unit,Code,Purpose'), lineas[0]);
   ok('y termina en las coordenadas, que un CSV no puede guardar de otro modo',
      lineas[0].endsWith('Longitude,Latitude'), lineas[0]);
   ok('la fecha de toma sale formateada, sin pedírsela a nadie',
@@ -93,13 +97,15 @@ console.log('== store ==');
 {
   St.loadFeatures([]);
   St.setControlPointField({ unit: 'sedimentary-unit', purpose: 'geochronology', sampleId: 'ATRC2' });
-  St.setControlPointField({ sampleDescription: 'AFT AHe', note: 'granodiorita de anf' });
+  St.setControlPointField({ sampleDescription: 'AFT AHe', note: 'granodiorita de anf', name: 'DCR02' });
   const antes = Date.now();
   const f = St.createControlPoint({ lngLat: [-70.48, -33.73] });
   const p = f.properties;
 
   ok('el punto hereda lo que decía la paleta',
      p.sampleId === 'ATRC2' && p.purpose === 'geochronology' && p.sampleDescription === 'AFT AHe');
+  ok('incluido su propio nombre, distinto del código de muestra',
+     p.name === 'DCR02', p.name);
   ok('y la unidad, con su nombre y su código denormalizados',
      p.unitId === 'sedimentary-unit' && p.unit && p.code === 'SED', JSON.stringify(p.unit));
   ok('la fecha se sella sola al colocarlo', p.createdAt >= antes && p.createdAt <= Date.now());
@@ -107,7 +113,8 @@ console.log('== store ==');
      St.getState().selection[0] === p.id && St.getState().tool === 'select');
 
   const s = St.getState();
-  ok('el código de muestra NO se hereda al punto siguiente', s.controlPointSampleId === '');
+  ok('el nombre y el código de muestra NO se heredan al punto siguiente',
+     s.controlPointName === '' && s.controlPointSampleId === '');
   ok('ni la descripción ni las notas', s.controlPointSampleDescription === '' && s.controlPointNote === '');
   ok('la unidad y el propósito sí se quedan puestos: se repiten toda la jornada',
      s.controlPointUnit === 'sedimentary-unit' && s.controlPointPurpose === 'geochronology');
@@ -116,9 +123,10 @@ console.log('== store ==');
   ok('un propósito fuera de la lista no entra en la paleta',
      St.getState().controlPointPurpose === '');
 
-  St.updateControlPoint({ sampleId: 'ATRC3', note: 'reescrito' });
+  St.updateControlPoint({ name: 'DCR02b', sampleId: 'ATRC3', note: 'reescrito' });
   const editado = St.getState().features.find((x) => x.properties.id === p.id).properties;
-  ok('se puede corregir después', editado.sampleId === 'ATRC3' && editado.note === 'reescrito');
+  ok('se puede corregir después',
+     editado.name === 'DCR02b' && editado.sampleId === 'ATRC3' && editado.note === 'reescrito');
   ok('y la fecha de toma no se toca al editar', editado.createdAt === p.createdAt);
 
   St.assignUnitToSelection('volcanic-unit');
@@ -140,7 +148,7 @@ console.log('== proyecto ==');
     format: 'fielddraw-project',
     version: 1,
     features: [
-      punto({ id: 'cp1', sampleId: 'ACRC1', purpose: 'petrology', createdAt: 1767000000000 }),
+      punto({ id: 'cp1', name: 'DCR02', sampleId: 'ACRC1', purpose: 'petrology', createdAt: 1767000000000 }),
       // Un punto sin rumbo ni manteo que tampoco es de control: ese sí se tira.
       {
         type: 'Feature',
@@ -154,6 +162,8 @@ console.log('== proyecto ==');
      project.features.length === 1 && project.features[0].properties.sampleId === 'ACRC1',
      JSON.stringify(project.features.map((f) => f.properties.geomKind)));
   ok('con su fecha de toma intacta', project.features[0].properties.createdAt === 1767000000000);
+  ok('y con su propio nombre, no solo el de la muestra',
+     project.features[0].properties.name === 'DCR02');
 }
 
 console.log('== GeoPackage ==');
@@ -162,7 +172,7 @@ console.log('== GeoPackage ==');
   const Q = await import(BASE + 'gpkg/qml.js');
   const units = [{ id: 'u1', name: 'Abanico', code: 'OMa', color: '#E57373' }];
   const puntos = [
-    punto({ unit: 'Abanico', sampleId: 'A1' }),
+    punto({ name: 'DCR02', unit: 'Abanico', sampleId: 'A1' }),
     punto({ unit: 'Unidad que ya no está en el catálogo' }),
     punto({}),
   ];
@@ -176,6 +186,13 @@ console.log('== GeoPackage ==');
 
   ok('los valores de una fila cuadran con las columnas declaradas',
      CP.controlPointValues(puntos[0].properties).length === CP.CONTROL_POINT_COLUMNS.length);
+  ok('el nombre del punto es el primer valor de la fila',
+     CP.controlPointValues(puntos[0].properties)[0] === 'DCR02');
+
+  const fs = await import('node:fs');
+  const gpkgSrc = fs.readFileSync(new URL(BASE + 'gpkg/index.js', import.meta.url), 'utf8');
+  ok('el esquema del GeoPackage declara la columna name',
+     /CREATE TABLE geol_control_points \([\s\S]*?\bname TEXT,/.test(gpkgSrc));
 
   const qml = Q.buildControlPointQML(presentes, 'sample_id');
   ok('el QML categoriza por unidad', qml.includes("&quot;unit&quot; = 'Abanico'"));
@@ -220,8 +237,9 @@ console.log('== adopción desde StraboSpot ==');
     { units: [] },
   );
 
-  const [muestra] = r.features;
+  const [muestra, sinMuestra] = r.features;
   ok('la observación entra como punto de control', muestra.properties.geomKind === 'control-point');
+  ok('con el nombre del spot de StraboSpot', muestra.properties.name === 'DCR02');
   ok('con el código de muestra de StraboSpot', muestra.properties.sampleId === 'ATRC2');
   ok('su descripción y su propósito, sin traducir el vocabulario ajeno',
      muestra.properties.sampleDescription === 'AFT AHe' && muestra.properties.purpose === 'geochronology');
@@ -239,6 +257,8 @@ console.log('== adopción desde StraboSpot ==');
      r.units[0].color !== r.units[1].color, r.units.map((u) => u.color).join());
   ok('todo lo adoptado queda marcado como venido de StraboSpot',
      r.features.every((f) => f.properties.source === 'strabospot'));
+  ok('un punto sin muestra igual llega con su nombre: es su única identidad',
+     sinMuestra.properties.name === 'DCR03' && sinMuestra.properties.sampleId === '');
 }
 
 console.log('== vuelta a StraboSpot ==');
@@ -246,6 +266,7 @@ console.log('== vuelta a StraboSpot ==');
   const U = await import(BASE + 'strabo/upload.js');
   const cp = punto({
     id: 'cp1',
+    name: 'DCR02',
     sampleId: 'ATRC2',
     sampleDescription: 'AFT AHe',
     purpose: 'geochronology',
@@ -275,15 +296,21 @@ console.log('== vuelta a StraboSpot ==');
   ok('no se inventan las observaciones del formulario que nadie hizo',
      !('material_type' in sample) && !('degree_of_weathering' in sample) &&
        !('inplaceness_of_sample' in sample));
-  ok('el spot se llama como la muestra, que es como se la busca', spot.name === 'ATRC2');
+  ok('el spot se llama como el punto —la estación—, no como la muestra',
+     spot.name === 'DCR02', spot.name);
   ok('la unidad sube como tag geologic_unit con el punto colgado',
      r.tags.length === 1 && r.tags[0].name === 'Plutón La Obra' && r.tags[0].spots.length === 1);
 
-  const sinMuestra = punto({ id: 'cp2', note: 'punto de observación', createdAt: Date.now() });
-  const r2 = U.featuresToSpots([sinMuestra], {});
-  ok('un punto sin código de muestra también sube, y se numera por lo que es',
-     r2.collection.features[0].properties.name === 'Control point 1',
-     r2.collection.features[0].properties.name);
+  const soloMuestra = punto({ id: 'cp2', sampleId: 'ATRC3', createdAt: Date.now() });
+  const r2 = U.featuresToSpots([soloMuestra], {});
+  ok('sin nombre propio, el spot se llama como la muestra',
+     r2.collection.features[0].properties.name === 'ATRC3');
+
+  const sinNinguno = punto({ id: 'cp3', note: 'punto de observación', createdAt: Date.now() });
+  const r3 = U.featuresToSpots([sinNinguno], {});
+  ok('sin nombre ni código de muestra también sube, y se numera por lo que es',
+     r3.collection.features[0].properties.name === 'Control point 1',
+     r3.collection.features[0].properties.name);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
