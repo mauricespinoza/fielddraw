@@ -953,6 +953,15 @@ export function createMapView({
     // mostraría, pero no habría ninguna tesela pintada.
     syncTileSets({ fit: false });
     syncGeology();
+    /*
+     * El dibujo restaurado de la sesión anterior es un proyecto que se acaba
+     * de cargar: arrancar en el centro fijo de siempre dejaría el trabajo
+     * fuera de pantalla en cuanto se cartografía en otra zona, y lo primero
+     * que habría que hacer es buscarlo. Sin animación: es la vista de
+     * partida, no un salto.
+     */
+    const restaurado = store.getState().features;
+    if (restaurado.length) fitToGeoJSON({ features: restaurado }, 60, 0);
     syncUnitLabels();
     syncStrabo();
     syncDraft();
@@ -1580,7 +1589,7 @@ export function createMapView({
     return any ? bounds : null;
   }
 
-  function fitToGeoJSON(fc, padding = 60) {
+  function fitToGeoJSON(fc, padding = 60, duration = 700) {
     const bounds = new maplibregl.LngLatBounds();
     let any = false;
     const visit = (c) => {
@@ -1592,7 +1601,7 @@ export function createMapView({
       } else for (const x of c) visit(x);
     };
     for (const f of fc.features) if (f.geometry) visit(f.geometry.coordinates);
-    if (any) map.fitBounds(bounds, { padding, maxZoom: 16, duration: 700 });
+    if (any) map.fitBounds(bounds, { padding, maxZoom: 16, duration });
   }
 
   /*
@@ -3569,6 +3578,15 @@ export function createMapView({
     camera,
     /** Quita el resalte del elemento ajeno; lo llama la interfaz al cerrar. */
     clearForeignHighlight: () => highlightForeign(null),
+    /**
+     * Encuadra un conjunto de elementos del dibujo: lo usa abrir un proyecto,
+     * para que la vista vaya a donde está lo que se acaba de cargar y no se
+     * quede en la zona del proyecto anterior.
+     */
+    fitToFeatures(features, padding = 60) {
+      if (!ready || !Array.isArray(features) || features.length === 0) return;
+      fitToGeoJSON({ features }, padding);
+    },
     /** Encuadra una polilínea: lo usa el perfil de una línea ya dibujada. */
     /**
      * Encuadra una polilínea. `padding` admite el objeto de MapLibre —`{top,

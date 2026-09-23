@@ -61,6 +61,14 @@ export const PLANAR_BY_STRUCTURE_TYPE = {
   'fault-plane': { feature_type: 'fault' },
 };
 
+/** Sentido de un plano de falla medido -> `fault_or_sz_type` de StraboSpot. */
+export const FAULT_OR_SZ_BY_SENSE = {
+  normal: 'normal',
+  inverse: 'reverse',
+  'left-lateral': 'sinistral',
+  'right-lateral': 'dextral',
+};
+
 /**
  * Tipo de línea -> objeto `trace`.
  *
@@ -198,6 +206,10 @@ export function planarOrientation(props, id) {
     // Solo tiene sentido declarar el volcamiento cuando lo hay: `upright` sería
     // una afirmación que nadie hizo.
     facing: props.overturned ? 'overturned' : undefined,
+    // Sentido de movimiento de un plano de falla, con el vocabulario de
+    // StraboSpot; el mismo que se lee de vuelta al adoptarlo.
+    fault_or_sz_type:
+      props.type === 'fault-plane' ? FAULT_OR_SZ_BY_SENSE[props.faultSense] : undefined,
     notes: measurementProvenance(props),
   });
 }

@@ -20,6 +20,8 @@ import {
   LINE_TYPES,
   LINE_TYPE_BY_ID,
   ORNAMENT_LIMITS,
+  FAULT_SENSES,
+  FAULT_SENSE_BY_ID,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   effectiveLineColor,
@@ -495,6 +497,25 @@ function buildPalette() {
       );
     }
 
+    /*
+     * Un plano de falla pregunta su cinemática en cuanto se elige: el
+     * símbolo la dibuja —bola, diente, medias flechas— y sin ella Flt sería
+     * una superficie más.
+     */
+    if (s.measureType === 'fault-plane') {
+      const sentido = paletteGroup(scroll, 'Fault type');
+      for (const f of FAULT_SENSES) {
+        sentido.appendChild(
+          chip({
+            label: f.short,
+            title: `${f.label} fault`,
+            active: s.measureFaultSense === f.id,
+            onClick: () => store.setMeasureFaultSense(f.id),
+          }),
+        );
+      }
+    }
+
     const unidades = paletteGroup(scroll, 'Unit');
     unitSelect(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
 
@@ -836,6 +857,7 @@ const SYMB_FIELDS = [
   { key: 'size', label: 'Size', fmt: (v) => `${v.toFixed(2)}×` },
   { key: 'spacing', label: 'Spacing', fmt: (v) => `${v} px` },
   { key: 'offset', label: 'Position', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
+  { key: 'gap', label: 'Separation', fmt: (v) => `${v.toFixed(1)} px` },
   { key: 'minzoom', label: 'Min zoom', fmt: (v) => `z${v}` },
 ];
 
@@ -1170,7 +1192,9 @@ export function openPropsMenu(screen) {
    * cerrar contorno) no significan nada sobre un punto.
    */
   if (medidas.length === 1 && sel.length === 1) {
-    $('props-title').textContent = `${STRUCTURE_TYPE_BY_ID.get(medidas[0].properties.type)?.label || 'Measurement'} ${formatStrikeDip(medidas[0].properties.strike, medidas[0].properties.dip)}`;
+    const pm = medidas[0].properties;
+    const sentido = pm.type === 'fault-plane' ? FAULT_SENSE_BY_ID.get(pm.faultSense) : null;
+    $('props-title').textContent = `${STRUCTURE_TYPE_BY_ID.get(pm.type)?.label || 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(pm.strike, pm.dip)}`;
     measurementSection(body, medidas[0], () => openPropsMenu(screen));
 
     const del = document.createElement('button');
@@ -3309,6 +3333,10 @@ function syncStructureControls() {
   if (document.activeElement !== mz) mz.value = String(st.minzoom);
   $('structure-minzoom-num').textContent = String(st.minzoom);
   $('structure-labels').checked = st.showLabels;
+  const lz = $('structure-label-minzoom');
+  if (document.activeElement !== lz) lz.value = String(st.labelMinzoom);
+  lz.disabled = !st.showLabels;
+  $('structure-label-minzoom-num').textContent = String(st.labelMinzoom);
 }
 
 /** Corta la escucha de sensores en curso, si hay una. */
@@ -3493,6 +3521,9 @@ function wireStructureControls() {
   );
   $('structure-labels').addEventListener('change', (e) =>
     store.setStructureStyle({ showLabels: e.target.checked }),
+  );
+  $('structure-label-minzoom').addEventListener('input', (e) =>
+    store.setStructureStyle({ labelMinzoom: Number(e.target.value) }),
   );
 }
 
@@ -4305,6 +4336,25 @@ function measurementSection(body, medida, reabrir) {
   }
   sec.appendChild(tipos);
 
+  if (p.type === 'fault-plane') {
+    const sentido = document.createElement('div');
+    sentido.className = 'palette-row';
+    for (const f of FAULT_SENSES) {
+      sentido.appendChild(
+        chip({
+          label: f.label,
+          title: `${f.label} fault`,
+          active: p.faultSense === f.id,
+          onClick: () => {
+            store.updateMeasurement({ faultSense: f.id });
+            reabrir();
+          },
+        }),
+      );
+    }
+    sec.appendChild(sentido);
+  }
+
   if (p.type === 'bedding') {
     const inv = document.createElement('div');
     inv.className = 'palette-row';
@@ -4447,6 +4497,9 @@ async function doOpenProject(file) {
       return;
     }
     const n = openProject(project);
+    // La vista va a donde está lo que se acaba de abrir: el proyecto puede
+    // ser de otra zona, y quedarse mirando la anterior lo haría parecer vacío.
+    if (mapBridge) mapBridge.fitToFeatures(project.features);
     if (project.name) $('project-name').value = project.name;
     setProjectStatus(`Opened ${file.name} · ${n} feature(s).`);
     showBanner(
@@ -5646,6 +5699,7 @@ export function initUI() {
       store.changed('measureMethod') ||
       store.changed('measureType') ||
       store.changed('measureOverturned') ||
+      store.changed('measureFaultSense') ||
       store.changed('measureUnit') ||
       // Los campos de TEXTO del punto de control quedan fuera a propósito:
       // repintar la paleta en cada tecla le quitaría el foco al campo.

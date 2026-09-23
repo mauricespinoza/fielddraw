@@ -17,7 +17,7 @@ function fakeContext(ops) {
       return { data: new Uint8ClampedArray(w * h * 4) };
     },
   };
-  for (const m of ['scale', 'beginPath', 'moveTo', 'lineTo', 'closePath', 'fillRect', 'arc']) {
+  for (const m of ['scale', 'translate', 'beginPath', 'moveTo', 'lineTo', 'closePath', 'fillRect', 'arc']) {
     ctx[m] = () => {};
   }
   for (const m of ['fill', 'stroke']) {
@@ -173,9 +173,25 @@ console.log('== color editable ==');
      updated.length === primera + 1 && updated[updated.length - 1] === IMAGE_OF.antiform,
      JSON.stringify(updated.slice(primera)));
   const pintado = canvasOps.slice(antesDeRedibujar).flat();
+  // Primero el halo blanco, después el color: todo lo que no es halo tiene
+  // que ser el color nuevo.
+  const HALO = 'rgba(255, 255, 255, 0.9)';
   ok('y lo pinta con el color nuevo, no con el del catálogo',
-     pintado.length > 0 && pintado.every((c) => c === '#00ff00'),
+     pintado.includes('#00ff00') && pintado.every((c) => c === '#00ff00' || c === HALO),
      JSON.stringify(pintado));
+  ok('con halo por detrás: el blanco va antes que el color',
+     pintado.indexOf(HALO) >= 0 && pintado.indexOf(HALO) < pintado.indexOf('#00ff00'),
+     JSON.stringify(pintado));
+
+  // La separación de las medias flechas rehace solo el icono de ese tipo.
+  const conGap = defaultOrnaments();
+  conGap.antiform.color = '#00ff00';
+  conGap['dextral-fault'].gap = 8;
+  const antesGap = updated.length;
+  applyOrnamentStyle(fakeMap, conGap);
+  ok('cambiar la separación de una de rumbo redibuja solo ese icono',
+     updated.length === antesGap + 1 && updated[updated.length - 1] === IMAGE_OF['dextral-fault'],
+     JSON.stringify(updated.slice(antesGap)));
 }
 
 console.log('== pliegues ==');

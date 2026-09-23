@@ -178,6 +178,35 @@ const isEstructuraRow = (row) =>
   !isMissing(row['Linear Orientation Trend']) ||
   !isMissing(row['Planar Orientation Strike']);
 
+/**
+ * Spot -> nombres de las UNIDADES GEOLÓGICAS (tags `geologic_unit` del
+ * proyecto) que lo incluyen.
+ *
+ * Solo cuentan los tags de unidad: la columna Unit toma el primero de la
+ * lista, y un spot suele llevar además tags de otros tipos —«Outcrop»,
+ * «Muestreo 2024», un tag de concepto—. Tomándolos todos en el orden en que
+ * los devuelve el servidor, un punto etiquetado con su formación podía entrar
+ * con Unit = «Outcrop», y al adoptarlo se creaba una unidad geológica con ese
+ * nombre.
+ *
+ * Un tag cuenta como unidad si su tipo es `geologic_unit` o, sin tipo, si trae
+ * los campos propios de una (sigla o tipo de roca): hay proyectos viejos de
+ * StraboSpot en los que el `type` quedó vacío.
+ */
+export function spotTagsFrom(tags) {
+  const esUnidad = (t) =>
+    t.type === 'geologic_unit' || (!t.type && !!(t.unit_label_abbreviation || t.rock_type));
+  const out = {};
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    if (!tag || !tag.name || !esUnidad(tag)) continue;
+    for (const spotId of tag.spots || []) {
+      if (!out[spotId]) out[spotId] = [];
+      if (!out[spotId].includes(tag.name)) out[spotId].push(tag.name);
+    }
+  }
+  return out;
+}
+
 /** La unidad sale de los tags del proyecto asignados al spot. */
 const extractUnit = (row) => {
   const tags = row.__tags__;

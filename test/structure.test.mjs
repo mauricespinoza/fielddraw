@@ -197,6 +197,10 @@ ok('acota el zoom mínimo', st.minzoom === 0);
 ok('ignora un booleano que no lo es', st.showLabels === true);
 ok('sin nada devuelve los valores por defecto',
   JSON.stringify(Sym.sanitizeStructureStyle(null)) === JSON.stringify(Sym.defaultStructureStyle()));
+ok('el zoom de las etiquetas de manteo es editable y se acota',
+  Sym.sanitizeStructureStyle({ labelMinzoom: 16.4 }).labelMinzoom === 16 &&
+    Sym.sanitizeStructureStyle({ labelMinzoom: 99 }).labelMinzoom === 20 &&
+    Sym.defaultStructureStyle().labelMinzoom === 13);
 
 console.log('== tipos de superficie ==');
 const ids = Sym.STRUCTURE_TYPES.map((t) => t.id);
@@ -493,6 +497,30 @@ store.updateMeasurement({ type: 'joint' });
   ok('cambiar el tipo conserva el método', p.method === 'plane-fit');
   ok('y conserva la incertidumbre', p.dipSd === 1);
 }
+
+console.log('== sentido de un plano de falla ==');
+store.clearFeatures();
+store.setMeasureType('fault-plane');
+store.setMeasureFaultSense('right-lateral');
+{
+  const f = store.createMeasurement({ lngLat: [0, 0], strike: 10, dip: 70 });
+  ok('Flt toma el sentido elegido en la paleta', f.properties.faultSense === 'right-lateral');
+  store.setSelection([f.properties.id]);
+  store.updateMeasurement({ faultSense: 'inverse' });
+  ok('y se cambia desde el panel', store.getState().features[0].properties.faultSense === 'inverse');
+  store.updateMeasurement({ type: 'bedding' });
+  ok('dejar de ser falla quita el sentido', store.getState().features[0].properties.faultSense === undefined);
+  store.updateMeasurement({ type: 'fault-plane' });
+  ok('volver a serlo toma el de la paleta',
+    store.getState().features[0].properties.faultSense === 'right-lateral');
+}
+store.setMeasureType('bedding');
+{
+  const b = store.createMeasurement({ lngLat: [0, 0], strike: 10, dip: 20 });
+  ok('una estratificación no lleva sentido', b.properties.faultSense === undefined);
+}
+store.setMeasureFaultSense('cualquiera');
+ok('un sentido desconocido cae en normal', store.getState().measureFaultSense === 'normal');
 
 console.log('== perfil y relieve en el store ==');
 store.clearFeatures();

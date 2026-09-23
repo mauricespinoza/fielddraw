@@ -8,6 +8,7 @@ import {
   buildObservacion,
   flattenPointFeatures,
   rowsToGeoJSON,
+  spotTagsFrom,
 } from './spots.js';
 import { mergeGeologicUnitTags } from './mapping.js';
 import { featuresToSpots, uploadBreakdown, uploadableCount } from './upload.js';
@@ -486,14 +487,7 @@ function offerAdopt(cuantos) {
 async function getProjectTags(projectId) {
   if (!projectId) return {};
   const res = await api.getProject(projectId);
-  const out = {};
-  for (const tag of (res && res.tags) || []) {
-    for (const spotId of tag.spots || []) {
-      if (!out[spotId]) out[spotId] = [];
-      out[spotId].push(tag.name);
-    }
-  }
-  return out;
+  return spotTagsFrom(res && res.tags);
 }
 
 /**

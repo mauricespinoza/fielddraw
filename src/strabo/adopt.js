@@ -128,6 +128,24 @@ export function straboLineType(label, fallback = 'stratigraphic-contact') {
   return { type: fallback, exact: false };
 }
 
+/**
+ * Sentido de movimiento de un plano de falla medido, a partir de la columna
+ * `Type` («fault normal», «fault dextral_reverse», …), o '' si no lo declara.
+ *
+ * Lo de rumbo va primero: en una oblicua —«dextral_normal»— la componente de
+ * rumbo es la que da nombre a la falla en StraboSpot, y la única que el
+ * símbolo puede mostrar sin inventar la otra.
+ */
+export function straboFaultSense(label) {
+  const t = normalizeText(label);
+  if (!t.includes('fault') && !t.includes('shear')) return '';
+  if (t.includes('dextral')) return 'right-lateral';
+  if (t.includes('sinistral')) return 'left-lateral';
+  if (t.includes('reverse') || t.includes('thrust')) return 'inverse';
+  if (t.includes('normal')) return 'normal';
+  return '';
+}
+
 /** Tipo de medida para la columna `Type` de la tabla de estructuras. */
 export function straboStructureType(label) {
   const t = normalizeText(label);
@@ -291,6 +309,15 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
     }
     const r = straboStructureType(p.Type);
     if (!r.exact) stats.guessed++;
+    /*
+     * La unidad en la que se midió, del tag `geologic_unit` del spot. Entra
+     * igual que en un punto de control —`unitId` al catálogo, nombre y sigla
+     * denormalizados—, no como un texto suelto: sin el id, la medida no se
+     * filtraba por unidad, no salía en el chip Unit del panel, y al volver a
+     * subirla a StraboSpot llegaba sin decir en qué unidad se tomó.
+     */
+    const unidad = unidadPorNombre(texto(p.Unit));
+    const sentido = straboFaultSense(p.Type);
     const id = genId();
     features.push({
       type: 'Feature',
@@ -309,7 +336,8 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
         // Se midió con brújula en el terreno, por otra persona y con otra app:
         // ni «manual» de aquí ni ajustado sobre el DEM. Su propio método.
         method: 'strabospot',
-        unit: texto(p.Unit),
+        ...(r.type === 'fault-plane' && sentido ? { faultSense: sentido } : {}),
+        ...(unidad ? { unitId: unidad.id, unit: unidad.name, code: unidad.code } : {}),
         note: provenance(p, datasetName),
       },
       geometry: f.geometry,

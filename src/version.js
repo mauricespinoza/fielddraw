@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.34.0';
+export const APP_VERSION = '0.35.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,25 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.35.0',
+    highlights: [
+      'Opening a project moves the map to where its features are.',
+      'StraboSpot geologic-unit tags now fill the Unit of imported measurements, and go back up with them.',
+      'Bedding (S₀), foliation (S₁) and fault planes (Flt) have their own symbols; Flt asks Normal, Inverse, Left- or Right-lateral and draws it.',
+      'Fault ornaments (teeth, balls, half-arrows, fold arrows) get the same white halo as the trace; strike-slip arrows have an adjustable separation.',
+      'Pick the zoom from which dip values are written next to their symbols.',
+      'Stereogram ▸ Compass: the needle stays fixed and the dial turns, so N always points to true north.',
+    ],
+    items: [
+      'Al abrir un proyecto —o al restaurar el de la sesión anterior— el mapa encuadra lo que trae, en vez de quedarse mirando la zona del proyecto anterior o el centro fijo de arranque.',
+      'Los tags `geologic_unit` de StraboSpot llenan el campo Unit de las MEDIDAS importadas, enlazadas al catálogo de unidades igual que los puntos de control; antes solo quedaba el nombre como texto suelto. Solo cuentan los tags de unidad: un tag «Outcrop» ya no puede colarse como unidad. Al subir, una medida con unidad sale con su tag, aunque venga de una adopción anterior que guardó solo el nombre.',
+      'Símbolos propios para cada superficie: S₀ con el tic de siempre, S₁ con un triángulo relleno hacia el manteo (cuadrado con cruz si es horizontal), y Flt con trazo grueso y el ornamento de su cinemática: bola en la normal, diente en la inversa y medias flechas desfasadas en las de rumbo. Al elegir Flt se pregunta el tipo, y viaja a StraboSpot como `fault_or_sz_type` (y vuelve de allá).',
+      'Los ornamentos de las trazas —dientes, bolas, medias flechas y flechas de pliegue— llevan el mismo halo blanco que la línea, para que la cinemática se lea sobre la ortofoto. En las fallas de rumbo se ajusta además la separación de las medias flechas respecto de la traza (Symbology ▸ Separation).',
+      'El zoom desde el que se escribe el manteo junto a cada símbolo se elige en Symbology (antes fijo en 13).',
+      'Stereogram ▸ Compass: la aguja queda fija hacia lo alto de la pantalla y lo que gira es el marco, de modo que su N queda sobre el norte real mientras se gira el teléfono.',
+    ],
+  },
   {
     version: '0.34.0',
     highlights: [
