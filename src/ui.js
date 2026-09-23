@@ -20,11 +20,13 @@ import {
   LINE_TYPES,
   LINE_TYPE_BY_ID,
   ORNAMENT_LIMITS,
+  FAULT_LINE_KIND,
   FAULT_SENSES,
   FAULT_SENSE_BY_ID,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   effectiveLineColor,
+  isFaultLine,
   isObservedOnly,
 } from './symbology.js';
 import {
@@ -1292,6 +1294,41 @@ export function openPropsMenu(screen) {
       );
     }
     acciones.appendChild(nodosRow);
+  }
+
+  /*
+   * Tipo de falla. Se fijó al dibujarla con la paleta y viaja en el propio
+   * `type`; aquí se corrige sin redibujar la traza —una inversa que resultó
+   * normal, una de rumbo cuyo sentido se aclaró—. Solo aparece con fallas
+   * seleccionadas y solo ofrece tipos de falla: convertir un contacto en
+   * falla es otra decisión, y se toma con la paleta.
+   */
+  const fallas = lines.filter((f) => isFaultLine(f.properties.type));
+  if (fallas.length > 0) {
+    const tipoFalla = section(
+      body,
+      fallas.length === 1 ? 'Fault type' : `Fault type (${fallas.length} faults)`,
+    );
+    const row = document.createElement('div');
+    row.className = 'palette-row';
+    const actual = fallas.every((f) => f.properties.type === fallas[0].properties.type)
+      ? fallas[0].properties.type
+      : null;
+    for (const t of LINE_TYPES.filter((x) => isFaultLine(x.id))) {
+      row.appendChild(
+        chip({
+          label: FAULT_LINE_KIND[t.id],
+          title: t.label,
+          color: effectiveLineColor(t.id, s.ornaments),
+          active: actual === t.id,
+          onClick: () => {
+            store.setSelectedFaultType(t.id);
+            openPropsMenu(screen);
+          },
+        }),
+      );
+    }
+    tipoFalla.appendChild(row);
   }
 
   // Flip del ornamento: solo en las fallas, cuyo símbolo es asimétrico. Las

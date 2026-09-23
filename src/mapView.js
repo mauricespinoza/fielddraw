@@ -47,9 +47,12 @@ import {
   withFeatureAlpha,
 } from './geologyStyle.js';
 import {
+  ORNAMENT_HALO_LAYER_IDS,
+  ORNAMENT_HALO_OPACITY,
   ORNAMENT_LAYER_IDS,
   addOrnamentImages,
   applyOrnamentStyle,
+  ornamentHaloLayers,
   ornamentLayers,
 } from './ornaments.js';
 import {
@@ -154,10 +157,16 @@ function mlIdsFor(layer) {
   // medidas de rumbo y manteo al final, que son puntos chicos y no deben
   // quedar tapados por el relleno del polígono sobre el que se midieron.
   if (layer.kind === 'units') return GEOLOGY_UNIT_LAYER_IDS;
-  if (layer.kind === 'faults') return [...GEOLOGY_TRACE_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
+  // Los halos de los ornamentos van los PRIMEROS —debajo del casing y de la
+  // línea— para que el blanco envuelva por fuera al conjunto y no se pinte
+  // sobre la traza (ver `ornaments.js`).
+  if (layer.kind === 'faults') {
+    return [...ORNAMENT_HALO_LAYER_IDS, ...GEOLOGY_TRACE_LAYER_IDS, ...ORNAMENT_LAYER_IDS];
+  }
   if (layer.kind === 'dips') return STRUCTURE_LAYER_IDS;
   if (layer.kind === 'control-points') return CONTROL_POINT_LAYER_IDS;
   return [
+    ...ORNAMENT_HALO_LAYER_IDS,
     ...GEOLOGY_LAYER_IDS,
     ...ORNAMENT_LAYER_IDS,
     ...STRUCTURE_LAYER_IDS,
@@ -610,6 +619,12 @@ export function createMapView({
 
     try {
       addOrnamentImages(map, store.getState().ornaments, store.getState().importStyle);
+      // Los halos se añaden aquí pero el orden lo decide `applyLayerStack`:
+      // van por debajo de la traza (ver `mlIdsFor`).
+      for (const l of ornamentHaloLayers(store.getState().ornaments)) {
+        map.addLayer(l);
+        BASE[l.id] = ORNAMENT_HALO_OPACITY;
+      }
       for (const l of ornamentLayers(store.getState().ornaments, store.getState().importStyle)) {
         map.addLayer(l);
       }
@@ -1256,6 +1271,78 @@ export function createMapView({
 
   const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+  /*
+   * LECTURAS DE GPU DEL TERRENO, Y POR QUÉ SE RACIONAN
+   *
+   * Con relieve, MapLibre resuelve cada `unproject` —de un píxel al punto
+   * del suelo— con `terrain.pointCoordinate`, que vuelve a pintar las pasadas
+   * de profundidad y de coordenadas del terreno si la cámara se movió, y
+   * después lee un píxel con `gl.readPixels`: una lectura SINCRÓNICA que
+   * obliga a la GPU a vaciar todo lo pendiente. Y MapLibre la llama por su
+   * cuenta varias veces por cuadro mientras se hace zoom: la barra de escala
+   * (dos por `move`), el ancla del zoom de la rueda o del pellizco, el
+   * `lngLat` de cada `mousemove`/`touchmove` —tres por movimiento con dos
+   * dedos— y el reajuste del centro al terminar.
+   *
+   * Medido con el relieve puesto, doce pasos de rueda: entre 2 y 11 s de
+   * bloqueo por paso, y el 97 % del tiempo dentro de `readPixels`. En un iPad
+   * con la cámara inclinada y las teselas del modelo todavía llegando —cada
+   * tesela nueva vuelve a ensuciar la pasada de profundidad— eso encadena
+   * minutos de mapa pegado: el «se congeló haciendo zoom».
+   *
+   * Racionarlas por tiempo no bastó: la más cara es el reajuste del centro
+   * que MapLibre hace al TERMINAR cada paso de zoom, con la cámara ya quieta,
+   * y hay una por paso. Así que las llamadas de MapLibre se contestan SIEMPRE
+   * con el rayo cortado contra el plano horizontal a la cota del centro de la
+   * vista: aritmética pura, sin GPU. Para el píxel central ese plano da
+   * exactamente el centro actual, así que el reajuste queda en «poner el
+   * centro a la cota del DEM en ese punto», que es lo que se quiere; para el
+   * ancla del zoom, la barra de escala o la coordenada de un evento la
+   * diferencia no se ve. Lo que la app necesita exacto —el punto donde se pone
+   * un vértice— pide la lectura de verdad con `unprojectExact` y además se
+   * refina con `project` en `toLngLat`.
+   */
+  let pickRealForzado = false;
+
+  /** Punto del suelo aproximado: el rayo contra el plano a la cota del centro. */
+  function approxGroundCoordinate(p) {
+    const tr = map.transform;
+    if (!tr || typeof tr.screenPointToMercatorCoordinateAtZ !== 'function') return null;
+    const cota = Number.isFinite(tr.elevation) ? tr.elevation : 0;
+    const z = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), cota).z;
+    const punto = p instanceof maplibregl.Point ? p : new maplibregl.Point(p.x, p.y);
+    const m = tr.screenPointToMercatorCoordinateAtZ(punto, z);
+    return m && Number.isFinite(m.x) && Number.isFinite(m.y) ? m : null;
+  }
+
+  function rationTerrainPicking() {
+    const terrain = map.terrain;
+    if (!terrain || terrain.__fielddrawRationed || typeof terrain.pointCoordinate !== 'function') return;
+    const original = terrain.pointCoordinate;
+    terrain.pointCoordinate = function (p) {
+      if (!pickRealForzado) {
+        try {
+          const aprox = approxGroundCoordinate(p);
+          if (aprox) return aprox;
+        } catch {
+          /* sin aproximación posible: se cae a la lectura de verdad */
+        }
+      }
+      return original.call(this, p);
+    };
+    terrain.__fielddrawRationed = true;
+  }
+
+  /** `unproject` con la lectura de GPU de verdad, para cuando la app la necesita. */
+  function unprojectExact(p) {
+    pickRealForzado = true;
+    try {
+      return map.unproject(p);
+    } finally {
+      pickRealForzado = false;
+    }
+  }
+
   /**
    * Enciende o apaga el relieve real.
    *
@@ -1296,6 +1383,7 @@ export function createMapView({
         if (!map.getTerrain || !map.getTerrain()) {
           throw new Error('the renderer did not accept the terrain');
         }
+        rationTerrainPicking();
         if (map.getPitch() < 20) map.easeTo({ pitch: 58, duration: 600 });
       } else {
         map.setTerrain(null);
@@ -1812,7 +1900,9 @@ export function createMapView({
       if (cerca.error <= PICK_TOL_PX) return cerca.point;
     }
 
-    const ll = map.unproject(p);
+    // Sin semilla, la primera lectura va por la GPU de verdad: es un toque
+    // aislado, no un cuadro de animación, y es la que ancla todo el trazo.
+    const ll = unprojectExact(p);
     const base = [ll.lng, ll.lat];
     const errBase = pickError(base, px, py);
     if (errBase <= PICK_TOL_PX) return base;

@@ -36,9 +36,15 @@ globalThis.document = {
 };
 
 import {
+  HALO_IMAGE_OF,
   IMAGE_OF,
   IMPORTED_IMAGE_OF,
+  ORNAMENT_HALO_LAYER_IDS,
+  ORNAMENT_HALO_OPACITY,
   ORNAMENT_LAYER_IDS,
+  addOrnamentImages,
+  ornamentHaloLayerId,
+  ornamentHaloLayers,
   applyOrnamentStyle,
   ornamentLayerId,
   ornamentLayers,
@@ -173,14 +179,10 @@ console.log('== color editable ==');
      updated.length === primera + 1 && updated[updated.length - 1] === IMAGE_OF.antiform,
      JSON.stringify(updated.slice(primera)));
   const pintado = canvasOps.slice(antesDeRedibujar).flat();
-  // Primero el halo blanco, después el color: todo lo que no es halo tiene
-  // que ser el color nuevo.
-  const HALO = 'rgba(255, 255, 255, 0.9)';
-  ok('y lo pinta con el color nuevo, no con el del catálogo',
-     pintado.includes('#00ff00') && pintado.every((c) => c === '#00ff00' || c === HALO),
-     JSON.stringify(pintado));
-  ok('con halo por detrás: el blanco va antes que el color',
-     pintado.indexOf(HALO) >= 0 && pintado.indexOf(HALO) < pintado.indexOf('#00ff00'),
+  // El icono de color ya no lleva halo: el halo es otra imagen, en otra capa
+  // por debajo de la traza, para no pintar blanco encima de la línea.
+  ok('y lo pinta solo con el color nuevo, sin halo encima',
+     pintado.length > 0 && pintado.every((c) => c === '#00ff00'),
      JSON.stringify(pintado));
 
   // La separación de las medias flechas rehace solo el icono de ese tipo.
@@ -189,9 +191,33 @@ console.log('== color editable ==');
   conGap['dextral-fault'].gap = 8;
   const antesGap = updated.length;
   applyOrnamentStyle(fakeMap, conGap);
-  ok('cambiar la separación de una de rumbo redibuja solo ese icono',
-     updated.length === antesGap + 1 && updated[updated.length - 1] === IMAGE_OF['dextral-fault'],
+  ok('cambiar la separación de una de rumbo redibuja solo ese icono y su halo',
+     JSON.stringify(updated.slice(antesGap).sort()) ===
+       JSON.stringify([IMAGE_OF['dextral-fault'], HALO_IMAGE_OF['dextral-fault']].sort()),
      JSON.stringify(updated.slice(antesGap)));
+}
+
+console.log('== halo fusionado con el de la traza ==');
+{
+  const halos = ornamentHaloLayers(defaultOrnaments());
+  const simbolos = ornamentLayers(defaultOrnaments());
+  ok('una capa de halo por cada capa de símbolo', halos.length === simbolos.length &&
+     ORNAMENT_HALO_LAYER_IDS.length === halos.length);
+  const h = halos.find((l) => l.id === ornamentHaloLayerId('thrust-fault', false));
+  const s = simbolos.find((l) => l.id === ornamentLayerId('thrust-fault', false));
+  ok('el halo usa su imagen blanca', h.layout['icon-image'] === HALO_IMAGE_OF['thrust-fault']);
+  ok('y cae exactamente detrás del símbolo: mismo espaciado, offset, giro y filtro',
+     eq(h.layout['icon-offset'], s.layout['icon-offset']) &&
+       h.layout['symbol-spacing'] === s.layout['symbol-spacing'] &&
+       eq(h.layout['icon-size'], s.layout['icon-size']) && eq(h.filter, s.filter));
+  ok('con la opacidad del casing de la línea', h.paint['icon-opacity'] === ORNAMENT_HALO_OPACITY);
+
+  const ops = [];
+  canvasOps.length = 0;
+  const imgs = new Map();
+  addOrnamentImages({ hasImage: (n) => imgs.has(n), addImage: (n, d) => imgs.set(n, d) });
+  ok('se registran los halos', ORNAMENT_TYPES.every((t) => imgs.has(HALO_IMAGE_OF[t])));
+  ok('y se pintan en blanco puro', canvasOps.flat().includes('#ffffff'), JSON.stringify(ops));
 }
 
 console.log('== pliegues ==');

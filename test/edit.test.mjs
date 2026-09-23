@@ -729,5 +729,25 @@ console.log('== lazo a mano alzada ==');
      featuresInRegion(features, [[0, 0], [1, 1]], proj).length === 0);
 }
 
+console.log('== cambiar el tipo de una falla ==');
+{
+  const falla = (id, type, extra = {}) => ({
+    type: 'Feature', id,
+    properties: { id, kind: 'line', type, certainty: 'inferred', flip: true, createdAt: 1, ...extra },
+    geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
+  });
+  store.clearFeatures();
+  store.loadFeatures([falla('f1', 'thrust-fault'), falla('f2', 'stratigraphic-contact')]);
+  store.setSelection(['f1', 'f2']);
+  const n = store.setSelectedFaultType('normal-fault');
+  const [f1, f2] = store.getState().features;
+  ok('cambia solo la falla', n === 1 && f1.properties.type === 'normal-fault' &&
+     f2.properties.type === 'stratigraphic-contact');
+  ok('y conserva certeza y flip', f1.properties.certainty === 'inferred' && f1.properties.flip === true);
+  ok('un tipo que no es de falla no se aplica', store.setSelectedFaultType('dike') === 0);
+  store.undo();
+  ok('se deshace', store.getState().features[0].properties.type === 'thrust-fault');
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

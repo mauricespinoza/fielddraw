@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.35.0';
+export const APP_VERSION = '0.36.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,21 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.36.0',
+    highlights: [
+      'Fixed: zooming repeatedly in 3D could freeze the map for minutes.',
+      'Fault lines: change the fault type (Thrust, Normal, Dextral, Sinistral, Undifferentiated) from the line menu.',
+      'GeoPackage: new fault_type column on lines and fault_sense column on measurements, read back on import.',
+      'The white halo of fault and fold ornaments now merges with the line halo instead of drawing over the line.',
+    ],
+    items: [
+      'Corregido el congelamiento al hacer zoom repetidas veces en la vista 3D. Con relieve, MapLibre resuelve cada paso de pantalla al terreno leyendo la GPU de forma sincrónica (`readPixels`), y lo hacía varias veces por cuadro: la barra de escala, el ancla del zoom, cada movimiento del puntero y el reajuste del centro al terminar cada paso. Medido: entre 2 y 11 s de bloqueo por paso de rueda, casi todo dentro de esa lectura. Ahora esas llamadas se contestan con el rayo contra el plano a la cota del centro, sin GPU; la lectura de verdad queda solo para lo que la app necesita exacto —el punto donde se pone un vértice—, que además se sigue refinando contra el DEM.',
+      'Las líneas de falla conservan el tipo con que se dibujaron (Thrust, Normal, Dextral, Sinistral, Undifferentiated) y ahora se puede cambiar desde su menú de línea, sin redibujarlas; certeza, flip y geometría se mantienen. Solo se ofrecen tipos de falla: convertir un contacto en falla se hace con la paleta.',
+      'GeoPackage: columna `fault_type` en `geol_lines` (vacía en lo que no es falla) y columna `fault_sense` en `geol_points` (Normal, Inverse, Left-lateral, Right-lateral en los planos de falla). Al importar un GeoPackage, las dos se leen de vuelta.',
+      'El halo blanco de los ornamentos —dientes, bolas, medias flechas y flechas de pliegue— ya no se pinta encima de la línea: va en una capa propia por debajo de la traza, con la misma opacidad que su halo, así que el blanco envuelve solo por fuera al conjunto línea + símbolo.',
+    ],
+  },
   {
     version: '0.35.0',
     highlights: [

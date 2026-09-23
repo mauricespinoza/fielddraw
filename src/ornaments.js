@@ -42,26 +42,32 @@ function render(w, h, draw) {
 }
 
 /**
- * Halo blanco por detrás del ornamento.
+ * Halo blanco del ornamento, FUSIONADO con el de la traza.
  *
  * La traza continua ya lleva su halo (la capa de casing de `geologyStyle.js`),
  * y sin uno propio el diente, la bola o las medias flechas quedaban pegados
- * al fondo: sobre una ortofoto oscura el trazo se leía y su cinemática no,
- * que es justo lo que el ornamento está para decir. Como en los símbolos de
- * rumbo y manteo, un icono es un mapa de bits y no admite casing: se dibuja
- * el mismo ornamento dos veces, primero engordado y en blanco, y encima en su
- * color.
+ * al fondo: sobre una ortofoto oscura el trazo se leía y su cinemática no.
+ *
+ * Pero el halo no puede ir DENTRO del icono del ornamento: el icono se pinta
+ * por encima de la línea, y su borde blanco tapaba la traza allí donde el
+ * símbolo la toca —un triángulo o un círculo blanco recortado sobre la falla—.
+ * Por eso cada ornamento tiene DOS imágenes: el halo solo, en blanco puro, en
+ * una capa que va POR DEBAJO de la traza y de su casing y con la misma
+ * opacidad que el casing; y el símbolo solo, en su color, encima de todo. El
+ * blanco queda envolviendo por fuera al conjunto línea + símbolo, como un
+ * único contorno, y nada blanco cae sobre la línea.
  */
-const HALO_COLOR = 'rgba(255, 255, 255, 0.9)';
+const HALO_COLOR = '#ffffff';
 const HALO_EXTRA = 2.4;
+
+/** Opacidad de la capa de halos: la misma del casing de la traza. */
+export const ORNAMENT_HALO_OPACITY = 0.55;
 
 /** Margen del lienzo para que el halo no se recorte en los bordes. */
 const PAD = HALO_EXTRA / 2 + 0.4;
 
-const passes = (color) => [
-  { color: HALO_COLOR, extra: HALO_EXTRA },
-  { color, extra: 0 },
-];
+const HALO_PASS = { color: HALO_COLOR, extra: HALO_EXTRA };
+const colorPass = (color) => ({ color, extra: 0 });
 
 /** Trazo con el grosor del pase. */
 function stroke(ctx, p, width, cap = 'round') {
@@ -228,13 +234,23 @@ export const IMPORTED_IMAGE_OF = Object.fromEntries(
   ORNAMENT_TYPES.map((t) => [t, `orn-${t}-imp`]),
 );
 
-const imageWith = (type, color, s) => {
+/** El halo de cada tipo: blanco, sin color propio, y uno solo para lo propio y lo importado. */
+export const HALO_IMAGE_OF = Object.fromEntries(
+  ORNAMENT_TYPES.map((t) => [t, `orn-${t}-halo`]),
+);
+
+/** Un pase de dibujo sobre un lienzo del tamaño del tipo, con el margen del halo. */
+const drawWith = (type, pase, s) => {
   const d = DRAWINGS[type];
   return render(d.w + 2 * PAD, d.h + 2 * PAD, (ctx) => {
     ctx.translate(PAD, PAD);
-    for (const p of passes(color)) d.draw(ctx, p, s);
+    d.draw(ctx, pase, s);
   });
 };
+
+const imageWith = (type, color, s) => drawWith(type, colorPass(color), s);
+
+const haloImage = (type, s) => drawWith(type, HALO_PASS, s);
 
 const imageFor = (type, style) =>
   imageWith(type, effectiveLineColor(type, style), style && style[type]);
@@ -256,7 +272,13 @@ const lastImported = new WeakMap();
 /** Registra los iconos que falten, con los colores del estilo actual. */
 export function addOrnamentImages(map, style = defaultOrnaments(), importStyle = defaultImportStyle()) {
   const visto = lastImported.get(map) || {};
+  const halos = lastHalo.get(map) || {};
   for (const type of ORNAMENT_TYPES) {
+    const halo = HALO_IMAGE_OF[type];
+    if (!map.hasImage(halo)) {
+      map.addImage(halo, haloImage(type, style[type]), { pixelRatio: DPR });
+      halos[type] = gapOf(style[type]);
+    }
     const name = IMAGE_OF[type];
     if (!map.hasImage(name)) map.addImage(name, imageFor(type, style), { pixelRatio: DPR });
     const ajeno = IMPORTED_IMAGE_OF[type];
@@ -266,6 +288,26 @@ export function addOrnamentImages(map, style = defaultOrnaments(), importStyle =
     }
   }
   lastImported.set(map, visto);
+  lastHalo.set(map, halos);
+}
+
+/** Última separación con la que se rasterizó cada halo, por mapa. */
+const lastHalo = new WeakMap();
+
+/** El halo solo cambia con la forma: en las de rumbo, con la separación. */
+function updateHaloImages(map, style) {
+  let visto = lastHalo.get(map);
+  if (!visto) {
+    visto = {};
+    lastHalo.set(map, visto);
+  }
+  for (const type of ORNAMENT_TYPES) {
+    const gap = gapOf(style && style[type]);
+    if (visto[type] === gap) continue;
+    visto[type] = gap;
+    const name = HALO_IMAGE_OF[type];
+    if (map.hasImage(name)) map.updateImage(name, haloImage(type, style[type]));
+  }
 }
 
 /** Redibuja los iconos de lo importado, y solo los que de verdad cambiaron. */
@@ -348,6 +390,24 @@ const flipFilter = (flipped) =>
 export const ornamentLayerId = (type, flipped) =>
   `orn-${type}${flipped ? '-flip' : ''}-layer`;
 
+export const ornamentHaloLayerId = (type, flipped) =>
+  `orn-${type}${flipped ? '-flip' : ''}-halo-layer`;
+
+/**
+ * Capa del halo: la misma colocación que la del símbolo —mismo espaciado,
+ * offset, giro y tamaño, así que cada halo cae exactamente detrás de su
+ * símbolo— con la imagen blanca. Va por debajo de la traza (ver `mapView`).
+ */
+function ornamentHaloLayer(type, style, flipped) {
+  const base = ornamentLayer(type, style, flipped, defaultImportStyle());
+  return {
+    ...base,
+    id: ornamentHaloLayerId(type, flipped),
+    layout: { ...base.layout, 'icon-image': HALO_IMAGE_OF[type] },
+    paint: { 'icon-opacity': ORNAMENT_HALO_OPACITY },
+  };
+}
+
 function ornamentLayer(type, style, flipped, importStyle) {
   const s = style[type] || defaultOrnaments()[type];
   return {
@@ -391,6 +451,16 @@ export function ornamentLayers(style = defaultOrnaments(), importStyle = default
   return out;
 }
 
+/** Las capas de halo, una por tipo y por flip, para ir debajo de la traza. */
+export function ornamentHaloLayers(style = defaultOrnaments()) {
+  const out = [];
+  for (const type of ORNAMENT_TYPES) {
+    out.push(ornamentHaloLayer(type, style, false));
+    out.push(ornamentHaloLayer(type, style, true));
+  }
+  return out;
+}
+
 /**
  * Reaplica los parámetros sobre las capas ya añadidas. Cambiar propiedades de
  * layout es mucho más barato —y no parpadea— que quitar y volver a añadir las
@@ -400,19 +470,23 @@ export function applyOrnamentStyle(map, style, importStyle) {
   for (const type of ORNAMENT_TYPES) {
     const s = style[type] || defaultOrnaments()[type];
     for (const flipped of [false, true]) {
-      const id = ornamentLayerId(type, flipped);
-      if (!map.getLayer(id)) continue;
-      if (importStyle) {
-        map.setLayoutProperty(id, 'icon-image', ornamentIconExpr(type, importStyle));
+      for (const id of [ornamentLayerId(type, flipped), ornamentHaloLayerId(type, flipped)]) {
+        if (!map.getLayer(id)) continue;
+        if (importStyle && id === ornamentLayerId(type, flipped)) {
+          map.setLayoutProperty(id, 'icon-image', ornamentIconExpr(type, importStyle));
+        }
+        map.setLayoutProperty(id, 'symbol-spacing', s.spacing);
+        map.setLayoutProperty(id, 'icon-offset', [0, s.offset]);
+        map.setLayoutProperty(id, 'icon-size', iconSize(s.size));
+        map.setLayerZoomRange(id, s.minzoom, 24);
       }
-      map.setLayoutProperty(id, 'symbol-spacing', s.spacing);
-      map.setLayoutProperty(id, 'icon-offset', [0, s.offset]);
-      map.setLayoutProperty(id, 'icon-size', iconSize(s.size));
-      map.setLayerZoomRange(id, s.minzoom, 24);
     }
   }
+  updateHaloImages(map, style);
   updateOrnamentImages(map, style);
   updateImportedOrnamentImages(map, importStyle, style);
 }
 
 export const ORNAMENT_LAYER_IDS = ornamentLayers().map((l) => l.id);
+
+export const ORNAMENT_HALO_LAYER_IDS = ornamentHaloLayers().map((l) => l.id);

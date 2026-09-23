@@ -2,6 +2,7 @@ import { loadVendorScript, vendorUrl } from '../vendorPaths.js';
 import {
   HORIZONTAL_DIP_MAX,
   STRABO_SOURCE,
+  FAULT_LINE_KIND,
   FAULT_SENSE_BY_ID,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
@@ -135,6 +136,10 @@ CREATE TABLE geol_lines (
   -- todo lo digitalizado a mano, que es la inmensa mayoría.
   method TEXT,
   source TEXT,
+  -- Tipo de falla legible (Thrust, Normal, Dextral, Sinistral,
+  -- Undifferentiated), vacío en lo que no es falla. Repite lo que dice
+  -- la columna type para quien filtra la tabla en QGIS sin conocer los ids.
+  fault_type TEXT,
   created_at TEXT
 );
 
@@ -203,6 +208,9 @@ CREATE TABLE geol_points (
   code TEXT,
   label TEXT,
   note TEXT,
+  -- Cinemática de un plano de falla medido (Normal, Inverse, Left-lateral,
+  -- Right-lateral); vacío en las demás superficies.
+  fault_sense TEXT,
   created_at TEXT
 );
 `;
@@ -330,7 +338,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
         name: 'geol_lines',
         geomType: 'LINESTRING',
         rows: lines,
-        columns: ['type', 'certainty', 'label', 'note', 'method', 'source', 'created_at'],
+        columns: ['type', 'certainty', 'label', 'note', 'method', 'source', 'fault_type', 'created_at'],
         valuesOf: (p) => [
           p.type,
           p.certainty,
@@ -338,6 +346,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
           p.note || null,
           p.method || null,
           traceProvenance(p),
+          FAULT_LINE_KIND[p.type] || null,
         ],
         qml: buildLineQML(combosPresent(lines), ornaments),
         sld: buildLineSLD(combosPresent(lines), ornaments),
@@ -368,7 +377,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
         columns: [
           'type', 'strike', 'dip', 'dip_dir', 'overturned', 'method',
           'strike_sd', 'dip_sd', 'rms_m', 'n_points', 'base_m', 'spread_m',
-          'pole_sd', 'dem_source', 'unit', 'code', 'label', 'note', 'created_at',
+          'pole_sd', 'dem_source', 'unit', 'code', 'label', 'note', 'fault_sense', 'created_at',
         ],
         /*
          * Los campos de calidad se exportan junto al dato y no solo se muestran
@@ -397,14 +406,17 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
           p.demSource || null,
           p.unit || '',
           p.code || '',
-          // El sentido de un plano de falla va en el rótulo: la tabla no tiene
-          // columna propia, y sin él la cinemática no llegaría a QGIS.
+          // El sentido de un plano de falla va también en el rótulo, que es lo
+          // que QGIS escribe junto al símbolo; su columna es `fault_sense`.
           `${STRUCTURE_TYPE_BY_ID.get(p.type)?.label || p.type}${
             p.type === 'fault-plane' && FAULT_SENSE_BY_ID.has(p.faultSense)
               ? ` (${FAULT_SENSE_BY_ID.get(p.faultSense).label.toLowerCase()})`
               : ''
           } ${formatStrikeDip(p.strike, p.dip)}`,
           p.note || null,
+          p.type === 'fault-plane' && FAULT_SENSE_BY_ID.has(p.faultSense)
+            ? FAULT_SENSE_BY_ID.get(p.faultSense).label
+            : null,
         ],
         qml: buildPointQML(tiposMedidos, {
           horizontalMax: HORIZONTAL_DIP_MAX,
