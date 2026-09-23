@@ -137,10 +137,10 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
    * error: parece un compás mal calibrado, no una brújula. Esto en cambio es
    * un rombo alargado partido en dos mitades de color —la punta clara
    * apuntando a favor del manteo, la cola oscura al lado contrario—, que es
-   * literalmente cómo se ve la aguja de cualquier brújula de geólogo. Gira
-   * por `dipAzimuth` y no por el rumbo: es la única de las dos direcciones
-   * que apunta a un lado sin ambigüedad —el rumbo por sí solo es una recta,
-   * no una flecha— y es la que de verdad se quiere leer de un vistazo.
+   * literalmente cómo se ve la aguja de cualquier brújula de geólogo. En
+   * la pestaña Compass la aguja NO gira: queda fija hacia lo alto de la
+   * pantalla, que es hacia donde apunta el teléfono, y lo que gira bajo ella
+   * es el marco (ver `update`).
    */
   let needle = null;
   let dipSymbol = null;
@@ -225,12 +225,25 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
       const heading = reading && Number.isFinite(reading.heading) ? norm360(reading.heading) : null;
       if (heading === null) {
         needle.setAttribute('visibility', 'hidden');
+        g.removeAttribute('transform');
         label.textContent = '—';
         sub.textContent = '';
         return;
       }
+      /*
+       * LO QUE GIRA ES EL MARCO, NO LA AGUJA.
+       *
+       * La aguja queda fija apuntando a lo alto de la pantalla —hacia donde
+       * apunta el teléfono, como la línea de fe de una brújula de mano— y el
+       * marco graduado gira al revés del rumbo, de modo que su N queda siempre
+       * sobre el norte real. Así se lee como una brújula de verdad: al girar
+       * el teléfono la rosa se mueve bajo la aguja, y el número que queda bajo
+       * la punta es el rumbo al que se está mirando. Girar la aguja con el
+       * marco quieto dibujaba lo contrario: una rosa pegada a la pantalla, con
+       * su N señalando lo alto del teléfono y no el norte.
+       */
       needle.setAttribute('visibility', 'visible');
-      needle.setAttribute('transform', `rotate(${heading} ${cx} ${cy})`);
+      g.setAttribute('transform', `rotate(${-heading} ${cx} ${cy})`);
       label.textContent = `${String(Math.round(heading) % 360).padStart(3, '0')}°`;
       sub.textContent = cuadrante(heading);
       return;

@@ -2,6 +2,7 @@ import { loadVendorScript, vendorUrl } from '../vendorPaths.js';
 import {
   HORIZONTAL_DIP_MAX,
   STRABO_SOURCE,
+  FAULT_SENSE_BY_ID,
   STRUCTURE_TYPES,
   STRUCTURE_TYPE_BY_ID,
   VERTICAL_DIP_MIN,
@@ -396,7 +397,13 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
           p.demSource || null,
           p.unit || '',
           p.code || '',
-          `${STRUCTURE_TYPE_BY_ID.get(p.type)?.label || p.type} ${formatStrikeDip(p.strike, p.dip)}`,
+          // El sentido de un plano de falla va en el rótulo: la tabla no tiene
+          // columna propia, y sin él la cinemática no llegaría a QGIS.
+          `${STRUCTURE_TYPE_BY_ID.get(p.type)?.label || p.type}${
+            p.type === 'fault-plane' && FAULT_SENSE_BY_ID.has(p.faultSense)
+              ? ` (${FAULT_SENSE_BY_ID.get(p.faultSense).label.toLowerCase()})`
+              : ''
+          } ${formatStrikeDip(p.strike, p.dip)}`,
           p.note || null,
         ],
         qml: buildPointQML(tiposMedidos, {

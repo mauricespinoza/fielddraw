@@ -634,12 +634,14 @@
         // Toda combinación tipo × variante tiene que existir como imagen
         // registrada: si falta una, MapLibre no dibuja ese símbolo y no avisa.
         const esperadas = [];
-        for (const t of sym.STRUCTURE_TYPES) {
+        // Las claves son una por tipo, salvo el plano de falla, que tiene una
+        // por sentido de movimiento (y la de «sin declarar»).
+        for (const k of estructural.structureImageKeys()) {
           for (const v of sym.STRUCTURE_VARIANTS) {
-            esperadas.push(estructural.structureImageName(t.id, v));
+            esperadas.push(estructural.structureImageName(k, v));
             // Y su copia en el color de lo importado de StraboSpot: si falta,
             // las medidas adoptadas se quedan sin símbolo y sin aviso.
-            esperadas.push(estructural.structureImageName(t.id, v, true));
+            esperadas.push(estructural.structureImageName(k, v, true));
           }
         }
         const mapaFalso = {

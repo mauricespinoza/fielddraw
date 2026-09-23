@@ -8,15 +8,17 @@ import {
   processType,
   rowsToGeoJSON,
   senseOfSlip,
+  spotTagsFrom,
 } from '../src/strabo/spots.js';
 import { featuresToSpots, uploadBreakdown, uploadableCount } from '../src/strabo/upload.js';
 import {
   adoptStrabo,
   straboCertainty,
   straboLineType,
+  straboFaultSense,
   straboStructureType,
 } from '../src/strabo/adopt.js';
-import { mergeGeologicUnitTags } from '../src/strabo/mapping.js';
+import { mergeGeologicUnitTags, planarOrientation } from '../src/strabo/mapping.js';
 import {
   STRABO_FILTER_FIELD,
   applyStraboFilter,
@@ -580,11 +582,16 @@ console.log('== adoptar un dataset ==');
   ok('y la calidad de la traza, como certeza inferida', falla.properties.certainty === 'inferred');
 
   const poligono = r.features.find((f) => f.properties.kind === 'polygon');
+  const granodiorita = r.units.find((u) => u.name === 'Granodiorita Lolco');
+  const nieves = r.units.find((u) => u.name === 'Fm Nieves');
   ok('el tag de unidad se convierte en una unidad del proyecto',
-     r.units.length === 1 && r.units[0].name === 'Granodiorita Lolco', JSON.stringify(r.units));
-  ok('y el polígono apunta a ella', poligono.properties.type === r.units[0].id);
+     r.units.length === 2 && !!granodiorita && !!nieves, JSON.stringify(r.units));
+  ok('y el polígono apunta a ella', poligono.properties.type === granodiorita.id);
   ok('la litología se adivina del nombre de la unidad',
-     r.units[0].color === '#E57373', r.units[0].color);
+     granodiorita.color === '#E57373', granodiorita.color);
+  ok('la medida lleva su unidad en el campo Unit, enlazada al catálogo',
+     medida.properties.unitId === nieves.id && medida.properties.unit === 'Fm Nieves',
+     JSON.stringify(medida.properties));
 
   ok('todo lo adoptado queda marcado como venido de StraboSpot',
      r.features.every((f) => f.properties.source === 'strabospot'));
@@ -597,7 +604,10 @@ console.log('== adoptar un dataset ==');
     units: [{ id: 'u-existente', name: 'Granodiorita Lolco', code: 'Gl', color: '#123456' }],
     newId: () => `y${++n}`,
   });
-  ok('una unidad que ya existe no se duplica', otra.units.length === 1 && otra.stats.newUnits === 0);
+  ok('una unidad que ya existe no se duplica',
+     otra.units.filter((u) => u.name === 'Granodiorita Lolco').length === 1 &&
+       otra.stats.newUnits === 1,
+     JSON.stringify(otra.units));
   ok('y el polígono se cuelga de la que había',
      otra.features.find((f) => f.properties.kind === 'polygon').properties.type === 'u-existente');
 }
@@ -632,6 +642,69 @@ console.log('== la calidad de la traza sobrevive a la bajada ==');
   ]);
   ok('el término escrito a mano de un «other» no se pierde',
      contacto.properties.Type.includes('structural contact'), contacto.properties.Type);
+}
+
+console.log('== unidades y sentido de falla, de ida y vuelta ==');
+{
+  const tags = [
+    { name: 'Outcrop', type: 'other', spots: [1, 2] },
+    { name: 'Fm Abanico', type: 'geologic_unit', spots: [1] },
+    { name: 'Granito viejo', unit_label_abbreviation: 'Pzg', spots: [2] },
+  ];
+  const porSpot = spotTagsFrom(tags);
+  ok('solo los tags de unidad geológica dan la columna Unit',
+     JSON.stringify(porSpot) === JSON.stringify({ 1: ['Fm Abanico'], 2: ['Granito viejo'] }),
+     JSON.stringify(porSpot));
+
+  ok('el sentido de falla se lee del tipo',
+     straboFaultSense('fault normal') === 'normal' &&
+       straboFaultSense('fault reverse') === 'inverse' &&
+       straboFaultSense('fault thrust') === 'inverse' &&
+       straboFaultSense('fault sinistral') === 'left-lateral' &&
+       straboFaultSense('fault dextral_normal') === 'right-lateral' &&
+       straboFaultSense('fault') === '' &&
+       straboFaultSense('bedding normal') === '');
+
+  const fc = (features) => ({ type: 'FeatureCollection', features });
+  let n = 0;
+  const r = adoptStrabo(
+    {
+      estructuras: fc([
+        {
+          type: 'Feature',
+          properties: { Name: 'F-9', Type: 'fault sinistral', Strike: 10, Dip: 80 },
+          geometry: { type: 'Point', coordinates: [-71.3, -37.4] },
+        },
+      ]),
+    },
+    { newId: () => `z${++n}` },
+  );
+  ok('el plano de falla adoptado conserva su sentido',
+     r.features[0].properties.type === 'fault-plane' &&
+       r.features[0].properties.faultSense === 'left-lateral',
+     JSON.stringify(r.features[0].properties));
+
+  const planar = planarOrientation({ type: 'fault-plane', faultSense: 'inverse', strike: 10, dip: 40 }, 1);
+  ok('y sube con el fault_or_sz_type de StraboSpot',
+     planar.feature_type === 'fault' && planar.fault_or_sz_type === 'reverse', JSON.stringify(planar));
+  ok('una estratificación no declara sentido',
+     planarOrientation({ type: 'bedding', faultSense: 'normal', strike: 1, dip: 2 }, 1).fault_or_sz_type === undefined);
+
+  // Una medida con la unidad escrita pero sin id (adopciones anteriores)
+  // también sube con su tag.
+  const { tags: subida } = featuresToSpots(
+    [
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [-71.3, -37.4] },
+        properties: { id: 'm1', kind: 'point', geomKind: 'measurement', type: 'bedding', strike: 10, dip: 20, unit: 'Fm Nieves' },
+      },
+    ],
+    { units: [{ id: 'u1', name: 'Fm Nieves', code: 'Kn', color: '#123456' }] },
+  );
+  ok('la unidad sin id se resuelve por nombre al subir',
+     subida.length === 1 && subida[0].name === 'Fm Nieves' && subida[0].unit_label_abbreviation === 'Kn',
+     JSON.stringify(subida));
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

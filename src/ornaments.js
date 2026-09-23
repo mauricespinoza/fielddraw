@@ -1,6 +1,7 @@
 import { GEOLOGY_SOURCE } from './geologyStyle.js';
 import {
   IMPORTED_FILTER,
+  ORNAMENT_LIMITS,
   ORNAMENT_TYPES,
   defaultImportStyle,
   defaultOrnaments,
@@ -40,23 +41,62 @@ function render(w, h, draw) {
   return { width: canvas.width, height: canvas.height, data: new Uint8Array(data.buffer) };
 }
 
+/**
+ * Halo blanco por detrás del ornamento.
+ *
+ * La traza continua ya lleva su halo (la capa de casing de `geologyStyle.js`),
+ * y sin uno propio el diente, la bola o las medias flechas quedaban pegados
+ * al fondo: sobre una ortofoto oscura el trazo se leía y su cinemática no,
+ * que es justo lo que el ornamento está para decir. Como en los símbolos de
+ * rumbo y manteo, un icono es un mapa de bits y no admite casing: se dibuja
+ * el mismo ornamento dos veces, primero engordado y en blanco, y encima en su
+ * color.
+ */
+const HALO_COLOR = 'rgba(255, 255, 255, 0.9)';
+const HALO_EXTRA = 2.4;
+
+/** Margen del lienzo para que el halo no se recorte en los bordes. */
+const PAD = HALO_EXTRA / 2 + 0.4;
+
+const passes = (color) => [
+  { color: HALO_COLOR, extra: HALO_EXTRA },
+  { color, extra: 0 },
+];
+
+/** Trazo con el grosor del pase. */
+function stroke(ctx, p, width, cap = 'round') {
+  ctx.strokeStyle = p.color;
+  ctx.lineWidth = width + p.extra;
+  ctx.lineCap = p.extra ? 'round' : cap;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+/** Relleno; en el pase del halo, además contorneado para engordarlo. */
+function fill(ctx, p) {
+  ctx.fillStyle = p.color;
+  ctx.fill();
+  if (p.extra) {
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = p.extra;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+}
+
 /** Media flecha: astil y punta, apuntando a la derecha desde (x0,y). */
-function halfArrow(ctx, x0, x1, y, color, up) {
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = 'round';
+function halfArrow(ctx, p, x0, x1, y, up) {
   ctx.beginPath();
   ctx.moveTo(x0, y);
   ctx.lineTo(x1, y);
-  ctx.stroke();
+  stroke(ctx, p, 1.6);
   const dir = x1 > x0 ? 1 : -1;
   ctx.beginPath();
   ctx.moveTo(x1, y);
   ctx.lineTo(x1 - dir * 5, y + (up ? -4 : 4));
   ctx.lineTo(x1 - dir * 3.2, y);
   ctx.closePath();
-  ctx.fill();
+  fill(ctx, p);
 }
 
 /**
@@ -64,42 +104,58 @@ function halfArrow(ctx, x0, x1, y, color, up) {
  * eje, hacia dónde manteen los flancos: hacia afuera en un antiforme y hacia
  * el eje en un sinforme.
  */
-function foldArrow(ctx, x, yTail, yHead, color) {
+function foldArrow(ctx, p, x, yTail, yHead) {
   const dir = Math.sign(yHead - yTail);
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.lineCap = 'butt';
   ctx.beginPath();
   ctx.moveTo(x, yTail);
   ctx.lineTo(x, yHead - dir * 3.6);
-  ctx.stroke();
+  stroke(ctx, p, 1.5, 'butt');
   ctx.beginPath();
   ctx.moveTo(x, yHead);
   ctx.lineTo(x - 2.9, yHead - dir * 4.4);
   ctx.lineTo(x + 2.9, yHead - dir * 4.4);
   ctx.closePath();
-  ctx.fill();
+  fill(ctx, p);
+}
+
+/**
+ * Alto del lienzo de las medias flechas. Es FIJO —el de la separación
+ * máxima— aunque la separación sea editable: `updateImage` exige que la
+ * imagen nueva tenga las mismas dimensiones que la registrada, y rehacer el
+ * icono al mover el deslizador es justamente lo que hay que poder hacer.
+ */
+const STRIKE_SLIP_H = 2 * (ORNAMENT_LIMITS.gap.max + 5);
+
+/**
+ * Par de medias flechas a `gap` px de la traza, una por bloque. La traza pasa
+ * por el centro del lienzo; la flecha de arriba va con la barba hacia arriba
+ * y la de abajo hacia abajo, siempre hacia AFUERA de la traza.
+ */
+function strikeSlipPair(ctx, p, gap, dextral) {
+  const cy = STRIKE_SLIP_H / 2;
+  const [arriba, abajo] = dextral ? [[6, 24], [24, 6]] : [[24, 6], [6, 24]];
+  halfArrow(ctx, p, arriba[0], arriba[1], cy - gap, true);
+  halfArrow(ctx, p, abajo[0], abajo[1], cy + gap, false);
 }
 
 /**
  * Cómo se dibuja el icono de cada tipo. La traza pasa por el centro vertical
  * del lienzo, así que un pliegue con offset 0 queda con la mitad del símbolo a
- * cada lado del eje.
+ * cada lado del eje. `draw(ctx, pase, estilo)`: el estilo es el del tipo en el
+ * módulo de simbología, del que solo las de rumbo leen algo (la separación).
  */
 const DRAWINGS = {
   // Diente de cabalgamiento: triángulo con la base sobre la traza.
   'thrust-fault': {
     w: 11,
     h: 9,
-    draw: (ctx, color) => {
-      ctx.fillStyle = color;
+    draw: (ctx, p) => {
       ctx.beginPath();
       ctx.moveTo(0, 9);
       ctx.lineTo(11, 9);
       ctx.lineTo(5.5, 0);
       ctx.closePath();
-      ctx.fill();
+      fill(ctx, p);
     },
   },
 
@@ -107,38 +163,30 @@ const DRAWINGS = {
   'normal-fault': {
     w: 7,
     h: 9,
-    draw: (ctx, color) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.4;
+    draw: (ctx, p) => {
       ctx.beginPath();
       ctx.moveTo(3.5, 9);
       ctx.lineTo(3.5, 5);
-      ctx.stroke();
-      ctx.fillStyle = color;
+      stroke(ctx, p, 1.4, 'butt');
       // El círculo se apoya donde terminaba el cuadrado, con el mismo
       // diámetro que su lado, para no alterar el tamaño aparente del tic.
       ctx.beginPath();
       ctx.arc(3.5, 2.5, 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      fill(ctx, p);
     },
   },
 
-  // Par de medias flechas: sentido dextral y sinestral.
+  // Par de medias flechas: sentido dextral y sinestral, a la separación que
+  // se haya elegido.
   'dextral-fault': {
     w: 30,
-    h: 16,
-    draw: (ctx, color) => {
-      halfArrow(ctx, 6, 24, 5, color, true);
-      halfArrow(ctx, 24, 6, 11, color, false);
-    },
+    h: STRIKE_SLIP_H,
+    draw: (ctx, p, s) => strikeSlipPair(ctx, p, gapOf(s), true),
   },
   'sinistral-fault': {
     w: 30,
-    h: 16,
-    draw: (ctx, color) => {
-      halfArrow(ctx, 24, 6, 5, color, true);
-      halfArrow(ctx, 6, 24, 11, color, false);
-    },
+    h: STRIKE_SLIP_H,
+    draw: (ctx, p, s) => strikeSlipPair(ctx, p, gapOf(s), false),
   },
 
   // Antiforme: las dos flechas se alejan del eje — los flancos manteen hacia
@@ -146,9 +194,9 @@ const DRAWINGS = {
   antiform: {
     w: 13,
     h: 22,
-    draw: (ctx, color) => {
-      foldArrow(ctx, 6.5, 10.4, 0.9, color);
-      foldArrow(ctx, 6.5, 11.6, 21.1, color);
+    draw: (ctx, p) => {
+      foldArrow(ctx, p, 6.5, 10.4, 0.9);
+      foldArrow(ctx, p, 6.5, 11.6, 21.1);
     },
   },
 
@@ -156,12 +204,15 @@ const DRAWINGS = {
   synform: {
     w: 13,
     h: 22,
-    draw: (ctx, color) => {
-      foldArrow(ctx, 6.5, 0.9, 10.4, color);
-      foldArrow(ctx, 6.5, 21.1, 11.6, color);
+    draw: (ctx, p) => {
+      foldArrow(ctx, p, 6.5, 0.9, 10.4);
+      foldArrow(ctx, p, 6.5, 21.1, 11.6);
     },
   },
 };
+
+const DEFAULT_GAP = 3;
+const gapOf = (s) => (s && Number.isFinite(s.gap) ? s.gap : DEFAULT_GAP);
 
 export const IMAGE_OF = Object.fromEntries(ORNAMENT_TYPES.map((t) => [t, `orn-${t}`]));
 
@@ -177,35 +228,60 @@ export const IMPORTED_IMAGE_OF = Object.fromEntries(
   ORNAMENT_TYPES.map((t) => [t, `orn-${t}-imp`]),
 );
 
-const imageWith = (type, color) => {
+const imageWith = (type, color, s) => {
   const d = DRAWINGS[type];
-  return render(d.w, d.h, (ctx) => d.draw(ctx, color));
+  return render(d.w + 2 * PAD, d.h + 2 * PAD, (ctx) => {
+    ctx.translate(PAD, PAD);
+    for (const p of passes(color)) d.draw(ctx, p, s);
+  });
 };
 
-const imageFor = (type, style) => imageWith(type, effectiveLineColor(type, style));
+const imageFor = (type, style) =>
+  imageWith(type, effectiveLineColor(type, style), style && style[type]);
+
+/** Lo que decide los píxeles de un icono: el color y, en las de rumbo, la separación. */
+const imageKey = (type, style) => `${effectiveLineColor(type, style)}|${gapOf(style && style[type])}`;
+
+/**
+ * Lo que decide los píxeles de la copia de lo importado: el color único y la
+ * separación de las medias flechas, que es del tipo y vale igual para lo
+ * propio que para lo adoptado.
+ */
+const importedKey = (type, style, importStyle) =>
+  `${importStyle.color}|${gapOf(style && style[type])}`;
+
+/** Última clave rasterizada de cada icono importado, por mapa. */
+const lastImported = new WeakMap();
 
 /** Registra los iconos que falten, con los colores del estilo actual. */
 export function addOrnamentImages(map, style = defaultOrnaments(), importStyle = defaultImportStyle()) {
+  const visto = lastImported.get(map) || {};
   for (const type of ORNAMENT_TYPES) {
     const name = IMAGE_OF[type];
     if (!map.hasImage(name)) map.addImage(name, imageFor(type, style), { pixelRatio: DPR });
     const ajeno = IMPORTED_IMAGE_OF[type];
     if (!map.hasImage(ajeno)) {
-      map.addImage(ajeno, imageWith(type, importStyle.color), { pixelRatio: DPR });
+      map.addImage(ajeno, imageWith(type, importStyle.color, style[type]), { pixelRatio: DPR });
+      visto[type] = importedKey(type, style, importStyle);
     }
   }
+  lastImported.set(map, visto);
 }
 
-/** Último color con el que se rasterizó la tanda de lo importado, por mapa. */
-const lastImportColor = new WeakMap();
-
-/** Redibuja los iconos de lo importado, y solo si el color de verdad cambió. */
-export function updateImportedOrnamentImages(map, importStyle) {
-  if (!importStyle || lastImportColor.get(map) === importStyle.color) return;
-  lastImportColor.set(map, importStyle.color);
+/** Redibuja los iconos de lo importado, y solo los que de verdad cambiaron. */
+export function updateImportedOrnamentImages(map, importStyle, style = defaultOrnaments()) {
+  if (!importStyle) return;
+  let visto = lastImported.get(map);
+  if (!visto) {
+    visto = {};
+    lastImported.set(map, visto);
+  }
   for (const type of ORNAMENT_TYPES) {
+    const clave = importedKey(type, style, importStyle);
+    if (visto[type] === clave) continue;
+    visto[type] = clave;
     const name = IMPORTED_IMAGE_OF[type];
-    if (map.hasImage(name)) map.updateImage(name, imageWith(type, importStyle.color));
+    if (map.hasImage(name)) map.updateImage(name, imageWith(type, importStyle.color, style[type]));
   }
 }
 
@@ -230,9 +306,9 @@ export function updateOrnamentImages(map, style) {
     lastColors.set(map, seen);
   }
   for (const type of ORNAMENT_TYPES) {
-    const color = effectiveLineColor(type, style);
-    if (seen[type] === color) continue;
-    seen[type] = color;
+    const clave = imageKey(type, style);
+    if (seen[type] === clave) continue;
+    seen[type] = clave;
     const name = IMAGE_OF[type];
     if (map.hasImage(name)) map.updateImage(name, imageFor(type, style));
   }
@@ -336,7 +412,7 @@ export function applyOrnamentStyle(map, style, importStyle) {
     }
   }
   updateOrnamentImages(map, style);
-  updateImportedOrnamentImages(map, importStyle);
+  updateImportedOrnamentImages(map, importStyle, style);
 }
 
 export const ORNAMENT_LAYER_IDS = ornamentLayers().map((l) => l.id);

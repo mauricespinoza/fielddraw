@@ -85,6 +85,26 @@ export const STRUCTURE_TYPES = [
 export const STRUCTURE_TYPE_BY_ID = new Map(STRUCTURE_TYPES.map((t) => [t.id, t]));
 
 /**
+ * Sentido de movimiento de un plano de falla medido.
+ *
+ * Se pregunta al elegir Flt porque es lo que el símbolo tiene que decir: un
+ * plano de falla sin cinemática es solo otra superficie, y el ornamento
+ * —bola, diente, medias flechas— es justamente la convención de las cartas
+ * para leerla sin leyenda. `none` queda para lo importado que no la declara.
+ */
+export const FAULT_SENSES = [
+  { id: 'normal', short: 'N', label: 'Normal' },
+  { id: 'inverse', short: 'Inv', label: 'Inverse' },
+  { id: 'left-lateral', short: 'LL', label: 'Left-lateral' },
+  { id: 'right-lateral', short: 'RL', label: 'Right-lateral' },
+];
+
+export const FAULT_SENSE_BY_ID = new Map(FAULT_SENSES.map((t) => [t.id, t]));
+
+/** Sentido válido, o '' si no hay (o no se reconoce). */
+export const sanitizeFaultSense = (v) => (FAULT_SENSE_BY_ID.has(v) ? v : '');
+
+/**
  * Umbrales de las variantes del símbolo.
  *
  * No son adorno: un manteo de 2° medido sobre un DEM de 30 m es
@@ -116,7 +136,7 @@ export const STRUCTURE_SIZE_LIMITS = { min: 0.5, max: 2.5, step: 0.1 };
  * escala", se lee como "no funciona".
  */
 export function defaultStructureStyle() {
-  return { size: 1, showLabels: true, minzoom: 10 };
+  return { size: 1, showLabels: true, minzoom: 10, labelMinzoom: 13 };
 }
 
 export function sanitizeStructureStyle(raw) {
@@ -128,6 +148,12 @@ export function sanitizeStructureStyle(raw) {
   }
   const minzoom = Number(raw.minzoom);
   if (Number.isFinite(minzoom)) out.minzoom = Math.min(18, Math.max(0, Math.round(minzoom)));
+  // Desde qué zoom se escribe el manteo junto al símbolo. Nunca por debajo del
+  // del propio símbolo: un número flotando sin trazo que lo explique no se lee.
+  const labelMinzoom = Number(raw.labelMinzoom);
+  if (Number.isFinite(labelMinzoom)) {
+    out.labelMinzoom = Math.min(20, Math.max(0, Math.round(labelMinzoom)));
+  }
   if (typeof raw.showLabels === 'boolean') out.showLabels = raw.showLabels;
   return out;
 }
@@ -213,8 +239,11 @@ export const LINE_STYLE_TYPES = LINE_TYPES.map((t) => t.id);
 const ORNAMENT_FIELDS = {
   'thrust-fault': { size: 1, spacing: 26, offset: -4.5, minzoom: 11 },
   'normal-fault': { size: 1, spacing: 30, offset: -4.5, minzoom: 11 },
-  'dextral-fault': { size: 1, spacing: 80, offset: 0, minzoom: 11 },
-  'sinistral-fault': { size: 1, spacing: 80, offset: 0, minzoom: 11 },
+  // `gap`: separación de cada media flecha respecto de la traza, en px. Solo
+  // la llevan las de rumbo: es lo que se ajusta cuando una traza gruesa se
+  // come las flechas, o cuando quedan tan lejos que parecen de otra línea.
+  'dextral-fault': { size: 1, spacing: 80, offset: 0, gap: 3, minzoom: 11 },
+  'sinistral-fault': { size: 1, spacing: 80, offset: 0, gap: 3, minzoom: 11 },
   // Los pliegues van más espaciados: el símbolo es alto, y una fila apretada
   // sobre el eje se lee como una banda y no como un pliegue.
   antiform: { size: 1, spacing: 64, offset: 0, minzoom: 11 },
@@ -235,6 +264,7 @@ export const ORNAMENT_LIMITS = {
   size: { min: 0.4, max: 2.5, step: 0.05 },
   spacing: { min: 10, max: 200, step: 2 },
   offset: { min: -14, max: 14, step: 0.5 },
+  gap: { min: 1, max: 12, step: 0.5 },
   minzoom: { min: 0, max: 18, step: 1 },
 };
 

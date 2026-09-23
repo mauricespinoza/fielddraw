@@ -167,6 +167,19 @@ function unitFor(f, units) {
   if ((esMedida(f) || esPuntoControl(f)) && p.unitId) {
     return units.find((u) => u.id === p.unitId) || (p.unit ? { id: p.unitId, name: p.unit, code: p.code } : null);
   }
+  /*
+   * Una medida o un punto con la unidad escrita pero sin `unitId` —lo que
+   * dejaban las adopciones de StraboSpot anteriores, que guardaban solo el
+   * nombre del tag— también vuelve con su tag: se busca en el catálogo por
+   * nombre, y si no está, sube con el nombre tal cual.
+   */
+  if ((esMedida(f) || esPuntoControl(f)) && p.unit) {
+    const clave = String(p.unit).trim().toLowerCase();
+    return (
+      units.find((u) => String(u.name || '').trim().toLowerCase() === clave) ||
+      { id: '', name: String(p.unit).trim(), code: p.code }
+    );
+  }
   return null;
 }
 

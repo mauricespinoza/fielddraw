@@ -10,6 +10,7 @@ import {
   defaultImportStyle,
   defaultOrnaments,
   defaultStructureStyle,
+  sanitizeFaultSense,
   sanitizeImportStyle,
   sanitizeOrnaments,
   sanitizeStructureStyle,
@@ -241,6 +242,11 @@ let state = {
   measureType: 'bedding',
   /** Estratos invertidos: cambia el símbolo, no el número. */
   measureOverturned: false,
+  /**
+   * Sentido de movimiento del próximo plano de falla (Flt): normal, inverse,
+   * left-lateral o right-lateral. Decide el ornamento del símbolo.
+   */
+  measureFaultSense: 'normal',
   /**
    * Unidad geológica en la que se toma la medida, o `null` si no se etiqueta.
    * A diferencia de un polígono —donde la unidad ES el tipo— una medida puede
@@ -1224,6 +1230,8 @@ export const setMeasureMethod = (measureMethod) =>
   set({ measureMethod, draft: null, deviceReading: null });
 export const setMeasureType = (measureType) => set({ measureType });
 export const setMeasureOverturned = (measureOverturned) => set({ measureOverturned });
+export const setMeasureFaultSense = (sense) =>
+  set({ measureFaultSense: sanitizeFaultSense(sense) || 'normal' });
 export const setMeasureUnit = (measureUnit) => set({ measureUnit });
 /** La capa de aplicación publica aquí lo que van diciendo los sensores. */
 export const setDeviceReading = (deviceReading) => set({ deviceReading });
@@ -1268,6 +1276,7 @@ export function createMeasurement({
   dipAzimuth,
   type,
   overturned,
+  faultSense,
   method = 'manual',
   quality = {},
   note = '',
@@ -1284,6 +1293,13 @@ export function createMeasurement({
   // (sin unidad a propósito): `??` los trataría igual, y un `null` explícito
   // dejaría de poder forzar "sin unidad" cuando la paleta sí tiene una activa.
   const unit = state.units.find((u) => u.id === (unitId !== undefined ? unitId : state.measureUnit));
+  const tipo = type ?? state.measureType;
+  // Solo un plano de falla lleva sentido de movimiento: en una estratificación
+  // no significaría nada, y guardarlo igual lo haría viajar a StraboSpot.
+  const sentido =
+    tipo === 'fault-plane'
+      ? sanitizeFaultSense(faultSense ?? state.measureFaultSense) || 'normal'
+      : '';
   const feature = {
     type: 'Feature',
     id,
@@ -1291,7 +1307,8 @@ export function createMeasurement({
       id,
       kind: 'point',
       geomKind: 'measurement',
-      type: type ?? state.measureType,
+      type: tipo,
+      ...(sentido ? { faultSense: sentido } : {}),
       strike: rumbo,
       dip: manteo,
       dipAzimuth: Number.isFinite(dipAzimuth) ? norm360(dipAzimuth) : norm360(rumbo + 90),
@@ -1472,6 +1489,19 @@ export function updateMeasurement(patch) {
       if (patch.strike !== undefined) props.strike = norm360(patch.strike);
       if (patch.dip !== undefined) props.dip = clampDip(patch.dip);
       if (patch.type !== undefined) props.type = patch.type;
+      if (patch.faultSense !== undefined) props.faultSense = sanitizeFaultSense(patch.faultSense);
+      // Pasar a plano de falla pide un sentido —el de la paleta si no se dio
+      // otro—, y dejar de serlo lo quita: el símbolo lo lee del elemento.
+      // Un plano de falla importado sin cinemática la sigue sin tener si solo
+      // se retoca el rumbo: inventársela sería peor que no dibujarla.
+      if (props.type === 'fault-plane') {
+        if (patch.type === 'fault-plane' && !props.faultSense) {
+          props.faultSense = state.measureFaultSense || 'normal';
+        }
+        if (!props.faultSense) delete props.faultSense;
+      } else {
+        delete props.faultSense;
+      }
       if (patch.overturned !== undefined) props.overturned = !!patch.overturned;
       if (patch.strike !== undefined || patch.dip !== undefined) {
         props.dipAzimuth = norm360(props.strike + 90);
@@ -1811,6 +1841,7 @@ export const SETTING_KEYS = [
   'measureMethod',
   'measureType',
   'measureOverturned',
+  'measureFaultSense',
   'measureUnit',
   'profileSource',
   'opentopoDem',

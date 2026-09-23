@@ -1,5 +1,6 @@
 import { GEOLOGY_SOURCE } from './geologyStyle.js';
 import {
+  FAULT_SENSES,
   HORIZONTAL_DIP_MAX,
   IMPORTED_FILTER,
   STRUCTURE_TYPES,
@@ -101,28 +102,68 @@ function dipTick(ctx, p, dir = 1, largo = TICK) {
   ctx.stroke();
 }
 
+/**
+ * Polígono relleno. En el pase del halo se rellena Y se contornea en blanco,
+ * para que el borde del halo tenga el mismo grosor que en los trazos.
+ */
+function fillShape(ctx, p, puntos) {
+  ctx.beginPath();
+  puntos.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.fillStyle = p.color;
+  ctx.fill();
+  prepare(ctx, p, 0.6);
+  ctx.stroke();
+}
+
+/**
+ * Triángulo relleno pegado al trazo de rumbo, hacia el lado del manteo: el
+ * «tic» de la FOLIACIÓN (S₁) en las cartas, que es lo que la separa a simple
+ * vista de la estratificación (S₀) aunque las dos se midan en el mismo punto.
+ */
+function dipTriangle(ctx, p, dir = 1, largo = TICK + 1.5, base = 3.6) {
+  fillShape(ctx, p, [
+    [CX, CY - base],
+    [CX + dir * largo, CY],
+    [CX, CY + base],
+  ]);
+}
+
+/** Tic de manteo: una raya en S₀, un triángulo en S₁. */
+function tick(ctx, p, estilo, dir = 1, largo = TICK) {
+  if (estilo === 'triangle') dipTriangle(ctx, p, dir, largo + 1.5);
+  else dipTick(ctx, p, dir, largo);
+}
+
+/**
+ * Las cuatro variantes, con el tic que corresponda a la superficie.
+ * `estilo` es 'line' (estratificación, diaclasa, plano de falla) o
+ * 'triangle' (foliación).
+ */
 const DRAWINGS = {
   /** Inclinado: trazo de rumbo y tic hacia el lado del manteo. */
-  inclined: (ctx, p) => {
+  inclined: (ctx, p, estilo) => {
     strikeLine(ctx, p);
-    dipTick(ctx, p, 1);
+    tick(ctx, p, estilo, 1);
   },
 
   /** Vertical: tic a los dos lados, porque no hay bloque que cabecee. */
-  vertical: (ctx, p) => {
+  vertical: (ctx, p, estilo) => {
     strikeLine(ctx, p, 2.4);
-    dipTick(ctx, p, 1, TICK - 1.5);
-    dipTick(ctx, p, -1, TICK - 1.5);
+    tick(ctx, p, estilo, 1, TICK - 1.5);
+    tick(ctx, p, estilo, -1, TICK - 1.5);
   },
 
   /**
-   * Horizontal: cruz dentro de un círculo. Sin dirección de manteo, que es
-   * justamente lo que afirma —y lo que un tic apuntando a algún lado negaría.
+   * Horizontal: cruz dentro de un círculo (dentro de un cuadrado en la
+   * foliación). Sin dirección de manteo, que es justamente lo que afirma —y
+   * lo que un tic apuntando a algún lado negaría.
    */
-  horizontal: (ctx, p) => {
+  horizontal: (ctx, p, estilo) => {
     prepare(ctx, p, 1.8);
     ctx.beginPath();
-    ctx.arc(CX, CY, 6.5, 0, Math.PI * 2);
+    if (estilo === 'triangle') ctx.rect(CX - 5.5, CY - 5.5, 11, 11);
+    else ctx.arc(CX, CY, 6.5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(CX - 9, CY);
@@ -137,9 +178,9 @@ const DRAWINGS = {
    * gancho apunta al norte del lienzo por convenio; lo que importa es que se
    * distinga de un estrato en posición normal a simple vista.
    */
-  overturned: (ctx, p) => {
+  overturned: (ctx, p, estilo) => {
     strikeLine(ctx, p);
-    dipTick(ctx, p, 1);
+    tick(ctx, p, estilo, 1);
     prepare(ctx, p, 2);
     ctx.beginPath();
     ctx.moveTo(CX + TICK, CY);
@@ -147,6 +188,97 @@ const DRAWINGS = {
     ctx.stroke();
   },
 };
+
+/**
+ * Media flecha paralela al rumbo, a `dx` del trazo (con signo: + al este) y
+ * apuntando hacia `sentido` (−1 al norte del lienzo, +1 al sur). Ocupa solo
+ * la mitad del trazo hacia la que apunta, así que las dos flechas quedan
+ * desfasadas —como en las cartas— y ninguna pisa el tic de manteo, que sale
+ * del centro. La barba va hacia AFUERA del trazo: la flecha dice hacia dónde
+ * se mueve ESE bloque.
+ */
+function halfArrow(ctx, p, dx, sentido) {
+  const x = CX + dx;
+  const cola = CY + sentido * 3;
+  const punta = CY + sentido * (HALF_STRIKE - 0.5);
+  prepare(ctx, p, 1.6);
+  ctx.beginPath();
+  ctx.moveTo(x, cola);
+  ctx.lineTo(x, punta);
+  ctx.lineTo(x + Math.sign(dx) * 3.2, punta - sentido * 4.2);
+  ctx.stroke();
+}
+
+/**
+ * Ornamento de la cinemática de un plano de falla, sobre el símbolo base.
+ *
+ * El lienzo tiene el rumbo al norte y el manteo al este (derecha), así que el
+ * bloque colgante es el de la derecha:
+ *
+ * - **Normal**: bola en el extremo del tic, del lado que baja — la bola de
+ *   las cartas va sobre el bloque hundido.
+ * - **Inverse**: diente triangular del lado del bloque colgante, el que
+ *   cabalga, como los dientes de una traza de cabalgamiento.
+ * - **Left / Right-lateral**: dos medias flechas paralelas al rumbo, una por
+ *   bloque, en sentidos opuestos. En una dextral, mirando a través de la
+ *   falla el otro bloque se va hacia la DERECHA: el bloque este baja por el
+ *   lienzo y el oeste sube. La sinistral es el espejo.
+ *
+ * En una falla sin sentido declarado (lo importado que no lo trae) no se
+ * dibuja nada: inventarle cinemática sería peor que no mostrarla.
+ */
+const FAULT_ORNAMENTS = {
+  none: () => {},
+  normal: (ctx, p) => {
+    ctx.beginPath();
+    ctx.arc(CX + TICK + 0.5, CY, 2.7, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    prepare(ctx, p, 0.6);
+    ctx.stroke();
+  },
+  inverse: (ctx, p) => {
+    fillShape(ctx, p, [
+      [CX, CY - 4.2],
+      [CX + 7, CY],
+      [CX, CY + 4.2],
+    ]);
+  },
+  'right-lateral': (ctx, p) => {
+    halfArrow(ctx, p, 5, 1);
+    halfArrow(ctx, p, -5, -1);
+  },
+  'left-lateral': (ctx, p) => {
+    halfArrow(ctx, p, 5, -1);
+    halfArrow(ctx, p, -5, 1);
+  },
+};
+
+const FAULT_TYPE = 'fault-plane';
+
+/** Claves de sentido de un plano de falla, más la de «sin declarar». */
+const FAULT_SENSE_KEYS = [...FAULT_SENSES.map((f) => f.id), 'none'];
+
+/** Dibujo completo de un símbolo, un pase (halo o color). */
+function drawSymbol(ctx, p, key, variant) {
+  if (key.startsWith(`${FAULT_TYPE}-`)) {
+    const sentido = key.slice(FAULT_TYPE.length + 1);
+    // El trazo de rumbo de una falla es más grueso: se lee como falla antes
+    // que como capa, incluso donde el color no alcanza a distinguirse.
+    // Una falla horizontal no tiene rumbo con el que orientar el ornamento:
+    // se dibuja la cruz de siempre, sin cinemática que no se puede situar.
+    if (variant === 'horizontal') {
+      DRAWINGS.horizontal(ctx, p, 'line');
+      return;
+    }
+    strikeLine(ctx, p, 2.8);
+    if (sentido !== 'inverse') dipTick(ctx, p, 1);
+    if (variant === 'vertical') dipTick(ctx, p, -1);
+    (FAULT_ORNAMENTS[sentido] || FAULT_ORNAMENTS.none)(ctx, p);
+    return;
+  }
+  DRAWINGS[variant](ctx, p, key === 'foliation' ? 'triangle' : 'line');
+}
 
 /**
  * Sufijo de la copia en el color de lo importado.
@@ -160,36 +292,49 @@ const DRAWINGS = {
  */
 const IMPORTED_SUFFIX = '-imp';
 
-export const structureImageName = (type, variant, imported = false) =>
-  `str-${type}-${variant}${imported ? IMPORTED_SUFFIX : ''}`;
+export const structureImageName = (key, variant, imported = false) =>
+  `str-${key}-${variant}${imported ? IMPORTED_SUFFIX : ''}`;
 
-/** Todos los pares tipo × variante que hay que registrar. */
+/**
+ * Claves de símbolo: una por tipo de superficie, salvo el plano de falla, que
+ * tiene una por sentido de movimiento (`fault-plane-normal`, …) porque el
+ * ornamento es parte del dibujo.
+ */
+export function structureImageKeys() {
+  return STRUCTURE_TYPES.flatMap((t) =>
+    t.id === FAULT_TYPE ? FAULT_SENSE_KEYS.map((k) => `${FAULT_TYPE}-${k}`) : [t.id],
+  );
+}
+
+const typeOfKey = (key) => (key.startsWith(`${FAULT_TYPE}-`) ? FAULT_TYPE : key);
+
+/** Todos los pares clave × variante que hay que registrar. */
 function everyImage() {
   const out = [];
-  for (const t of STRUCTURE_TYPES) {
-    for (const v of STRUCTURE_VARIANTS) out.push([t.id, v]);
+  for (const k of structureImageKeys()) {
+    for (const v of STRUCTURE_VARIANTS) out.push([k, v]);
   }
   return out;
 }
 
-const imageFor = (variant, color) =>
+const imageFor = (key, variant, color) =>
   render(W, H, (ctx) => {
-    for (const p of passes(color)) DRAWINGS[variant](ctx, p);
+    for (const p of passes(color)) drawSymbol(ctx, p, key, variant);
   });
 
 /** Último color con el que se rasterizaron las copias de lo importado. */
 let importedColorDrawn = null;
 
 export function addStructureImages(map, importStyle = defaultImportStyle()) {
-  for (const [type, variant] of everyImage()) {
-    const name = structureImageName(type, variant);
+  for (const [key, variant] of everyImage()) {
+    const name = structureImageName(key, variant);
     if (!map.hasImage(name)) {
-      const color = STRUCTURE_TYPE_BY_ID.get(type).color;
-      map.addImage(name, imageFor(variant, color), { pixelRatio: DPR });
+      const color = STRUCTURE_TYPE_BY_ID.get(typeOfKey(key)).color;
+      map.addImage(name, imageFor(key, variant, color), { pixelRatio: DPR });
     }
-    const ajeno = structureImageName(type, variant, true);
+    const ajeno = structureImageName(key, variant, true);
     if (!map.hasImage(ajeno)) {
-      map.addImage(ajeno, imageFor(variant, importStyle.color), { pixelRatio: DPR });
+      map.addImage(ajeno, imageFor(key, variant, importStyle.color), { pixelRatio: DPR });
     }
   }
   importedColorDrawn = importStyle.color;
@@ -202,9 +347,9 @@ export function addStructureImages(map, importStyle = defaultImportStyle()) {
  */
 export function applyImportStyle(map, importStyle) {
   if (!importStyle || importStyle.color === importedColorDrawn) return;
-  for (const [type, variant] of everyImage()) {
-    const name = structureImageName(type, variant, true);
-    if (map.hasImage(name)) map.updateImage(name, imageFor(variant, importStyle.color));
+  for (const [key, variant] of everyImage()) {
+    const name = structureImageName(key, variant, true);
+    if (map.hasImage(name)) map.updateImage(name, imageFor(key, variant, importStyle.color));
   }
   importedColorDrawn = importStyle.color;
 }
@@ -229,7 +374,18 @@ const variantExpr = [
 const typeExpr = [
   'match',
   ['get', 'type'],
-  ...STRUCTURE_TYPES.flatMap((t) => [t.id, t.id]),
+  ...STRUCTURE_TYPES.filter((t) => t.id !== FAULT_TYPE).flatMap((t) => [t.id, t.id]),
+  FAULT_TYPE,
+  [
+    'concat',
+    `${FAULT_TYPE}-`,
+    [
+      'match',
+      ['coalesce', ['get', 'faultSense'], ''],
+      ...FAULT_SENSES.flatMap((f) => [f.id, f.id]),
+      'none',
+    ],
+  ],
   'bedding',
 ];
 
@@ -266,6 +422,15 @@ const MEASUREMENT_FILTER = [
 ];
 
 export const STRUCTURE_SOURCE = GEOLOGY_SOURCE;
+
+/**
+ * Desde qué zoom se escribe el manteo. Lo elige el usuario —en un
+ * afloramiento denso los números tapan los símbolos hasta muy cerca, y en uno
+ * disperso se quieren ver desde lejos—, pero nunca por debajo del zoom del
+ * propio símbolo: un número sin el trazo que lo explica no se lee.
+ */
+const labelMinzoom = (style) =>
+  Math.max(style.minzoom, Number.isFinite(style.labelMinzoom) ? style.labelMinzoom : 13);
 
 export function structureLayers(style = defaultStructureStyle(), importStyle = defaultImportStyle()) {
   return [
@@ -304,7 +469,7 @@ export function structureLayers(style = defaultStructureStyle(), importStyle = d
       id: 'structure-labels',
       type: 'symbol',
       source: GEOLOGY_SOURCE,
-      minzoom: Math.max(style.minzoom, 13),
+      minzoom: labelMinzoom(style),
       filter: MEASUREMENT_FILTER,
       layout: {
         /*
@@ -348,6 +513,6 @@ export function applyStructureStyle(map, style, importStyle) {
   }
   if (map.getLayer('structure-labels')) {
     map.setLayoutProperty('structure-labels', 'visibility', style.showLabels ? 'visible' : 'none');
-    map.setLayerZoomRange('structure-labels', Math.max(style.minzoom, 13), 24);
+    map.setLayerZoomRange('structure-labels', labelMinzoom(style), 24);
   }
 }

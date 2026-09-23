@@ -1141,7 +1141,9 @@
           The strike bar is drawn along the measured strike and the tick points down-dip
           (right-hand rule), so the symbol reads the same here, in QGIS and in StraboSpot. Below
           3° the horizontal symbol is used and the tick disappears: a dip that small cannot state
-          a direction. Above 87° the vertical one, with a tick on both sides.
+          a direction. Above 87° the vertical one, with a tick on both sides. Bedding (S₀) has a
+          plain tick, foliation (S₁) a filled triangle, and a fault plane (Flt) its kinematics:
+          a ball for normal, a tooth for inverse, offset half-arrows for strike-slip.
         </p>
         <label class="field">
           <span>Symbol size</span>
@@ -1160,6 +1162,13 @@
         <label class="row">
           <input type="checkbox" id="structure-labels" checked />
           Write the dip next to each symbol
+        </label>
+        <label class="field">
+          <span>Show dip values from zoom</span>
+          <span class="tol-row">
+            <input type="range" id="structure-label-minzoom" min="0" max="20" step="1" value="13" />
+            <span class="num" id="structure-label-minzoom-num">13</span>
+          </span>
         </label>
 
         <hr class="sep" />
