@@ -707,5 +707,33 @@ console.log('== unidades y sentido de falla, de ida y vuelta ==');
      JSON.stringify(subida));
 }
 
+console.log('== fallas de StraboSpot <-> falla indiferenciada ==');
+{
+  const fc = (features) => ({ type: 'FeatureCollection', features });
+  const linea = (props) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, properties: props });
+  const tipoAdoptado = (props) => {
+    const [fila] = buildLineasPoligonos([linea(props)]);
+    let n = 0;
+    return adoptStrabo({ lineas: fc([fila]) }, { newId: () => `q${++n}` }).features[0].properties.type;
+  };
+  ok('una falla sin sentido entra como indiferenciada',
+     tipoAdoptado({ trace: { trace_type: 'geologic_struc', geologic_structure_type: 'fault' } }) === 'undefined-fault');
+  ok('con el sentido en «unknown», también',
+     tipoAdoptado({ trace: { trace_type: 'geologic_struc', geologic_structure_type: 'fault', shear_sense: 'unknown' } }) === 'undefined-fault');
+  ok('con la traza aplanada en el spot, sigue siendo falla',
+     tipoAdoptado({ trace_type: 'geologic_struc', geologic_structure_type: 'fault' }) === 'undefined-fault');
+  ok('y aplanada con sentido, conserva el sentido',
+     tipoAdoptado({ trace_type: 'geologic_struc', geologic_structure_type: 'fault', shear_sense: 'reverse' }) === 'thrust-fault');
+
+  const { collection } = featuresToSpots([
+    { type: 'Feature', geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
+      properties: { id: 'u', kind: 'line', type: 'undefined-fault', certainty: 'observed' } },
+  ]);
+  const trace = collection.features[0].properties.trace;
+  ok('y la indiferenciada sube como falla sin sentido',
+     trace.trace_type === 'geologic_struc' && trace.geologic_structure_type === 'fault' && !trace.shear_sense,
+     JSON.stringify(trace));
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

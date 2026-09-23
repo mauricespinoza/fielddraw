@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.36.0';
+export const APP_VERSION = '0.37.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,21 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.37.0',
+    highlights: [
+      'With several features selected, a list shows them all by name; tap one to keep only that one.',
+      'Device method: tap the compass to stop the measurement, tap again to resume.',
+      'StraboSpot fault lines with no sense of slip come in as undifferentiated faults, and go back up as plain faults.',
+      'The logo on the main screen now carries the app name.',
+    ],
+    items: [
+      'Con más de un elemento seleccionado aparece una lista con cada uno —tipo, certeza, unidad o rumbo/manteo— y un toque deja seleccionado solo ese. Sirve para lo apilado (un contacto sobre el borde de un polígono, dos medidas en el mismo afloramiento) y para depurar un rectángulo de selección. La ✕ la cierra conservando todo lo seleccionado.',
+      'Método Device: un toque sobre la brújula detiene la medida en ese instante —la lectura queda fija, con un marco de acento— para poder separar el teléfono de la roca y guardarla con calma; otro toque la reanuda. Tras guardar, la siguiente medida arranca en vivo.',
+      'Las trazas de falla de StraboSpot sin sentido de movimiento —sin `shear_sense`, con «unknown», o con la traza aplanada en el spot en vez de en su objeto `trace`— entran como falla indiferenciada; antes, la forma aplanada llegaba sin tipo y caía en contacto. La indiferenciada sube como falla sin sentido.',
+      'El logo de la pantalla principal lleva el nombre de la app a su derecha: «Field» liviano y «Draw» firme en el turquesa del icono. Si no cabe, se retira primero el nombre y después el logo.',
+    ],
+  },
   {
     version: '0.36.0',
     highlights: [

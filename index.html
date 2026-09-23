@@ -403,6 +403,12 @@
           <line x1="20.2" y1="2.6" x2="15.1" y2="10" stroke="#f87171" stroke-width="2.3" stroke-linecap="round" />
           <path d="M15.1 10 13.1 11.9 14.3 9.3z" fill="#e6edf3" />
         </svg>
+        <!-- El nombre, a la derecha del logo. «Field» liviano y «Draw» con
+             peso y en el turquesa de la tablet del icono: se lee como una
+             sola palabra y la segunda mitad —lo que la app hace— es la que
+             destaca. Si no cabe, se retira primero el nombre y después la
+             marca entera (ver `wireToolbarWidth` en ui.js). -->
+        <span class="brand-name" aria-label="FieldDraw"><span class="brand-name-a">Field</span><span class="brand-name-b">Draw</span></span>
       </div>
 
       <!--
@@ -915,6 +921,17 @@
         </p>
       </div>
 
+      <!-- Cuál de los elementos seleccionados: aparece solo cuando hay más de
+           uno. Ver `renderSelectionPicker` en ui.js. -->
+      <div class="selection-picker hidden" id="selection-picker" role="dialog" aria-label="Selected features">
+        <header>
+          <h2 id="selection-picker-title">Selected</h2>
+          <button class="icon-btn close-x" id="btn-close-selection-picker" aria-label="Keep them all selected">✕</button>
+        </header>
+        <p class="hint footnote">Tap one to keep only that feature selected.</p>
+        <ul class="selection-picker-list" id="selection-picker-list"></ul>
+      </div>
+
       <div class="props-menu hidden" id="props-menu">
         <header>
           <h2 id="props-title">Properties</h2>
@@ -932,7 +949,7 @@
           <h2>Device compass</h2>
           <button class="icon-btn close-x" id="btn-close-device" aria-label="Close">✕</button>
         </header>
-        <svg id="device-compass" class="compass-svg" aria-label="Live compass reading"></svg>
+        <svg id="device-compass" class="compass-svg" role="button" tabindex="0" aria-label="Live compass reading — tap to stop or resume the measurement"></svg>
         <p class="hint footnote" id="device-read-note"></p>
         <p class="hint footnote" id="device-gps-note"></p>
         <button class="pill accent wide" id="btn-device-done" disabled>Add measurement</button>
