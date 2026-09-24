@@ -288,6 +288,13 @@ let state = {
   controlPointNote: '',
   /** Tamaño del punto, zoom mínimo y por qué campo se rotula. */
   controlPointStyle: defaultControlPointStyle(),
+  /**
+   * Dónde irá el punto de control que se está anotando: `{ lngLat, via }`,
+   * con `via` 'tap' o 'gps'. Primero se decide DÓNDE —tocando el mapa o con
+   * el GPS— y después se rellena el formulario; el punto no existe hasta
+   * guardarlo, así que cancelar no deja nada que deshacer.
+   */
+  pendingControlPoint: null,
 
   /* ---------- perfil topográfico ---------- */
 
@@ -603,7 +610,7 @@ export function setTool(tool) {
   if (!['select', 'vertices', 'cut', 'reshape'].includes(tool) && !extendFrom) {
     set({ selection: [] });
   }
-  set({ tool, extendFrom });
+  set({ tool, extendFrom, pendingControlPoint: null });
   return true;
 }
 
@@ -637,6 +644,26 @@ export function setOrnament(type, patch) {
   const current = state.ornaments[type];
   if (!current) return;
   set({ ornaments: { ...state.ornaments, [type]: { ...current, ...patch } } });
+}
+
+/**
+ * El mismo cambio sobre varios tipos a la vez, en una sola actualización: el
+ * panel de simbología ajusta por GRUPO —todos los contactos, todas las fallas—
+ * y no tipo por tipo. Cada tipo recibe solo los campos que de verdad tiene.
+ */
+export function setOrnamentGroup(types, patch) {
+  const next = { ...state.ornaments };
+  let tocado = false;
+  for (const type of types) {
+    const current = next[type];
+    if (!current) continue;
+    const own = {};
+    for (const [k, v] of Object.entries(patch)) if (k in current) own[k] = v;
+    if (Object.keys(own).length === 0) continue;
+    next[type] = { ...current, ...own };
+    tocado = true;
+  }
+  if (tocado) set({ ornaments: next });
 }
 
 export function setOrnaments(ornaments) {
@@ -704,12 +731,12 @@ export function addVertex(p) {
   }
 
   /*
-   * Punto de control: un solo toque lo deja puesto. No hay nada que muestrear
-   * ni que cerrar —los campos ya están escritos en la paleta—, así que el toque
-   * es la última parte del gesto y no la primera.
+   * Punto de control: el toque solo dice DÓNDE. El punto se crea al guardar
+   * el formulario que se abre a continuación (ver `pendingControlPoint`), y un
+   * segundo toque antes de guardar lo mueve en vez de crear otro.
    */
   if (state.tool === CONTROL_POINT_TOOL) {
-    createControlPoint({ lngLat: p });
+    set({ pendingControlPoint: { lngLat: [p[0], p[1]], via: 'tap' } });
     return;
   }
 
@@ -1445,9 +1472,30 @@ export function createControlPoint({
     controlPointSampleId: '',
     controlPointSampleDescription: '',
     controlPointNote: '',
+    pendingControlPoint: null,
     tool: 'select',
   });
   return feature;
+}
+
+/**
+ * Fija (o borra, con `null`) la posición del punto de control que se está
+ * anotando. La usa la colocación por GPS; la del toque pasa por `tap`.
+ */
+export function setPendingControlPoint(pending) {
+  if (!pending) {
+    set({ pendingControlPoint: null });
+    return;
+  }
+  const { lngLat, via = 'gps', altitude } = pending;
+  if (!Array.isArray(lngLat) || !Number.isFinite(lngLat[0]) || !Number.isFinite(lngLat[1])) return;
+  set({
+    pendingControlPoint: {
+      lngLat: [lngLat[0], lngLat[1]],
+      via,
+      ...(Number.isFinite(altitude) ? { altitude } : {}),
+    },
+  });
 }
 
 /** Edita los puntos de control seleccionados. */

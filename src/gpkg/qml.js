@@ -287,13 +287,16 @@ ${symbols.join('\n')}
 </qgis>`;
 }
 
-/** Círculo relleno con borde oscuro: el símbolo de un punto de control. */
-function filledCircleMarkerLayer(color, sizeMm = '3') {
+/**
+ * Marcador relleno con borde oscuro: el símbolo de un punto de control.
+ * `shape` es el nombre del SimpleMarker de QGIS (circle, square, star…).
+ */
+function filledCircleMarkerLayer(color, sizeMm = '3', shape = 'circle') {
   return `        <layer class="SimpleMarker" enabled="1" locked="0" pass="0">
           <Option type="Map">
             <Option name="angle" type="QString" value="0"/>
             <Option name="color" type="QString" value="${hexToRgba(color)}"/>
-            <Option name="name" type="QString" value="circle"/>
+            <Option name="name" type="QString" value="${xmlEscape(shape)}"/>
             <Option name="offset" type="QString" value="0,0"/>
             <Option name="outline_color" type="QString" value="${hexToRgba(shade(color, 0.45))}"/>
             <Option name="outline_style" type="QString" value="solid"/>
@@ -320,18 +323,23 @@ function filledCircleMarkerLayer(color, sizeMm = '3') {
  * @param {Array<{value: string, label: string, color: string}>} unidades
  * @param {?string} labelColumn columna por la que rotular, o null para no rotular
  */
-export function buildControlPointQML(unidades, labelColumn, noUnitColor = '#b0bec5') {
+export function buildControlPointQML(
+  unidades,
+  labelColumn,
+  noUnitColor = '#b0bec5',
+  shape = 'circle',
+) {
   const rules = [];
   const symbols = [];
   unidades.forEach((u, i) => {
     rules.push(
       `      <rule key="${uuid()}" symbol="${i}" label="${xmlEscape(u.label)}" filter="&quot;unit&quot; = '${String(u.value).replace(/'/g, "''")}'"/>`,
     );
-    symbols.push(markerSymbol(String(i), filledCircleMarkerLayer(u.color), false));
+    symbols.push(markerSymbol(String(i), filledCircleMarkerLayer(u.color, '3', shape), false));
   });
   const iElse = symbols.length;
   rules.push(`      <rule key="${uuid()}" symbol="${iElse}" label="No unit" filter="ELSE"/>`);
-  symbols.push(markerSymbol(String(iElse), filledCircleMarkerLayer(noUnitColor), false));
+  symbols.push(markerSymbol(String(iElse), filledCircleMarkerLayer(noUnitColor, '3', shape), false));
 
   const labeling = labelColumn
     ? `
@@ -359,8 +367,8 @@ ${symbols.join('\n')}
 </qgis>`;
 }
 
-/** SLD de los puntos de control: un círculo del color de cada unidad. */
-export function buildControlPointSLD(unidades) {
+/** SLD de los puntos de control: la forma elegida, del color de cada unidad. */
+export function buildControlPointSLD(unidades, wellKnownName = 'circle') {
   const reglas = unidades
     .map(
       (u) => `      <se:Rule>
@@ -374,7 +382,7 @@ export function buildControlPointSLD(unidades) {
         <se:PointSymbolizer>
           <se:Graphic>
             <se:Mark>
-              <se:WellKnownName>circle</se:WellKnownName>
+              <se:WellKnownName>${xmlEscape(wellKnownName)}</se:WellKnownName>
               <se:Fill>
                 <se:SvgParameter name="fill">${u.color}</se:SvgParameter>
               </se:Fill>

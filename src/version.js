@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.37.0';
+export const APP_VERSION = '0.38.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
-  ['Create · Control', 'Control points: unit, sample ID, description, purpose and notes. Date and time are stamped for you, the colour follows the unit and the label is yours to pick.'],
+  ['Create · Control', 'Observation points: choose tap or GPS, then fill in unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
@@ -54,6 +54,19 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.38.0',
+    highlights: [
+      'Line symbology is set per group — one colour and width for all contacts, all faults, all folds — with ornaments tuned by family instead of type by type.',
+      'Observation points can use a circle, square, triangle, diamond, star, pentagon or cross; the fill still follows the unit, and the icon travels to QGIS.',
+      'Placing an observation point now asks first: tap the map or use the GPS. The form opens after, full screen on a phone, and the point is only created when you save it.',
+    ],
+    items: [
+      'Panel de simbología: los once tipos de línea se ajustan por grupo (contactos, fallas, pliegues, diques) con un solo color y un solo grosor; los ornamentos, por familia —ticks de inversa y normal, medias flechas de rumbo, flechas de pliegue— con un único zoom mínimo por grupo. El proyecto sigue guardando cada tipo, así que nada cambia al abrir uno anterior.',
+      'Puntos de observación con icono a elección (círculo, cuadrado, triángulo, rombo, estrella, pentágono, cruz), dibujados como SDF para conservar el relleno de la unidad y el borde morado de lo adoptado. El QML y el SLD del GeoPackage usan la misma forma.',
+      'Colocar un punto: primero se elige tocar el mapa o usar el GPS (si no hay posición, enciende el seguimiento y espera); luego se abre el formulario, a pantalla completa en el teléfono. Un segundo toque mueve el marcador; el punto solo se crea con «Save point».',
+    ],
+  },
   {
     version: '0.37.0',
     highlights: [

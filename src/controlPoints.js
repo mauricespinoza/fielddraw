@@ -100,8 +100,29 @@ export const CONTROL_POINT_NO_UNIT_COLOR = '#b0bec5';
 
 export const CONTROL_POINT_SIZE_LIMITS = { min: 0.5, max: 2.5, step: 0.1 };
 
+/**
+ * Forma del símbolo de un punto de control. El RELLENO sigue siendo el color de
+ * la unidad —la forma no lo sustituye, lo acompaña—: sirve para distinguir de
+ * un vistazo una campaña de otra, o los puntos de muestreo de las simples
+ * estaciones, sin renunciar a leer la unidad.
+ *
+ * `qgis` es el nombre del SimpleMarker equivalente y `sld` el WellKnownName,
+ * para que el GeoPackage exportado se vea igual en QGIS.
+ */
+export const CONTROL_POINT_ICONS = [
+  { id: 'circle', label: 'Circle', glyph: '●', qgis: 'circle', sld: 'circle' },
+  { id: 'square', label: 'Square', glyph: '■', qgis: 'square', sld: 'square' },
+  { id: 'triangle', label: 'Triangle', glyph: '▲', qgis: 'triangle', sld: 'triangle' },
+  { id: 'diamond', label: 'Diamond', glyph: '◆', qgis: 'diamond', sld: 'square' },
+  { id: 'star', label: 'Star', glyph: '★', qgis: 'star', sld: 'star' },
+  { id: 'pentagon', label: 'Pentagon', glyph: '⬟', qgis: 'pentagon', sld: 'circle' },
+  { id: 'cross', label: 'Cross', glyph: '✚', qgis: 'cross_fill', sld: 'cross' },
+];
+
+export const CONTROL_POINT_ICON_BY_ID = new Map(CONTROL_POINT_ICONS.map((i) => [i.id, i]));
+
 export function defaultControlPointStyle() {
-  return { size: 1, labelField: 'sampleId', minzoom: 10 };
+  return { size: 1, labelField: 'sampleId', minzoom: 10, icon: 'circle' };
 }
 
 export function sanitizeControlPointStyle(raw) {
@@ -114,6 +135,7 @@ export function sanitizeControlPointStyle(raw) {
   const minzoom = Number(raw.minzoom);
   if (Number.isFinite(minzoom)) out.minzoom = Math.min(18, Math.max(0, Math.round(minzoom)));
   if (LABEL_FIELD_BY_ID.has(raw.labelField)) out.labelField = raw.labelField;
+  if (CONTROL_POINT_ICON_BY_ID.has(raw.icon)) out.icon = raw.icon;
   return out;
 }
 

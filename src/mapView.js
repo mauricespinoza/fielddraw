@@ -65,6 +65,7 @@ import {
 import {
   CONTROL_POINT_LAYER_IDS,
   applyControlPointStyle,
+  addControlPointIcons,
   controlPointLayers,
 } from './controlPointSymbols.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
@@ -645,6 +646,7 @@ export function createMapView({
 
     // Puntos de control: mismo origen que el dibujo, color por unidad. Encima
     // de las medidas, que es donde los pone el panel de capas.
+    addControlPointIcons(map);
     for (const l of controlPointLayers(
       store.getState().controlPointStyle,
       store.getState().units,
@@ -3308,7 +3310,25 @@ export function createMapView({
     },
   });
 
+  /*
+   * Dónde caerá el punto de control que se está anotando. Es un marcador y no
+   * un elemento del dibujo porque todavía no lo es: si se cancela, no hay
+   * nada que borrar ni que deshacer.
+   */
+  let pendingCpMarker = null;
+  function syncPendingControlPoint() {
+    const pc = store.getState().pendingControlPoint;
+    if (!pc) {
+      if (pendingCpMarker) pendingCpMarker.remove();
+      pendingCpMarker = null;
+      return;
+    }
+    if (!pendingCpMarker) pendingCpMarker = new maplibregl.Marker({ color: '#00E5FF' });
+    pendingCpMarker.setLngLat(pc.lngLat).addTo(map);
+  }
+
   store.subscribe(() => {
+    if (store.changed('pendingControlPoint')) syncPendingControlPoint();
     if (store.changed('demSet')) rebuildTerrainSource();
     if (store.changed('terrain3d') || store.changed('terrainExaggeration')) applyTerrain();
     if (store.changed('scaleLock')) applyScaleLock();

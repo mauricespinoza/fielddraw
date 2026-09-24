@@ -254,5 +254,21 @@ console.log('== sanitizeOrnaments ==');
   ok('convierte números en texto (vienen así de un JSON viejo)', texto['normal-fault'].spacing === 45);
 }
 
+console.log('== ajuste por grupo ==');
+{
+  const St = await import('../src/store.js');
+  St.resetOrnaments();
+  const fallas = ['thrust-fault', 'normal-fault', 'dextral-fault', 'sinistral-fault', 'undefined-fault'];
+  St.setOrnamentGroup(fallas, { color: '#123456', width: 2 });
+  const o = St.getState().ornaments;
+  ok('un color y un grosor para todas las fallas', fallas.every((t) => o[t].color === '#123456' && o[t].width === 2));
+  ok('sin tocar los contactos', o['stratigraphic-contact'].color === '#000000');
+  St.setOrnamentGroup(['antiform', 'stratigraphic-contact'], { spacing: 90 });
+  const o2 = St.getState().ornaments;
+  ok('cada tipo recibe solo los campos que tiene',
+     o2.antiform.spacing === 90 && !('spacing' in o2['stratigraphic-contact']));
+  St.resetOrnaments();
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

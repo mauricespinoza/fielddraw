@@ -51,6 +51,7 @@ import {
 } from './deviceOrientation.js';
 import { buildCompass, compassHint } from './compassWidget.js';
 import {
+  CONTROL_POINT_ICONS,
   CONTROL_POINT_LABEL_FIELDS,
   SAMPLING_PURPOSES,
   controlPointsCSV,
@@ -393,24 +394,128 @@ const VERTEX_MODES = [
 ];
 
 /**
- * Coloca un punto de control en la posición actual del GPS, sin tocar el mapa.
+ * Colocación de un punto de control, en dos pasos: primero DÓNDE —tocando el
+ * mapa o con el GPS— y después QUÉ, en el formulario. Al revés —rellenar y
+ * luego tocar— el formulario tapaba el mapa justo cuando había que apuntar, y
+ * en un teléfono no quedaba dónde tocar.
  *
- * Es la alternativa al toque para cuando el punto de interés es, literalmente,
- * «donde estoy parado»: una muestra se recoge donde se tiene el pie, y ahí
- * acertar el mismo píxel en la pantalla es peor que fiarse del receptor —el
- * mismo motivo por el que el método Device ancla la medida en el GPS y no en
- * el dedo (ver `commitDeviceReading`, más abajo).
+ * `cpMode` es la parte del paso que no vive en el store porque no es un dato:
+ * 'choose' (se ofrecen los dos métodos), 'tap' (esperando el toque) o 'gps'
+ * (esperando una posición del receptor). La posición elegida sí va al store
+ * (`pendingControlPoint`), y con ella se abre el formulario.
+ */
+let cpMode = 'choose';
+let cpGpsTimer = null;
+const CP_GPS_WAIT_MS = 30000;
+
+function stopCpGpsWait() {
+  if (cpGpsTimer) clearInterval(cpGpsTimer);
+  cpGpsTimer = null;
+}
+
+function setCpMode(mode) {
+  if (mode !== 'gps') stopCpGpsWait();
+  cpMode = mode;
+  buildPalette();
+}
+
+/**
+ * Usa la posición del GPS. Si todavía no hay una, enciende el seguimiento y
+ * espera a la primera: una muestra se recoge donde se tiene el pie, y ahí el
+ * receptor acierta mejor que el dedo —el mismo motivo por el que el método
+ * Device ancla la medida en el GPS—.
  */
 function placeControlPointAtGps() {
-  const fix = mapBridge && mapBridge.getGpsFix();
-  if (!fix) {
-    showBanner(
-      'No GPS fix yet — press Locate and wait for a position before placing here.',
-      'warn',
-    );
-    return;
+  const tomar = () => {
+    const fix = mapBridge && mapBridge.getGpsFix();
+    if (!fix) return false;
+    stopCpGpsWait();
+    cpMode = 'choose';
+    store.setPendingControlPoint({ lngLat: fix.lngLat, via: 'gps' });
+    return true;
+  };
+  if (tomar()) return;
+  if (!mapBridge) return;
+  if (!mapBridge.isGpsActive()) mapBridge.locateMe();
+  setCpMode('gps');
+  const desde = Date.now();
+  cpGpsTimer = setInterval(() => {
+    if (store.getState().tool !== 'control-point') {
+      stopCpGpsWait();
+      return;
+    }
+    if (tomar()) return;
+    if (Date.now() - desde > CP_GPS_WAIT_MS) {
+      showBanner('No GPS fix yet — check location permission, or tap the map instead.', 'warn');
+      setCpMode('choose');
+    }
+  }, 500);
+}
+
+/** Paso 1: elegir cómo se coloca el punto. */
+function buildControlPointChooser(el) {
+  const scroll = document.createElement('div');
+  scroll.className = 'palette-scroll';
+  const group = document.createElement('div');
+  group.className = 'palette-group cp-chooser';
+  const label = document.createElement('span');
+  label.className = 'palette-label';
+  label.textContent = 'Observation point';
+  group.appendChild(label);
+
+  const hint = document.createElement('p');
+  hint.className = 'hint';
+
+  if (cpMode === 'tap') {
+    hint.textContent = 'Tap the map where the point goes. The form opens right after.';
+    group.appendChild(hint);
+  } else if (cpMode === 'gps') {
+    hint.textContent = 'Waiting for a GPS position…';
+    group.appendChild(hint);
+  } else {
+    hint.textContent = 'First choose where the point goes; then fill in its data.';
+    group.appendChild(hint);
+    const tapBtn = document.createElement('button');
+    tapBtn.type = 'button';
+    tapBtn.className = 'pill wide cp-method';
+    tapBtn.innerHTML = '<span class="cp-glyph">☝</span><span>Tap on the map</span>';
+    tapBtn.title = 'Place the point where you tap';
+    tapBtn.addEventListener('click', () => {
+      setCpMode('tap');
+      // En el teléfono la hoja tapa medio mapa: se esconde para dejar tocar.
+      if (isCompactLayout()) $('palette').classList.add('hidden');
+    });
+    group.appendChild(tapBtn);
+
+    const gpsBtn = document.createElement('button');
+    gpsBtn.type = 'button';
+    gpsBtn.className = 'pill wide cp-method';
+    gpsBtn.innerHTML = '<span class="cp-glyph">⌖</span><span>Use my GPS position</span>';
+    gpsBtn.title = 'Place the point at your current GPS fix';
+    gpsBtn.addEventListener('click', placeControlPointAtGps);
+    group.appendChild(gpsBtn);
   }
-  store.createControlPoint({ lngLat: fix.lngLat });
+  scroll.appendChild(group);
+  el.appendChild(scroll);
+
+  const foot = document.createElement('div');
+  foot.className = 'palette-foot';
+  if (cpMode !== 'choose') {
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'pill wide';
+    back.textContent = 'Back';
+    back.addEventListener('click', () => setCpMode('choose'));
+    foot.appendChild(back);
+  }
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'pill wide';
+  cancel.textContent = 'Cancel';
+  cancel.title = 'Stop placing observation points and switch to Select';
+  cancel.addEventListener('click', () => store.setTool('select'));
+  foot.appendChild(cancel);
+  el.appendChild(foot);
 }
 
 function buildPalette() {
@@ -422,6 +527,7 @@ function buildPalette() {
   // sin remedio; con esta única marca, ningún otro `return` de la función se
   // olvida de quitarla al salir de la herramienta.
   el.classList.toggle('palette-wide', s.tool === 'control-point');
+  el.classList.remove('palette-form');
 
   // La herramienta de nodos no elige tipo, pero sí modo de edición.
   if (s.tool === 'vertices') {
@@ -553,18 +659,37 @@ function buildPalette() {
   }
 
   /*
-   * Punto de control: lo que se escribe aquí es lo que llevará el punto al
-   * tocar el mapa.
+   * Punto de control, en dos pasos: primero dónde (toque o GPS), después el
+   * formulario con lo que llevará el punto. En un teléfono el formulario
+   * ocupa la pantalla entera (`.palette-form`): son seis campos y una nota
+   * larga, y en una hoja de un tercio de pantalla no se leía ni la mitad.
    *
-   * La paleta NO se reconstruye mientras se escribe —no está entre las claves
-   * que la repintan— porque rehacerla en cada tecla le quitaría el foco al
-   * campo a la primera letra. Los campos escriben directo en el store y el
-   * store no tiene nada que devolver.
+   * La paleta NO se reconstruye mientras se escribe —los campos de texto no
+   * están entre las claves que la repintan— porque rehacerla en cada tecla le
+   * quitaría el foco al campo a la primera letra.
    */
   if (s.tool === 'control-point') {
     el.classList.remove('hidden');
+    const pending = s.pendingControlPoint;
+    el.classList.toggle('palette-form', !!pending);
+    if (!pending) {
+      buildControlPointChooser(el);
+      return;
+    }
+    stopCpGpsWait();
     const scroll = document.createElement('div');
     scroll.className = 'palette-scroll';
+
+    const where = document.createElement('div');
+    where.className = 'palette-group cp-where';
+    const whereLabel = document.createElement('span');
+    whereLabel.className = 'palette-label';
+    whereLabel.textContent = pending.via === 'gps' ? 'Location · GPS' : 'Location · tapped';
+    const coords = document.createElement('span');
+    coords.className = 'cp-coords';
+    coords.textContent = `${pending.lngLat[1].toFixed(6)}, ${pending.lngLat[0].toFixed(6)}`;
+    where.append(whereLabel, coords);
+    scroll.appendChild(where);
 
     const punto = paletteGroup(scroll, 'Point');
     punto.appendChild(
@@ -630,52 +755,36 @@ function buildPalette() {
       ),
     );
 
-    /*
-     * DÓNDE CAE EL PUNTO: tocando el mapa, como siempre, o en la posición del
-     * GPS. Una muestra se recoge donde se tiene el pie, y ahí acertar el
-     * mismo píxel en la pantalla es peor que fiarse del receptor — el mismo
-     * motivo por el que el método Device ancla la medida en el GPS y no en el
-     * dedo.
-     */
-    /*
-     * Grupo propio y no `paletteGroup()`: ese devuelve una FILA que envuelve
-     * (`flex-wrap`), y aquí interesa lo contrario —la ayuda y el botón, cada
-     * uno en su propia línea y a lo ancho—, que es lo que da por omisión un
-     * `.palette-group` en columna.
-     */
-    const colocacion = document.createElement('div');
-    colocacion.className = 'palette-group';
-    const colocacionLabel = document.createElement('span');
-    colocacionLabel.className = 'palette-label';
-    colocacionLabel.textContent = 'Placement';
-    colocacion.appendChild(colocacionLabel);
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = 'Tap the map to place it, or use your current GPS position.';
-    colocacion.appendChild(hint);
-    const gpsBtn = document.createElement('button');
-    gpsBtn.type = 'button';
-    gpsBtn.className = 'pill wide';
-    gpsBtn.textContent = 'Place at GPS position';
-    gpsBtn.title = 'Places the point at your current GPS fix instead of where you tap';
-    gpsBtn.addEventListener('click', placeControlPointAtGps);
-    colocacion.appendChild(gpsBtn);
-    scroll.appendChild(colocacion);
-
     el.appendChild(scroll);
 
     /*
-     * DONE, SIEMPRE A LA VISTA. Va fuera de `.palette-scroll` y no dentro: un
-     * botón que cierra la sesión de anotar tiene que verse sin desplazar,
-     * o nadie sabría que existe hasta tropezar con él al final de la lista.
+     * Guardar y volver, SIEMPRE A LA VISTA: fuera de `.palette-scroll`, para
+     * que se vean sin desplazar por mucho que crezca la nota.
      */
-    const done = document.createElement('button');
-    done.type = 'button';
-    done.className = 'pill accent wide palette-done';
-    done.textContent = 'Done';
-    done.title = 'Finish placing control points and switch to Select';
-    done.addEventListener('click', () => store.setTool('select'));
-    el.appendChild(done);
+    const foot = document.createElement('div');
+    foot.className = 'palette-foot';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'pill';
+    back.textContent = 'Relocate';
+    back.title = 'Discard this location and choose tap or GPS again';
+    back.addEventListener('click', () => {
+      cpMode = 'choose';
+      store.setPendingControlPoint(null);
+    });
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'pill accent';
+    save.textContent = 'Save point';
+    save.title = 'Create the observation point with these data';
+    save.addEventListener('click', () => {
+      const p = store.getState().pendingControlPoint;
+      if (!p) return;
+      store.createControlPoint({ lngLat: p.lngLat, altitude: p.altitude });
+      showBanner('Observation point saved.', 'info');
+    });
+    foot.append(back, save);
+    el.appendChild(foot);
     return;
   }
 
@@ -849,22 +958,79 @@ function renderUnits() {
 /* ---------- módulo de simbología de línea ---------- */
 
 /**
- * Los campos, en el orden en que se ven. `width` y el color los lleva TODO
- * tipo de línea —también un contacto, que no tiene ornamento que espaciar—; el
- * resto solo aparece cuando el tipo trae ese parámetro, que es lo que decide
- * `defaultOrnaments()` y no una lista aparte que habría que mantener a la par.
+ * El panel ajusta por GRUPO y no tipo por tipo.
+ *
+ * Los once tipos de línea repetían los mismos controles: tres contactos con el
+ * mismo negro y el mismo grosor, cinco fallas con el mismo azul, dos pliegues
+ * con las mismas flechas. Eso obligaba a mover once veces el mismo deslizador
+ * para engordar «las fallas», y dejaba abierta la puerta a que una normal y una
+ * inversa acabaran con dos azules casi iguales. Aquí cada grupo lleva un solo
+ * color y un solo grosor, y los ornamentos se ajustan por FAMILIA —los ticks
+ * de las fallas de manteo, las medias flechas de las de rumbo, las flechas de
+ * los pliegues—, que es lo que de verdad se ve distinto en el mapa.
+ *
+ * El modelo sigue guardando cada tipo por separado (el proyecto, el QML y el
+ * GeoPackage no cambian): el panel escribe el mismo valor en todos los del
+ * grupo, y muestra el del primero.
  */
-const SYMB_FIELDS = [
-  { key: 'width', label: 'Width', fmt: (v) => `${v.toFixed(2)}×` },
-  { key: 'size', label: 'Size', fmt: (v) => `${v.toFixed(2)}×` },
-  { key: 'spacing', label: 'Spacing', fmt: (v) => `${v} px` },
-  { key: 'offset', label: 'Position', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
-  { key: 'gap', label: 'Separation', fmt: (v) => `${v.toFixed(1)} px` },
-  { key: 'minzoom', label: 'Min zoom', fmt: (v) => `z${v}` },
+const SYMB_GROUPS = [
+  {
+    group: 'Contacts',
+    types: ['stratigraphic-contact', 'intrusive-contact', 'structural-contact'],
+    families: [],
+  },
+  {
+    group: 'Faults',
+    types: ['thrust-fault', 'normal-fault', 'dextral-fault', 'sinistral-fault', 'undefined-fault'],
+    families: [
+      {
+        label: 'Thrust & normal ticks',
+        types: ['thrust-fault', 'normal-fault'],
+        fields: ['size', 'spacing', 'offset'],
+      },
+      {
+        label: 'Strike-slip arrows',
+        types: ['dextral-fault', 'sinistral-fault'],
+        fields: ['size', 'spacing', 'gap'],
+      },
+    ],
+  },
+  {
+    group: 'Folds',
+    types: ['antiform', 'synform'],
+    families: [{ label: 'Axis arrows', types: ['antiform', 'synform'], fields: ['size', 'spacing'] }],
+  },
+  { group: 'Dykes', types: ['dike'], families: [] },
 ];
 
-function symbField(type, field, value) {
-  const lim = ORNAMENT_LIMITS[field.key];
+const SYMB_FIELDS = new Map(
+  [
+    { key: 'width', label: 'Width', fmt: (v) => `${v.toFixed(2)}×` },
+    { key: 'size', label: 'Size', fmt: (v) => `${v.toFixed(2)}×` },
+    { key: 'spacing', label: 'Spacing', fmt: (v) => `${v} px` },
+    { key: 'offset', label: 'Position', fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} px` },
+    { key: 'gap', label: 'Separation', fmt: (v) => `${v.toFixed(1)} px` },
+    { key: 'minzoom', label: 'Ornaments from zoom', fmt: (v) => `z${v}` },
+  ].map((f) => [f.key, f]),
+);
+
+/**
+ * Mientras se arrastra un deslizador del panel, el cambio NO lo reconstruye:
+ * rehacer la lista a cada `input` soltaría el deslizador bajo el dedo.
+ */
+let symbEditing = false;
+function setSymb(types, patch) {
+  symbEditing = true;
+  try {
+    store.setOrnamentGroup(types, patch);
+  } finally {
+    symbEditing = false;
+  }
+}
+
+function symbField(types, key, value, what) {
+  const field = SYMB_FIELDS.get(key);
+  const lim = ORNAMENT_LIMITS[key];
   const row = document.createElement('label');
   row.className = 'symb-field';
 
@@ -877,7 +1043,7 @@ function symbField(type, field, value) {
   range.max = String(lim.max);
   range.step = String(lim.step);
   range.value = String(value);
-  range.setAttribute('aria-label', `${field.label} of ${LINE_TYPE_BY_ID.get(type).label}`);
+  range.setAttribute('aria-label', `${field.label} of ${what}`);
 
   const num = document.createElement('span');
   num.className = 'num';
@@ -886,7 +1052,7 @@ function symbField(type, field, value) {
   range.addEventListener('input', () => {
     const v = Number(range.value);
     num.textContent = field.fmt(v);
-    store.setOrnament(type, { [field.key]: v });
+    setSymb(types, { [key]: v });
   });
 
   row.append(name, range, num);
@@ -896,62 +1062,70 @@ function symbField(type, field, value) {
 /**
  * La muestra de color es el propio selector: en una tablet, tocar el cuadrito
  * y que se abra la rueda del sistema es el gesto que uno intenta igual. El
- * cambio se aplica en `input` para que se vea en el mapa mientras se arrastra,
- * como los deslizadores de al lado.
+ * cambio se aplica en `input` para que se vea en el mapa mientras se arrastra.
  */
-function symbColor(type, value, label) {
+function symbColor(types, value, label) {
   const input = document.createElement('input');
   input.type = 'color';
   input.className = 'swatch swatch-input';
   input.value = value;
   input.title = `Colour of ${label}`;
   input.setAttribute('aria-label', `Colour of ${label}`);
-  input.addEventListener('input', () => store.setOrnament(type, { color: input.value }));
+  input.addEventListener('input', () => setSymb(types, { color: input.value }));
   return input;
 }
 
 function renderSymbology() {
+  if (symbEditing) return;
   const list = $('symbology-list');
   const { ornaments } = store.getState();
   list.replaceChildren();
 
-  // Agrupadas como en la paleta —Contactos, Fallas, Pliegues, Diques— porque
-  // ahora están las once y una lista plana obliga a leerla entera para dar con
-  // un contacto.
-  for (const grupo of LINE_GROUPS) {
-    const tipos = LINE_TYPES.filter((t) => t.group === grupo);
-    if (tipos.length === 0) continue;
+  for (const g of SYMB_GROUPS) {
+    const types = g.types.filter((t) => ornaments[t]);
+    if (types.length === 0) continue;
+    const first = ornaments[types[0]];
 
-    const cabecera = document.createElement('li');
-    cabecera.className = 'symb-group';
-    cabecera.textContent = grupo;
-    list.appendChild(cabecera);
+    const li = document.createElement('li');
+    li.className = 'symb-row';
 
-    for (const meta of tipos) {
-      const type = meta.id;
-      const s = ornaments[type];
-      if (!s) continue;
+    const head = document.createElement('div');
+    head.className = 'symb-head';
+    const name = document.createElement('strong');
+    name.textContent = g.group;
+    const sub = document.createElement('span');
+    sub.className = 'symb-types';
+    sub.textContent = types.map((t) => LINE_TYPE_BY_ID.get(t).short).join(' · ');
+    head.append(
+      symbColor(types, effectiveLineColor(types[0], ornaments), g.group.toLowerCase()),
+      name,
+      sub,
+    );
+    li.appendChild(head);
+    li.appendChild(symbField(types, 'width', first.width, g.group.toLowerCase()));
 
-      const li = document.createElement('li');
-      li.className = 'symb-row';
-
-      const head = document.createElement('div');
-      head.className = 'symb-head';
-      const name = document.createElement('strong');
-      name.textContent = meta.label;
-      head.append(symbColor(type, effectiveLineColor(type, ornaments), meta.label), name);
-      li.appendChild(head);
-
-      // Solo los campos que el tipo tiene: un contacto lleva color y grosor, y
-      // nada más. El símbolo de un pliegue va además a caballo del eje, así
-      // que desplazarlo hacia un lado rompe lo que significa y ese deslizador
-      // ni se ofrece.
-      const fields = SYMB_FIELDS.filter(
-        (f) => f.key in s && !(f.key === 'offset' && isObservedOnly(type)),
-      );
-      for (const f of fields) li.appendChild(symbField(type, f, s[f.key]));
-      list.appendChild(li);
+    for (const fam of g.families) {
+      const ft = fam.types.filter((t) => ornaments[t]);
+      if (ft.length === 0) continue;
+      const cab = document.createElement('div');
+      cab.className = 'symb-family';
+      cab.textContent = fam.label;
+      li.appendChild(cab);
+      for (const key of fam.fields) {
+        if (!(key in ornaments[ft[0]])) continue;
+        li.appendChild(symbField(ft, key, ornaments[ft[0]][key], fam.label.toLowerCase()));
+      }
     }
+
+    // Un solo umbral de zoom para todos los ornamentos del grupo: a escala
+    // regional se apagan juntos, o el mapa enseñaría dientes sin flechas.
+    const conZoom = types.filter((t) => 'minzoom' in ornaments[t]);
+    if (conZoom.length) {
+      li.appendChild(
+        symbField(conZoom, 'minzoom', ornaments[conZoom[0]].minzoom, `${g.group.toLowerCase()} ornaments`),
+      );
+    }
+    list.appendChild(li);
   }
 }
 
@@ -3743,6 +3917,20 @@ function wireControlPointStyleControls() {
     label.appendChild(opt);
   }
   label.addEventListener('change', () => store.setControlPointStyle({ labelField: label.value }));
+
+  const icons = $('cpoint-icons');
+  for (const i of CONTROL_POINT_ICONS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cp-icon';
+    b.dataset.icon = i.id;
+    b.textContent = i.glyph;
+    b.title = i.label;
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-label', i.label);
+    b.addEventListener('click', () => store.setControlPointStyle({ icon: i.id }));
+    icons.appendChild(b);
+  }
 }
 
 function syncControlPointStyleControls() {
@@ -3754,6 +3942,11 @@ function syncControlPointStyleControls() {
   if (document.activeElement !== mz) mz.value = String(st.minzoom);
   $('cpoint-minzoom-num').textContent = String(st.minzoom);
   $('cpoint-label').value = st.labelField;
+  for (const b of $('cpoint-icons').children) {
+    const on = b.dataset.icon === st.icon;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-checked', String(on));
+  }
 }
 
 let planeBusy = false;
@@ -5343,8 +5536,9 @@ function renderStatus() {
           : `Draw along the trace of the ${que} · every node is sampled on the DEM`;
     }
   } else if (s.tool === 'control-point') {
-    $('status-text').textContent =
-      'Tap where you are standing — the point takes what the panel says, and the date and time are stamped for you';
+    $('status-text').textContent = s.pendingControlPoint
+      ? 'Fill in the point and press Save · tap the map again to move it · date and time are stamped for you'
+      : 'Choose where the point goes: tap the map, or use your GPS position';
   } else if (s.tool === 'select') {
     // El arrastre es el lazo, no el desplazamiento: decirlo al revés mandaba a
     // la gente a buscar una herramienta de selección múltiple que ya tenía.
@@ -5912,8 +6106,13 @@ export function initUI() {
       // repintar la paleta en cada tecla le quitaría el foco al campo.
       store.changed('controlPointUnit') ||
       store.changed('controlPointPurpose') ||
+      store.changed('pendingControlPoint') ||
       store.changed('units')
     ) {
+      if (store.changed('tool')) {
+        cpMode = 'choose';
+        stopCpGpsWait();
+      }
       buildPalette();
     }
     if (store.changed('units') || store.changed('unitLabels')) renderUnits();
@@ -5950,6 +6149,7 @@ export function initUI() {
       store.changed('manualStrike') ||
       store.changed('manualDip') ||
       store.changed('deviceReading') ||
+      store.changed('pendingControlPoint') ||
       store.changed('thicknessFrom')
     ) {
       renderToolbar();
