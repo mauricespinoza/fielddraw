@@ -313,5 +313,47 @@ console.log('== vuelta a StraboSpot ==');
      r3.collection.features[0].properties.name);
 }
 
+console.log('== icono y colocación en dos pasos ==');
+{
+  ok('el icono por omisión es el círculo', CP.defaultControlPointStyle().icon === 'circle');
+  ok('un icono conocido se conserva', CP.sanitizeControlPointStyle({ icon: 'star' }).icon === 'star');
+  ok('uno inventado vuelve al círculo', CP.sanitizeControlPointStyle({ icon: 'dragon' }).icon === 'circle');
+
+  const Sym = await import(BASE + 'controlPointSymbols.js');
+  for (const i of CP.CONTROL_POINT_ICONS) {
+    const inside = Sym.shapeDistance(i.id, 0, 0) < 0;
+    const outside = Sym.shapeDistance(i.id, 1.4, 1.4) > 0;
+    const img = Sym.controlPointIconImage(i.id);
+    const centro = img.data[((img.height / 2) * img.width + img.width / 2) * 4 + 3];
+    ok(`${i.id}: el centro está dentro y la esquina fuera, y el SDF lo refleja`,
+       inside && outside && centro === 255 && img.data[3] === 0);
+  }
+  const capa = Sym.controlPointLayers({ size: 1, labelField: 'name', minzoom: 10, icon: 'triangle' })
+    .find((l) => l.id === 'control-points');
+  ok('la capa usa el icono elegido', capa.layout['icon-image'] === 'cpoint-icon-triangle');
+
+  St.loadFeatures([]);
+  St.setTool('control-point');
+  St.addVertex([-70.5, -33.7]);
+  ok('tocar el mapa NO crea el punto: solo fija dónde irá',
+     St.getState().features.length === 0 &&
+     St.getState().pendingControlPoint.via === 'tap' &&
+     St.getState().pendingControlPoint.lngLat[0] === -70.5);
+  St.addVertex([-70.6, -33.8]);
+  ok('un segundo toque mueve la posición en vez de crear otro',
+     St.getState().features.length === 0 && St.getState().pendingControlPoint.lngLat[0] === -70.6);
+  St.setPendingControlPoint({ lngLat: [-70.7, -33.9], via: 'gps' });
+  ok('la posición del GPS también queda pendiente', St.getState().pendingControlPoint.via === 'gps');
+  const pc = St.getState().pendingControlPoint;
+  St.createControlPoint({ lngLat: pc.lngLat });
+  ok('guardar crea el punto y limpia la posición pendiente',
+     St.getState().features.length === 1 && St.getState().pendingControlPoint === null);
+  St.setTool('control-point');
+  St.addVertex([-70.5, -33.7]);
+  St.setTool('select');
+  ok('cambiar de herramienta descarta la posición pendiente',
+     St.getState().pendingControlPoint === null && St.getState().features.length === 1);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

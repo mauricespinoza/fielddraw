@@ -1117,17 +1117,13 @@
 
       <aside class="layer-panel" id="symbology-panel">
         <header>
-          <h2>Line symbology</h2>
+          <h2>Symbology</h2>
           <button class="icon-btn close-x" id="btn-close-symbology" aria-label="Close">✕</button>
         </header>
         <p class="hint">
-          Colour and width for <strong>every</strong> line type — contacts included — plus size,
-          spacing and position where the type carries an ornament. Width is a factor on the type's
-          nominal thickness, so it holds at any zoom. The colour swatch repaints both the trace and
-          its ornament. Position is the perpendicular distance to the trace: the sign picks the
-          side, and <strong>flip</strong> in the properties menu mirrors the symbol across the
-          trace on one feature, sending it to the other block. Fold arrows straddle the axis, so
-          they have no side to flip.
+          One colour and one width per group. Ornaments are tuned by family — fault ticks,
+          strike-slip arrows, fold arrows. <strong>Flip</strong> in the properties menu mirrors a
+          fault's symbol to the other side of its trace.
         </p>
         <ul id="symbology-list"></ul>
         <button class="pill wide" id="btn-reset-symbology">Reset to defaults</button>
@@ -1190,11 +1186,15 @@
 
         <hr class="sep" />
 
-        <h2 class="panel-subhead">Control points</h2>
+        <h2 class="panel-subhead">Observation points</h2>
         <p class="hint">
-          Colour follows the point's unit, same catalogue as the map units. Pick which field the
-          label on the map shows — Sample ID, Name, Unit, Purpose, Notes, or none at all.
+          The fill follows the point's unit; the icon is up to you. Pick which field the label on
+          the map shows.
         </p>
+        <div class="field">
+          <span>Icon</span>
+          <div class="cp-icon-row" id="cpoint-icons" role="radiogroup" aria-label="Observation point icon"></div>
+        </div>
         <label class="field">
           <span>Symbol size</span>
           <span class="tol-row">

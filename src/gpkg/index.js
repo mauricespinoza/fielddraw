@@ -11,6 +11,7 @@ import {
 import { formatStrikeDip } from '../structure.js';
 import {
   CONTROL_POINT_COLUMNS,
+  CONTROL_POINT_ICON_BY_ID,
   CONTROL_POINT_NO_UNIT_COLOR,
   controlPointValues,
   defaultControlPointStyle,
@@ -328,6 +329,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
     // elemento: es el mismo campo con el otro nombre.
     const cpLabelColumn = labelColumnFor(cpStyle.labelField);
     const cpUnidades = controlPointUnits(controlPoints, units);
+    const cpIcon = CONTROL_POINT_ICON_BY_ID.get(cpStyle.icon) || CONTROL_POINT_ICON_BY_ID.get('circle');
 
     // Tipos de superficie realmente presentes, para que la leyenda de QGIS no
     // traiga categorías vacías.
@@ -431,8 +433,13 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
         rows: controlPoints,
         columns: [...CONTROL_POINT_COLUMNS.map((c) => c.gpkg), 'created_at'],
         valuesOf: (p) => controlPointValues(p),
-        qml: buildControlPointQML(cpUnidades, cpLabelColumn, CONTROL_POINT_NO_UNIT_COLOR),
-        sld: buildControlPointSLD(cpUnidades),
+        qml: buildControlPointQML(
+          cpUnidades,
+          cpLabelColumn,
+          CONTROL_POINT_NO_UNIT_COLOR,
+          cpIcon.qgis,
+        ),
+        sld: buildControlPointSLD(cpUnidades, cpIcon.sld),
         identifier: 'Puntos de control y muestras',
       },
     ];
