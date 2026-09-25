@@ -951,6 +951,7 @@
         </header>
         <svg id="device-compass" class="compass-svg" role="button" tabindex="0" aria-label="Live compass reading — tap to stop or resume the measurement"></svg>
         <p class="hint footnote" id="device-read-note"></p>
+        <p class="hint footnote hidden" id="device-line-note"></p>
         <p class="hint footnote" id="device-gps-note"></p>
         <button class="pill accent wide" id="btn-device-done" disabled>Add measurement</button>
       </div>
@@ -1477,6 +1478,10 @@
             <label class="sv-check">
               <input type="checkbox" id="stereo-show-planes" checked />
               Great circles (planes)
+            </label>
+            <label class="sv-check">
+              <input type="checkbox" id="stereo-show-lines" checked />
+              Lines (striae, L₁) with hanging-wall slip arrows
             </label>
             <label class="sv-check">
               <input type="checkbox" id="stereo-show-mean" />

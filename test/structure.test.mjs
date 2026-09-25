@@ -622,5 +622,37 @@ console.log('== plano + línea (estría / lineación) ==');
   store.setMeasureType('bedding');
 }
 
+console.log('== bloque colgante ==');
+{
+  const n = S.hangingWallMotion(0, 60, 90, 60, 'normal');
+  ok('normal: el colgante baja por la estría', cerca(n.trend, 90, 1e-6) && cerca(n.plunge, 60, 1e-6), JSON.stringify(n));
+  const i = S.hangingWallMotion(0, 60, 90, 60, 'inverse');
+  ok('inversa: sube', cerca(i.trend, 270, 1e-6) && cerca(i.plunge, -60, 1e-6), JSON.stringify(i));
+  const ll = S.hangingWallMotion(0, 60, 180, 0, 'left-lateral');
+  ok('sinistral: el colgante va hacia el rumbo RHR', cerca(ll.trend, 0, 1e-6), JSON.stringify(ll));
+  const rl = S.hangingWallMotion(0, 60, 0, 0, 'right-lateral');
+  ok('dextral: al revés del rumbo', cerca(rl.trend, 180, 1e-6), JSON.stringify(rl));
+  ok('una estría horizontal no decide una normal', S.hangingWallMotion(0, 60, 0, 0, 'normal') === null);
+  ok('sin sentido no hay movimiento', S.hangingWallMotion(0, 60, 90, 60, '') === null);
+}
+{
+  store.clearFeatures();
+  store.setMeasureType('fault-plane');
+  store.setMeasureLine(true);
+  store.setMeasureLineMode('rake');
+  store.setManualRake(90);
+  const f = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 40 });
+  ok('rake 90 en la paleta = línea de máxima pendiente',
+    cerca(f.properties.lineTrend, 90, 0.05) && cerca(f.properties.linePlunge, 40, 0.05), JSON.stringify(f.properties));
+  store.setSelection([f.properties.id]);
+  store.updateMeasurement({ rake: 0 });
+  const q = store.getState().features[0].properties;
+  ok('rake 0 escrito en el menú = horizontal por el rumbo',
+    cerca(q.lineTrend, 0, 0.05) && cerca(q.linePlunge, 0, 0.05) && cerca(q.rake, 0, 0.05), JSON.stringify(q));
+  store.setMeasureLineMode('trend');
+  store.setMeasureLine(false);
+  store.setMeasureType('bedding');
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

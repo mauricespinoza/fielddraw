@@ -686,13 +686,42 @@ function buildPalette() {
           onClick: () => store.setMeasureLine(!s.measureLine),
         }),
       );
-      if (s.measureLine) {
-        lin.appendChild(
-          numberField('Trend', s.manualTrend, { min: 0, max: 359.9, step: 1 }, (v) => store.setManualTrend(v)),
-        );
-        lin.appendChild(
-          numberField('Plunge', s.manualPlunge, { min: 0, max: 90, step: 1 }, (v) => store.setManualPlunge(v)),
-        );
+      if (s.measureLine && s.measureMethod === 'device') {
+        /*
+         * Device no pregunta cómo escribir la línea: el plano sale del DORSO
+         * del teléfono apoyado sobre la superficie y la línea de su CANTO
+         * LARGO, alineado con la estría o la lineación.
+         */
+        const hint = document.createElement('span');
+        hint.className = 'palette-hint';
+        hint.textContent = `Back flat on the plane, long edge along the ${lineKind.label.toLowerCase()}`;
+        lin.appendChild(hint);
+      } else if (s.measureLine) {
+        for (const [mode, label, title] of [
+          ['trend', 'T/P', 'Type the trend and plunge of the line'],
+          ['rake', 'Rake', 'Type the rake within the plane, from the right-hand-rule strike (0–180°); it is converted to trend and plunge'],
+        ]) {
+          lin.appendChild(
+            chip({
+              label,
+              title,
+              active: s.measureLineMode === mode,
+              onClick: () => store.setMeasureLineMode(mode),
+            }),
+          );
+        }
+        if (s.measureLineMode === 'rake') {
+          lin.appendChild(
+            numberField('Rake', s.manualRake, { min: 0, max: 180, step: 1 }, (v) => store.setManualRake(v)),
+          );
+        } else {
+          lin.appendChild(
+            numberField('Trend', s.manualTrend, { min: 0, max: 359.9, step: 1 }, (v) => store.setManualTrend(v)),
+          );
+          lin.appendChild(
+            numberField('Plunge', s.manualPlunge, { min: 0, max: 90, step: 1 }, (v) => store.setManualPlunge(v)),
+          );
+        }
       }
     }
 
@@ -3899,6 +3928,17 @@ function renderDevicePanel() {
   // El mismo consejo que da la pestaña Compass, palabra por palabra: los dos
   // sitios leen los mismos sensores y no pueden discrepar sobre si la lectura
   // vale (ver `compassHint`).
+  const stL = store.getState();
+  const kindL = stL.measureLine ? LINE_KIND_BY_STRUCTURE[stL.measureType] : null;
+  const lineNote = $('device-line-note');
+  lineNote.classList.toggle('hidden', !kindL);
+  if (kindL) {
+    lineNote.textContent = r && Number.isFinite(r.lineTrend)
+      ? `${kindL.label} from the long edge: ${formatTrendPlunge(r.lineTrend, r.linePlunge)}${
+        Number.isFinite(r.lineSpread) ? ` ±${round1(r.lineSpread)}°` : ''
+      } — back flat on the plane, long edge along the line.`
+      : `${kindL.label}: lay the phone's long edge along the line.`;
+  }
   $('device-read-note').textContent = deviceHeld
     ? `Stopped — ${compassHint(r)}. Tap the compass to resume.`
     : `${compassHint(r)} · Tap the compass to stop.`;
@@ -3928,11 +3968,20 @@ function commitDeviceReading() {
     showBanner('Still reading — hold the phone still against the surface a moment longer.', 'warn');
     return;
   }
+  // Plano + línea con Device: la línea es SIEMPRE el canto largo del
+  // teléfono, leído en la misma tanda que el plano (ver `edgeFromOrientation`).
+  const st = store.getState();
+  const conLinea = st.measureLine && LINE_KIND_BY_STRUCTURE[st.measureType];
+  if (conLinea && !Number.isFinite(r.lineTrend)) {
+    showBanner('The phone edge has not been read yet — hold it a moment longer along the line.', 'warn');
+    return;
+  }
   store.createMeasurement({
     lngLat: fix.lngLat,
     strike: r.strike,
     dip: r.dip,
     dipAzimuth: r.dipAzimuth,
+    line: conLinea ? { trend: r.lineTrend, plunge: r.linePlunge } : null,
     method: 'device',
     quality: {
       strikeSd: round1(r.strikeSd),
@@ -3943,6 +3992,7 @@ function commitDeviceReading() {
       poleSpread: round1(r.spread),
       n: r.n,
       gpsAccuracy: Math.round(fix.accuracy),
+      ...(conLinea && Number.isFinite(r.lineSpread) ? { lineSd: round1(r.lineSpread) } : {}),
     },
   });
   // La siguiente medida arranca en vivo: dejarla detenida guardaría dos veces
@@ -4884,14 +4934,21 @@ function measurementSection(body, medida, reabrir) {
         ),
       );
       lin.appendChild(filaL);
-      if (Number.isFinite(p.rake)) {
-        measureRow(
-          lin,
-          'Rake',
-          `${Math.round(p.rake)}° from strike (RHR)`,
-          'Angle within the plane from the right-hand-rule strike to the line',
-        );
-      }
+      // El rake también se escribe: se traduce a trend/plunge con el plano de
+      // esta medida, y el menú se reabre para enseñar la traducción.
+      const filaR = document.createElement('div');
+      filaR.className = 'palette-row';
+      const rakeField = numberField('Rake (from strike, RHR)', p.rake ?? 90, { min: 0, max: 180, step: 1 }, () => {});
+      const rakeInput = rakeField.querySelector('input');
+      rakeInput.addEventListener('change', () => {
+        const v = Number(rakeInput.value);
+        if (!Number.isFinite(v)) return;
+        store.updateMeasurement({ rake: v });
+        reabrir();
+      });
+      rakeField.title = 'Angle within the plane from the right-hand-rule strike to the line; typing it sets the trend and plunge';
+      filaR.appendChild(rakeField);
+      lin.appendChild(filaR);
       if (Number.isFinite(p.lineMisfit) && p.lineMisfit > 10) {
         measureRow(
           lin,
@@ -4973,6 +5030,9 @@ function measurementSection(body, medida, reabrir) {
       'One standard deviation across the samples taken while the phone was held against the surface',
     );
     measureRow(cal, 'Samples', `${p.n ?? '—'}`);
+    if (Number.isFinite(p.lineSd)) {
+      measureRow(cal, 'Line spread', `±${p.lineSd}°`, 'Angular spread of the phone long edge across the samples');
+    }
     if (Number.isFinite(p.gpsAccuracy)) {
       measureRow(cal, 'GPS accuracy', `±${p.gpsAccuracy} m`, 'The point was placed at the GPS position, not a tapped location');
     }
@@ -6271,6 +6331,7 @@ export function initUI() {
       store.changed('measureOverturned') ||
       store.changed('measureFaultSense') ||
       store.changed('measureLine') ||
+      store.changed('measureLineMode') ||
       store.changed('measureQuality') ||
       store.changed('measureUnit') ||
       // Los campos de TEXTO del punto de control quedan fuera a propósito:

@@ -547,6 +547,41 @@ export function lineFromRake(strike, dip, rake) {
   return { trend, plunge };
 }
 
+/**
+ * Hacia dónde se mueve el BLOQUE COLGANTE de una falla con estría, según su
+ * sentido de movimiento. La estría es un eje —sirve para los dos sentidos— y
+ * es la cinemática la que elige cuál:
+ *
+ * - `normal`: el colgante baja → el sentido descendente de la estría.
+ * - `inverse`: el colgante sube → el ascendente.
+ * - `left-lateral`: parado en el bloque yacente mirando hacia el colgante
+ *   (hacia el manteo), el colgante se va a la IZQUIERDA, que con la regla de
+ *   la mano derecha es justo el sentido del rumbo.
+ * - `right-lateral`: al contrario del rumbo.
+ *
+ * @returns {{trend: number, plunge: number}|null} el vector de movimiento como
+ *   trend/plunge, con plunge NEGATIVO si sube; `null` si la cinemática no
+ *   decide un sentido (una estría horizontal en una falla normal, una estría
+ *   de manteo puro en una de rumbo) o faltan datos.
+ */
+export function hangingWallMotion(strike, dip, trend, plunge, sense) {
+  if (![strike, dip, trend, plunge].every(Number.isFinite)) return null;
+  const l = lineVec(trend, plunge); // hacia abajo, o horizontal
+  const s = lineVec(strike, 0);
+  const ls = l[0] * s[0] + l[1] * s[1];
+  let signo = 0;
+  if (sense === 'normal') signo = l[2] < -1e-6 ? 1 : 0;
+  else if (sense === 'inverse') signo = l[2] < -1e-6 ? -1 : 0;
+  else if (sense === 'left-lateral') signo = Math.abs(ls) > 1e-6 ? Math.sign(ls) : 0;
+  else if (sense === 'right-lateral') signo = Math.abs(ls) > 1e-6 ? -Math.sign(ls) : 0;
+  if (signo === 0) return null;
+  const v = l.map((c) => c * signo);
+  return {
+    trend: norm360(Math.atan2(v[0], v[1]) / RAD),
+    plunge: Math.asin(Math.min(1, Math.max(-1, -v[2]))) / RAD,
+  };
+}
+
 /** Línea formateada como en la libreta: `12→245`. */
 export function formatTrendPlunge(trend, plunge) {
   if (!Number.isFinite(trend) || !Number.isFinite(plunge)) return '—';

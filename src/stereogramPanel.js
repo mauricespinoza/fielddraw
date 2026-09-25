@@ -37,6 +37,8 @@ let showPlanes = true;
 let showMean = false;
 /** El eje beta, lo mismo: apagado de salida por la misma razón. */
 let showBeta = false;
+/** Líneas (estría, L₁) y flechas del colgante: parte del dato, encendidas. */
+let showLines = true;
 
 export function initStereogramPanel({ message } = {}) {
   onMessage = message || onMessage;
@@ -63,6 +65,10 @@ export function initStereogramPanel({ message } = {}) {
   });
   $('stereo-show-planes').addEventListener('change', (e) => {
     showPlanes = e.target.checked;
+    renderPlot();
+  });
+  $('stereo-show-lines').addEventListener('change', (e) => {
+    showLines = e.target.checked;
     renderPlot();
   });
   $('stereo-show-mean').addEventListener('change', (e) => {
@@ -139,6 +145,7 @@ function renderPlot() {
     meanVector: media,
     showBeta,
     betaVector: beta,
+    showLines,
   });
 
   $('stereo-source-note').textContent = data.usingSelection
@@ -194,6 +201,24 @@ function renderPlot() {
     const num = document.createElement('span');
     num.className = 'sv-num';
     num.textContent = String(n);
+    row.append(sw, what, num);
+    legend.appendChild(row);
+  }
+  const nLineas = data.points.filter((p) => p.line).length;
+  if (nLineas > 0) {
+    const row = document.createElement('div');
+    row.className = 'sv-row';
+    const sw = document.createElement('span');
+    sw.className = 'sv-swatch sv-swatch-square';
+    const what = document.createElement('span');
+    what.className = 'sv-what';
+    const flechas = data.points.filter((p) => p.line && p.line.arrow).length;
+    what.textContent = flechas
+      ? 'Lines · arrow = hanging-wall slip'
+      : 'Lines (striae, L₁)';
+    const num = document.createElement('span');
+    num.className = 'sv-num';
+    num.textContent = String(nLineas);
     row.append(sw, what, num);
     legend.appendChild(row);
   }

@@ -6,7 +6,9 @@
  * interpreta ese trío como el plano contra el que se apoya el teléfono.
  *
  * **Postura de la medida**: el DORSO del teléfono apoyado a ras sobre la
- * superficie, con la pantalla mirando hacia el cielo/el observador. En esa
+ * superficie, con la pantalla mirando hacia el cielo/el observador. En una
+ * medida plano + línea (estría de falla, lineación L₁) el CANTO LARGO del
+ * teléfono se alinea además con la línea: ver `edgeFromOrientation`. En esa
  * postura el eje +Z del teléfono —el que sale de la pantalla, tal como lo
  * define el estándar— apunta exactamente hacia afuera de la roca, así que ES
  * la normal de la superficie. Rumbo y manteo salen de esa normal con la misma
@@ -105,6 +107,51 @@ export function normalFromOrientation(alpha, beta, gamma) {
     y: sa * sg - ca * cg * sb, // Norte
     z: cb * cg, // Arriba
   };
+}
+
+/**
+ * Eje +Y del teléfono —su CANTO LARGO, de la base hacia el lado superior— en
+ * el marco terrestre (Este, Norte, Arriba). Es la segunda columna de la misma
+ * matriz Z-X'-Y'' de `normalFromOrientation`.
+ *
+ * Con el dorso apoyado sobre el plano, ese canto cae DENTRO del plano por
+ * construcción (es perpendicular a la normal), así que alineándolo con la
+ * estría o la lineación da la línea de la medida plano + línea.
+ */
+export function edgeFromOrientation(alpha, beta, gamma) {
+  const a = alpha * RAD;
+  const b = beta * RAD;
+  return {
+    x: -Math.sin(a) * Math.cos(b), // Este
+    y: Math.cos(a) * Math.cos(b), // Norte
+    z: Math.sin(b), // Arriba
+  };
+}
+
+/**
+ * Trend/plunge de un eje (Este, Norte, Arriba), llevado primero al plano de
+ * normal `n` —el promedio de dos ejes no tiene por qué seguir siendo
+ * perpendicular a la normal media— y después hacia ABAJO, que es como se
+ * anota una línea: plunge en [0°, 90°].
+ */
+export function lineFromAxis(axis, n = null) {
+  let { x, y, z } = axis;
+  if (n) {
+    const ln = Math.hypot(n.x, n.y, n.z) || 1;
+    const d = (x * n.x + y * n.y + z * n.z) / (ln * ln);
+    x -= d * n.x;
+    y -= d * n.y;
+    z -= d * n.z;
+  }
+  const largo = Math.hypot(x, y, z);
+  if (!(largo > 1e-9)) return null;
+  const s = z > 0 ? -1 / largo : 1 / largo;
+  x *= s;
+  y *= s;
+  z *= s;
+  const plunge = Math.asin(Math.min(1, Math.max(-1, -z))) * DEG;
+  const trend = Math.hypot(x, y) < 1e-9 ? 0 : norm360(Math.atan2(x, y) * DEG);
+  return { trend, plunge };
 }
 
 /**
@@ -379,6 +426,9 @@ export function startOrientationCapture({ onReading, onError }) {
       return;
     }
     let normales = samples.map((s) => s.n);
+    // El canto de cada muestra viaja emparejado con su normal: el recorte de
+    // atípicos que descarta una normal descarta también su canto.
+    let cantos = samples.map((s) => s.e);
     let media = meanNormal(normales);
     if (media) {
       /*
@@ -395,6 +445,7 @@ export function startOrientationCapture({ onReading, onError }) {
       const corte = Math.max(TRIM_FACTOR * rms, TRIM_FLOOR_DEG);
       const limpias = normales.filter((_, i) => angulos[i] <= corte);
       if (limpias.length >= Math.max(2, Math.ceil(normales.length * 0.66))) {
+        cantos = cantos.filter((_, i) => angulos[i] <= corte);
         normales = limpias;
         media = meanNormal(normales) || media;
       }
@@ -411,6 +462,17 @@ export function startOrientationCapture({ onReading, onError }) {
     const arriba = media.z < 0 ? { x: -media.x, y: -media.y, z: -media.z } : media;
     const { spread, strikeSd, dipSd } = orientationSpread(normales, arriba);
 
+    /*
+     * LA LÍNEA, DEL CANTO LARGO DEL TELÉFONO: su eje medio, llevado al plano
+     * medido y hacia abajo. Su dispersión es la angular de los cantos, como
+     * la del polo.
+     */
+    const cantoMedio = cantos.every(Boolean) ? meanNormal(cantos) : null;
+    const linea = cantoMedio ? lineFromAxis(cantoMedio, arriba) : null;
+    const lineSpread = cantoMedio
+      ? Math.sqrt(cantos.reduce((acc, e) => acc + angleBetween(e, cantoMedio) ** 2, 0) / cantos.length)
+      : NaN;
+
     onReading({
       ready: samples.length >= MIN_SAMPLES && spread <= READY_SPREAD_DEG,
       n: samples.length,
@@ -420,12 +482,13 @@ export function startOrientationCapture({ onReading, onError }) {
       spread,
       strikeSd,
       dipSd,
+      ...(linea ? { lineTrend: linea.trend, linePlunge: linea.plunge, lineSpread } : {}),
       ...extra,
     });
   }
 
-  function ingest(normal, now) {
-    samples.push({ t: now, n: normal });
+  function ingest(normal, now, edge = null) {
+    samples.push({ t: now, n: normal, e: edge });
     samples = samples.filter((s) => now - s.t <= SAMPLE_WINDOW_MS);
   }
 
@@ -459,7 +522,11 @@ export function startOrientationCapture({ onReading, onError }) {
         return;
       }
       referenced = true;
-      ingest(rotateYaw(normalFromOrientation(alphaRel, beta, gamma), yawOffset), now);
+      ingest(
+        rotateYaw(normalFromOrientation(alphaRel, beta, gamma), yawOffset),
+        now,
+        rotateYaw(edgeFromOrientation(alphaRel, beta, gamma), yawOffset),
+      );
       report({
         headingHeld: alphaAbs === null,
         headingAge: alphaAbs === null ? now - yawOffsetAt : 0,
@@ -470,7 +537,7 @@ export function startOrientationCapture({ onReading, onError }) {
 
     if (e.absolute !== true || !Number.isFinite(e.alpha)) return;
     referenced = true;
-    ingest(normalFromOrientation(e.alpha, beta, gamma), now);
+    ingest(normalFromOrientation(e.alpha, beta, gamma), now, edgeFromOrientation(e.alpha, beta, gamma));
     report();
   }
 

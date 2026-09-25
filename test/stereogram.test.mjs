@@ -313,5 +313,21 @@ console.log('== la red de Schmidt ==');
     net.small.flat().some((p) => p.y < -0.9) && net.small.flat().some((p) => p.y > 0.9));
 }
 
+console.log('== línea y flecha del colgante ==');
+{
+  const base = { strike: 0, dip: 60, type: 'fault-plane', lineTrend: 90, linePlunge: 60 };
+  const sin = S.lineOf({ ...base });
+  ok('la línea se plotea donde va 60→090', sin && cerca(sin.x, S.schmidtPoint(90, 60).x) && sin.arrow === null);
+  const nor = S.lineOf({ ...base, faultSense: 'normal' });
+  ok('normal: flecha hacia afuera (al E)', nor.arrow && cerca(nor.arrow.dx, 1, 1e-6) && cerca(nor.arrow.dy, 0, 1e-6), JSON.stringify(nor.arrow));
+  const inv = S.lineOf({ ...base, faultSense: 'inverse' });
+  ok('inversa: flecha hacia el centro (al W)', inv.arrow && cerca(inv.arrow.dx, -1, 1e-6), JSON.stringify(inv.arrow));
+  const dex = S.lineOf({ strike: 0, dip: 80, type: 'fault-plane', lineTrend: 0, linePlunge: 0, faultSense: 'right-lateral' });
+  ok('dextral: flecha al S, tangente al primitivo', dex.arrow && cerca(dex.arrow.dy, 1, 1e-6), JSON.stringify(dex.arrow));
+  ok('sin línea no hay nada', S.lineOf({ strike: 0, dip: 30 }) === null);
+  const lin = S.lineOf({ strike: 0, dip: 30, type: 'foliation', lineTrend: 90, linePlunge: 30, faultSense: 'normal' });
+  ok('una lineación no lleva flecha', lin.arrow === null);
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.39.0';
+export const APP_VERSION = '0.40.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,19 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.40.0',
+    highlights: [
+      'Device plane + line: the plane comes from the back of the phone and the line (striae, L₁) from its long edge, read in the same sample.',
+      'The stereogram plots each line as a square; faults with a sense of slip get an arrow showing how the hanging wall moves.',
+      'The line can be typed as a rake: it is converted to trend and plunge on the measured plane.',
+    ],
+    items: [
+      'Método Device con «+ Str» o «+ L₁»: el plano sale del dorso del teléfono apoyado sobre la superficie (su normal, el eje +Z) y la línea del canto largo (eje +Y), alineado con la estría o la lineación. La línea se promedia en la misma tanda que el plano, se proyecta sobre él y se anota hacia abajo; su dispersión viaja como Line spread. El panel Device muestra la línea en vivo.',
+      'Estereograma: cada línea se dibuja como un cuadrado del color de su superficie, con su propia casilla («Lines»). En una falla con sentido de movimiento, una flecha sobre la estría indica hacia dónde se mueve el bloque colgante (convención de Angelier: hacia afuera en una normal, hacia el centro en una inversa, casi tangente al primitivo en una de rumbo).',
+      'Rake → trend/plunge: en la paleta se elige escribir la línea como T/P o como Rake (0–180° desde el rumbo RHR), y en el menú de la medida el rake también se edita; en ambos casos se traduce a trend y plunge con el plano de la medida.',
+    ],
+  },
   {
     version: '0.39.0',
     highlights: [
