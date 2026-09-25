@@ -654,5 +654,35 @@ console.log('== bloque colgante ==');
   store.setMeasureType('bedding');
 }
 
+console.log('== línea medida como rake ==');
+{
+  store.clearFeatures();
+  store.setMeasureType('fault-plane');
+  const f = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 40, line: { rake: 30 } });
+  const p = f.properties;
+  const esperado = S.lineFromRake(0, 40, 30);
+  ok('medida como rake: el rake es el dato', p.lineInput === 'rake' && p.lineRake === 30 && p.rake === 30, JSON.stringify(p));
+  ok('y trend/plunge se calculan de él',
+    cerca(p.lineTrend, esperado.trend, 0.06) && cerca(p.linePlunge, esperado.plunge, 0.06), JSON.stringify({ p, esperado }));
+  store.setSelection([p.id]);
+  store.updateMeasurement({ strike: 90 });
+  const q = store.getState().features[0].properties;
+  const e2 = S.lineFromRake(90, 40, 30);
+  ok('al corregir el plano la línea lo sigue con el mismo rake',
+    q.rake === 30 && cerca(q.lineTrend, e2.trend, 0.06) && cerca(q.linePlunge, e2.plunge, 0.06) && q.lineMisfit === 0, JSON.stringify(q));
+  store.updateMeasurement({ lineInput: 'trend' });
+  const t = store.getState().features[0].properties;
+  ok('pasar a trend/plunge conserva la línea y suelta el rake como dato',
+    t.lineInput === 'trend' && t.lineRake === undefined && cerca(t.rake, 30, 0.2), JSON.stringify(t));
+  store.updateMeasurement({ lineInput: 'rake' });
+  const r2 = store.getState().features[0].properties;
+  ok('y volver a rake toma el rake actual', r2.lineInput === 'rake' && cerca(r2.lineRake, 30, 0.2));
+  store.updateMeasurement({ line: { trend: 10 } });
+  ok('escribir un trend vuelve a trend/plunge', store.getState().features[0].properties.lineInput === 'trend');
+  const dev = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 40, line: { trend: 90, plunge: 40, input: 'edge' } });
+  ok('Device queda marcado como canto', dev.properties.lineInput === 'edge');
+  store.setMeasureType('bedding');
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

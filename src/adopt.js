@@ -204,7 +204,7 @@ const OWN_KEYS = new Set([
   'strike', 'dip', 'dipazimuth', 'method', 'quality', 'overturned',
   'fault_sense', 'faultsense', 'fault_type', 'faulttype',
   'line_type', 'linetype', 'line_trend', 'linetrend', 'line_plunge', 'lineplunge',
-  'rake', 'linemisfit', 'line_misfit',
+  'rake', 'linemisfit', 'line_misfit', 'line_input', 'lineinput', 'linerake',
 ]);
 
 /**
@@ -223,6 +223,15 @@ function lineAndQualityOf(props, tipo, strike, dip) {
       out.rake = Math.round(r.rake * 10) / 10;
       out.lineMisfit = Math.round(r.misfit * 10) / 10;
     }
+  }
+  // Medida como rake: el rake es el dato y se conserva tal cual.
+  const rk = Number(field(props, 'rake'));
+  if (out.lineTrend !== undefined && normalizeText(field(props, 'line_input')) === 'rake' && Number.isFinite(rk)) {
+    out.lineInput = 'rake';
+    out.lineRake = Math.min(180, Math.max(0, rk));
+    out.rake = out.lineRake;
+  } else if (out.lineTrend !== undefined) {
+    out.lineInput = normalizeText(field(props, 'line_input')) === 'edge' ? 'edge' : 'trend';
   }
   const q = sanitizeQuality(field(props, 'quality'));
   if (q !== null) out.quality = q;

@@ -1309,10 +1309,28 @@ export const setMeasureQuality = (q) => set({ measureQuality: sanitizeQuality(q)
  * llevan, y el rake y el desajuste se recalculan de rumbo, manteo y línea.
  */
 function syncLineProps(props) {
-  if (!LINE_KIND_BY_STRUCTURE[props.type] || !Number.isFinite(props.lineTrend) || !Number.isFinite(props.linePlunge)) {
-    for (const k of ['lineTrend', 'linePlunge', 'rake', 'lineMisfit']) delete props[k];
+  const limpiar = () => {
+    for (const k of ['lineTrend', 'linePlunge', 'rake', 'lineMisfit', 'lineRake', 'lineInput']) delete props[k];
+    return props;
+  };
+  if (!LINE_KIND_BY_STRUCTURE[props.type]) return limpiar();
+  /*
+   * MEDIDA COMO RAKE: el rake es el dato, y trend/plunge se DERIVAN de él y
+   * del plano. Si después se corrige el rumbo o el manteo, la línea sigue al
+   * plano con el mismo rake —que es lo que se midió—, en vez de quedarse fija
+   * en el espacio y salirse del plano.
+   */
+  if (props.lineInput === 'rake' && Number.isFinite(props.lineRake)) {
+    const l = lineFromRake(props.strike, props.dip, props.lineRake);
+    props.lineTrend = Math.round(norm360(l.trend) * 10) / 10;
+    props.linePlunge = Math.round(l.plunge * 10) / 10;
+    props.rake = props.lineRake;
+    props.lineMisfit = 0;
     return props;
   }
+  if (!Number.isFinite(props.lineTrend) || !Number.isFinite(props.linePlunge)) return limpiar();
+  if (props.lineInput === 'rake') props.lineInput = 'trend';
+  delete props.lineRake;
   const r = lineOnPlane(props.strike, props.dip, props.lineTrend, props.linePlunge);
   if (r) {
     props.rake = Math.round(r.rake * 10) / 10;
@@ -1411,15 +1429,23 @@ export function createMeasurement({
   };
   // La línea (estría o lineación) se hereda de la paleta si no se pasó otra,
   // y solo en las superficies que la admiten.
+  // `line` es `{trend, plunge, input?}` o `{rake}`; si no se pasa, sale de la
+  // paleta: trend/plunge o rake, según cómo se eligió escribirla.
   let linea = line;
   if (linea === undefined) {
     if (!state.measureLine) linea = null;
-    else if (state.measureLineMode === 'rake') linea = lineFromRake(rumbo, manteo, state.manualRake);
+    else if (state.measureLineMode === 'rake') linea = { rake: state.manualRake };
     else linea = { trend: state.manualTrend, plunge: state.manualPlunge };
   }
   if (linea && LINE_KIND_BY_STRUCTURE[tipo]) {
-    feature.properties.lineTrend = norm360(Math.round((Number(linea.trend) || 0) * 10) / 10);
-    feature.properties.linePlunge = clampPlunge(Math.round(Number(linea.plunge) * 10) / 10);
+    if (Number.isFinite(Number(linea.rake)) && linea.rake !== null) {
+      feature.properties.lineInput = 'rake';
+      feature.properties.lineRake = clampRake(linea.rake);
+    } else {
+      feature.properties.lineInput = linea.input === 'edge' ? 'edge' : 'trend';
+      feature.properties.lineTrend = norm360(Math.round((Number(linea.trend) || 0) * 10) / 10);
+      feature.properties.linePlunge = clampPlunge(Math.round(Number(linea.plunge) * 10) / 10);
+    }
   }
   syncLineProps(feature.properties);
   const calidad = sanitizeQuality(rating !== undefined ? rating : state.measureQuality);
@@ -1633,18 +1659,28 @@ export function updateMeasurement(patch) {
       // `line: null` quita la línea; `{trend, plunge}` (o uno de los dos) la
       // pone o la retoca.
       if (patch.line === null) {
-        delete props.lineTrend;
-        delete props.linePlunge;
+        for (const k of ['lineTrend', 'linePlunge', 'lineRake', 'lineInput']) delete props[k];
       } else if (patch.rake !== undefined && Number.isFinite(Number(patch.rake))) {
-        // El rake se traduce a trend/plunge con el plano ACTUAL de la medida.
-        const l = lineFromRake(props.strike, props.dip, clampRake(patch.rake));
-        props.lineTrend = Math.round(l.trend * 10) / 10;
-        props.linePlunge = Math.round(l.plunge * 10) / 10;
+        // Escribir el rake lo vuelve EL dato: trend/plunge se derivan de él.
+        props.lineInput = 'rake';
+        props.lineRake = clampRake(patch.rake);
+      } else if (patch.lineInput === 'rake') {
+        // Pasar a «medida como rake» conserva la línea actual: su rake.
+        if (Number.isFinite(props.rake)) {
+          props.lineInput = 'rake';
+          props.lineRake = props.rake;
+        }
+      } else if (patch.lineInput === 'trend') {
+        if (props.lineInput === 'rake') props.lineInput = 'trend';
+        delete props.lineRake;
       } else if (patch.line) {
         const t = patch.line.trend ?? props.lineTrend ?? 0;
         const pl = patch.line.plunge ?? props.linePlunge ?? 0;
         props.lineTrend = norm360(Number(t) || 0);
         props.linePlunge = clampPlunge(pl);
+        if (props.lineInput === 'rake') props.lineInput = 'trend';
+        if (!props.lineInput) props.lineInput = 'trend';
+        delete props.lineRake;
       }
       syncLineProps(props);
       if (patch.strike !== undefined || patch.dip !== undefined) {

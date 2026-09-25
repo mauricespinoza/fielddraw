@@ -3981,7 +3981,7 @@ function commitDeviceReading() {
     strike: r.strike,
     dip: r.dip,
     dipAzimuth: r.dipAzimuth,
-    line: conLinea ? { trend: r.lineTrend, plunge: r.linePlunge } : null,
+    line: conLinea ? { trend: r.lineTrend, plunge: r.linePlunge, input: 'edge' } : null,
     method: 'device',
     quality: {
       strikeSd: round1(r.strikeSd),
@@ -4923,32 +4923,77 @@ function measurementSection(body, medida, reabrir) {
       });
       lin.appendChild(add);
     } else {
-      const filaL = document.createElement('div');
-      filaL.className = 'palette-row';
-      filaL.append(
-        numberField('Trend', p.lineTrend, { min: 0, max: 359.9, step: 1 }, (v) =>
-          store.updateMeasurement({ line: { trend: v } }),
-        ),
-        numberField('Plunge', p.linePlunge, { min: 0, max: 90, step: 1 }, (v) =>
-          store.updateMeasurement({ line: { plunge: v } }),
-        ),
-      );
-      lin.appendChild(filaL);
-      // El rake también se escribe: se traduce a trend/plunge con el plano de
-      // esta medida, y el menú se reabre para enseñar la traducción.
-      const filaR = document.createElement('div');
-      filaR.className = 'palette-row';
-      const rakeField = numberField('Rake (from strike, RHR)', p.rake ?? 90, { min: 0, max: 180, step: 1 }, () => {});
-      const rakeInput = rakeField.querySelector('input');
-      rakeInput.addEventListener('change', () => {
-        const v = Number(rakeInput.value);
-        if (!Number.isFinite(v)) return;
-        store.updateMeasurement({ rake: v });
-        reabrir();
-      });
-      rakeField.title = 'Angle within the plane from the right-hand-rule strike to the line; typing it sets the trend and plunge';
-      filaR.appendChild(rakeField);
-      lin.appendChild(filaR);
+      /*
+       * CÓMO SE MIDIÓ LA LÍNEA manda qué se edita: medida como rake, el rake
+       * es el dato y trend/plunge se enseñan ya calculados; medida como
+       * trend/plunge (o con el canto del teléfono), al revés. Las dos formas
+       * se ven siempre, y las dos viajan al exportar.
+       */
+      const comoRake = p.lineInput === 'rake';
+      const modo = document.createElement('div');
+      modo.className = 'palette-row';
+      for (const [id, label, title] of [
+        ['trend', 'Trend/plunge', 'The line was measured as trend and plunge; the rake is computed'],
+        ['rake', 'Rake', 'The line was measured as a rake within the plane; trend and plunge are computed'],
+      ]) {
+        modo.appendChild(
+          chip({
+            label: `Measured as ${label.toLowerCase()}`,
+            title,
+            active: comoRake === (id === 'rake'),
+            onClick: () => {
+              store.updateMeasurement({ lineInput: id });
+              reabrir();
+            },
+          }),
+        );
+      }
+      lin.appendChild(modo);
+
+      if (comoRake) {
+        const filaR = document.createElement('div');
+        filaR.className = 'palette-row';
+        const rakeField = numberField('Rake (from strike, RHR)', p.lineRake ?? p.rake ?? 90, { min: 0, max: 180, step: 1 }, () => {});
+        const rakeInput = rakeField.querySelector('input');
+        rakeInput.addEventListener('change', () => {
+          const v = Number(rakeInput.value);
+          if (!Number.isFinite(v)) return;
+          store.updateMeasurement({ rake: v });
+          reabrir();
+        });
+        rakeField.title = 'Angle within the plane from the right-hand-rule strike to the line (0–180°)';
+        filaR.appendChild(rakeField);
+        lin.appendChild(filaR);
+        measureRow(
+          lin,
+          'Trend / plunge',
+          `${Math.round(p.lineTrend)}° / ${Math.round(p.linePlunge)}° (${formatTrendPlunge(p.lineTrend, p.linePlunge)}) · from the rake`,
+          'Computed from the rake and the plane; this is what the export writes as line_trend / line_plunge',
+        );
+      } else {
+        const filaL = document.createElement('div');
+        filaL.className = 'palette-row';
+        filaL.append(
+          numberField('Trend', p.lineTrend, { min: 0, max: 359.9, step: 1 }, (v) =>
+            store.updateMeasurement({ line: { trend: v } }),
+          ),
+          numberField('Plunge', p.linePlunge, { min: 0, max: 90, step: 1 }, (v) =>
+            store.updateMeasurement({ line: { plunge: v } }),
+          ),
+        );
+        lin.appendChild(filaL);
+        if (Number.isFinite(p.rake)) {
+          measureRow(
+            lin,
+            'Rake',
+            `${Math.round(p.rake)}° from strike (RHR) · from trend/plunge`,
+            'Computed from the trend/plunge and the plane; the export writes it as rake',
+          );
+        }
+        if (p.lineInput === 'edge') {
+          measureRow(lin, 'Measured with', 'the long edge of the phone (Device)');
+        }
+      }
       if (Number.isFinite(p.lineMisfit) && p.lineMisfit > 10) {
         measureRow(
           lin,
