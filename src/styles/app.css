@@ -2416,6 +2416,15 @@ input[type='radio'] {
   }
 }
 
+/* Una línea de ayuda dentro de un grupo de la paleta (p. ej. cómo apoyar el
+   teléfono para leer plano + línea con Device). */
+.palette-hint {
+  flex: 1 1 100%;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
 /* Selector de unidad del panel de medir: una fila de chips por unidad no cabe
    en la columna angosta, y aquí lo que importa es tocar rápido. */
 .palette-select {
@@ -2886,6 +2895,12 @@ input[type='radio'] {
   height: 10px;
   border-radius: 2px;
   flex: none;
+}
+
+.sv-swatch.sv-swatch-square {
+  border-radius: 0;
+  border: 1.5px solid currentColor;
+  background: transparent;
 }
 
 .sv-row .sv-what {

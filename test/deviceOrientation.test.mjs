@@ -177,5 +177,22 @@ console.log('== promedio de orientaciones ==');
   ok('...y nunca pasa de 180°, que es donde deja de informar', sdTumbada <= 180);
 }
 
+console.log('== canto del teléfono -> línea ==');
+{
+  const e = D.edgeFromOrientation(0, 0, 0);
+  ok('canto horizontal al norte', cerca(e.x, 0) && cerca(e.y, 1) && cerca(e.z, 0), JSON.stringify(e));
+  for (const [a, b, g] of [[30, 50, -20], [200, 80, 10], [95, -40, 60]]) {
+    const n = D.normalFromOrientation(a, b, g);
+    const c = D.edgeFromOrientation(a, b, g);
+    ok(`canto ⟂ normal (${a},${b},${g})`, cerca(n.x * c.x + n.y * c.y + n.z * c.z, 0, 1e-9));
+  }
+  // Teléfono inclinado 30° con la parte de arriba levantada, mirando al N:
+  // el canto sube al norte, así que la línea (hacia abajo) es 30→180.
+  const l = D.lineFromAxis(D.edgeFromOrientation(0, 30, 0));
+  ok('la línea se anota hacia abajo', cerca(l.plunge, 30, 1e-6) && cerca(l.trend, 180, 1e-6), JSON.stringify(l));
+  const lp = D.lineFromAxis({ x: 0, y: 1, z: 0.2 }, { x: 0, y: 0, z: 1 });
+  ok('proyectada al plano horizontal queda horizontal', cerca(lp.plunge, 0, 1e-9) && cerca(lp.trend, 0, 1e-9));
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

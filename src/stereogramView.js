@@ -126,6 +126,9 @@ export function renderStereogram(svg, points, opts = {}) {
     // pliegue, no un polo ni un promedio de polos.
     showBeta = false,
     betaVector = null,
+    // Las líneas de las medidas plano + línea (estría, L₁) y la flecha del
+    // bloque colgante: encendidas de salida, porque son parte del dato.
+    showLines = true,
   } = opts;
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('width', width);
@@ -201,6 +204,63 @@ export function renderStereogram(svg, points, opts = {}) {
     placed.push({ id: p.id, x: px, y: py });
   }
   svg.appendChild(dots);
+
+  /*
+   * LÍNEAS: un cuadrado, no un círculo, para que nunca se confundan con un
+   * polo, en el color de su superficie. Encima, en la estría de una falla con
+   * sentido de movimiento, la FLECHA del bloque colgante (ver `lineOf` en
+   * `stereogram.js`: afuera en una normal, hacia el centro en una inversa,
+   * casi tangente al primitivo en una de rumbo).
+   */
+  if (showLines) {
+    const lineas = el('g', { class: 'stereo-lines' });
+    for (const p of points) {
+      if (!p.line) continue;
+      const lx = cx + p.line.x * radius;
+      const ly = cy + p.line.y * radius;
+      const op = atenuado(p) ? 0.18 : 1;
+      const S = 5.5;
+      lineas.appendChild(
+        el('rect', {
+          x: lx - S, y: ly - S, width: 2 * S, height: 2 * S,
+          fill: p.color, stroke: TINTA, 'stroke-width': 1.2, 'data-id': p.id, opacity: op,
+        }),
+      );
+      if (p.line.arrow) {
+        const { dx, dy } = p.line.arrow;
+        const L = 30; // largo de la flecha, desde el borde del cuadrado
+        const x0 = lx + dx * (S + 2);
+        const y0 = ly + dy * (S + 2);
+        const x1 = lx + dx * (S + L);
+        const y1 = ly + dy * (S + L);
+        // Punta: dos alas a ±28° de la dirección, hacia atrás.
+        const ala = (ang) => {
+          const c = Math.cos(ang);
+          const sn = Math.sin(ang);
+          const bx = -(dx * c - dy * sn);
+          const by = -(dx * sn + dy * c);
+          return `${x1 + bx * 9},${y1 + by * 9}`;
+        };
+        const flecha = el('g', { class: 'stereo-slip', opacity: op });
+        flecha.append(
+          el('line', {
+            x1: x0, y1: y0, x2: x1, y2: y1,
+            stroke: '#ffffff', 'stroke-width': 4.5, 'stroke-linecap': 'round',
+          }),
+          el('line', {
+            x1: x0, y1: y0, x2: x1, y2: y1,
+            stroke: TINTA, 'stroke-width': 2, 'stroke-linecap': 'round',
+          }),
+          el('polygon', {
+            points: `${x1 + dx * 2},${y1 + dy * 2} ${ala(0.49)} ${ala(-0.49)}`,
+            fill: TINTA, stroke: '#ffffff', 'stroke-width': 1, 'stroke-linejoin': 'round',
+          }),
+        );
+        lineas.appendChild(flecha);
+      }
+    }
+    svg.appendChild(lineas);
+  }
 
   /*
    * VECTOR MEDIO: una mira, no un polo más.

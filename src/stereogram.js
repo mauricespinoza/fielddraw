@@ -22,7 +22,7 @@
  */
 
 import { STRUCTURE_TYPE_BY_ID } from './symbology.js';
-import { norm360 } from './structure.js';
+import { hangingWallMotion, norm360 } from './structure.js';
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -86,7 +86,37 @@ export function stereogramPoint(feature) {
     dip: p.dip,
     ...pole,
     ...xy,
+    line: lineOf(p),
   };
+}
+
+/**
+ * La línea de una medida plano + línea (estría o lineación L₁), lista para
+ * plotear: su punto en la red y, si es una falla con sentido de movimiento,
+ * la dirección EN EL PAPEL de la flecha del bloque colgante.
+ *
+ * La flecha sigue la convención de Angelier: se dibuja sobre el punto de la
+ * estría, orientada según la componente horizontal del movimiento del
+ * colgante. Por eso en una falla normal apunta hacia afuera del centro, en
+ * una inversa hacia el centro, y en una de rumbo corre casi tangente al
+ * primitivo. Si el movimiento es vertical (sin componente horizontal que
+ * dibujar) o la cinemática no decide un sentido, no hay flecha.
+ *
+ * @returns {null|{trend, plunge, x, y, arrow: null|{dx, dy}}} `dx, dy` es un
+ *   vector unitario en las coordenadas de la red (y hacia abajo = sur).
+ */
+export function lineOf(p) {
+  if (!Number.isFinite(p.lineTrend) || !Number.isFinite(p.linePlunge)) return null;
+  const xy = schmidtPoint(p.lineTrend, p.linePlunge, 1);
+  let arrow = null;
+  if (p.type === 'fault-plane' && p.faultSense) {
+    const m = hangingWallMotion(p.strike, p.dip, p.lineTrend, p.linePlunge, p.faultSense);
+    if (m && Math.cos(m.plunge * RAD) > 0.03) {
+      const t = m.trend * RAD;
+      arrow = { dx: Math.sin(t), dy: -Math.cos(t), trend: m.trend, plunge: m.plunge };
+    }
+  }
+  return { trend: p.lineTrend, plunge: p.linePlunge, ...xy, arrow };
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   LINE_KIND_BY_STRUCTURE,
   clampPlunge,
   geoAzimuth,
+  lineFromRake,
   lineOnPlane,
   lngLatMidpoint,
   sanitizeQuality,
@@ -271,8 +272,16 @@ let state = {
    * de `LINE_KIND_BY_STRUCTURE`.
    */
   measureLine: false,
+  /**
+   * Cómo se escribe la línea en los métodos que no son Device: `'trend'`
+   * (trend/plunge, lo que da la brújula sobre la línea) o `'rake'` (el ángulo
+   * dentro del plano desde el rumbo RHR, que se traduce a trend/plunge con el
+   * plano medido). Device no pregunta: la línea es el canto del teléfono.
+   */
+  measureLineMode: 'trend',
   manualTrend: 0,
   manualPlunge: 0,
+  manualRake: 90,
   /** Calidad 1–5 de la próxima medida, o `null` si no se califica. */
   measureQuality: null,
   /**
@@ -1285,6 +1294,14 @@ export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) 
 export const setMeasureLine = (measureLine) => set({ measureLine: !!measureLine });
 export const setManualTrend = (manualTrend) => set({ manualTrend: norm360(Number(manualTrend) || 0) });
 export const setManualPlunge = (manualPlunge) => set({ manualPlunge: clampPlunge(manualPlunge) });
+export const setMeasureLineMode = (mode) => set({ measureLineMode: mode === 'rake' ? 'rake' : 'trend' });
+export const setManualRake = (manualRake) => set({ manualRake: clampRake(manualRake) });
+
+/** El rake vive en [0, 180]: de 180 en adelante es la misma línea al revés. */
+function clampRake(deg) {
+  const v = Number(deg);
+  return Number.isFinite(v) ? Math.min(180, Math.max(0, v)) : 0;
+}
 export const setMeasureQuality = (q) => set({ measureQuality: sanitizeQuality(q) });
 
 /**
@@ -1394,12 +1411,15 @@ export function createMeasurement({
   };
   // La línea (estría o lineación) se hereda de la paleta si no se pasó otra,
   // y solo en las superficies que la admiten.
-  const linea = line !== undefined ? line : state.measureLine
-    ? { trend: state.manualTrend, plunge: state.manualPlunge }
-    : null;
+  let linea = line;
+  if (linea === undefined) {
+    if (!state.measureLine) linea = null;
+    else if (state.measureLineMode === 'rake') linea = lineFromRake(rumbo, manteo, state.manualRake);
+    else linea = { trend: state.manualTrend, plunge: state.manualPlunge };
+  }
   if (linea && LINE_KIND_BY_STRUCTURE[tipo]) {
-    feature.properties.lineTrend = norm360(Number(linea.trend) || 0);
-    feature.properties.linePlunge = clampPlunge(linea.plunge);
+    feature.properties.lineTrend = norm360(Math.round((Number(linea.trend) || 0) * 10) / 10);
+    feature.properties.linePlunge = clampPlunge(Math.round(Number(linea.plunge) * 10) / 10);
   }
   syncLineProps(feature.properties);
   const calidad = sanitizeQuality(rating !== undefined ? rating : state.measureQuality);
@@ -1615,6 +1635,11 @@ export function updateMeasurement(patch) {
       if (patch.line === null) {
         delete props.lineTrend;
         delete props.linePlunge;
+      } else if (patch.rake !== undefined && Number.isFinite(Number(patch.rake))) {
+        // El rake se traduce a trend/plunge con el plano ACTUAL de la medida.
+        const l = lineFromRake(props.strike, props.dip, clampRake(patch.rake));
+        props.lineTrend = Math.round(l.trend * 10) / 10;
+        props.linePlunge = Math.round(l.plunge * 10) / 10;
       } else if (patch.line) {
         const t = patch.line.trend ?? props.lineTrend ?? 0;
         const pl = patch.line.plunge ?? props.linePlunge ?? 0;
@@ -2000,6 +2025,7 @@ export const SETTING_KEYS = [
   'measureFaultSense',
   'measureUnit',
   'measureLine',
+  'measureLineMode',
   'measureQuality',
   'profileSource',
   'opentopoDem',
@@ -2075,6 +2101,7 @@ export function loadProject({
     patch.scalePresets = sanitizeScales(settings.scalePresets);
     if (settings.measureQuality !== undefined) patch.measureQuality = sanitizeQuality(settings.measureQuality);
     if (settings.measureLine !== undefined) patch.measureLine = !!settings.measureLine;
+    if (settings.measureLineMode !== undefined) patch.measureLineMode = settings.measureLineMode === 'rake' ? 'rake' : 'trend';
     patch.scaleLock =
       Number.isFinite(Number(settings.scaleLock)) && Number(settings.scaleLock) > 0
         ? clampScale(Number(settings.scaleLock))
