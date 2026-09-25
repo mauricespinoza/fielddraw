@@ -478,4 +478,85 @@ export function quadrant(azimuth) {
   return dirs[Math.round(norm360(azimuth) / 22.5) % 16];
 }
 
+/*
+ * Plano + línea: la estría sobre un plano de falla o la lineación L₁ sobre la
+ * foliación S₁. Se anota como TREND/PLUNGE de la línea —lo que da la brújula
+ * apoyada sobre ella— y de ahí se derivan el RAKE (pitch) medido dentro del
+ * plano desde el rumbo RHR y cuánto se sale la línea del plano. Lo segundo no
+ * es adorno: una línea que no cae en su plano es un error de lectura o de
+ * anotación, y se dice en vez de guardarlo en silencio.
+ */
+
+/** Qué línea acompaña a cada superficie, si alguna. */
+export const LINE_KIND_BY_STRUCTURE = {
+  'fault-plane': { id: 'striae', short: 'Str', label: 'Striae', help: 'Slickenlines on the fault plane' },
+  foliation: { id: 'lineation', short: 'L₁', label: 'Lineation L₁', help: 'Mineral or stretching lineation on S₁' },
+};
+
+/** La línea es un eje: 0 ≤ plunge ≤ 90, trend en [0, 360). */
+export const clampPlunge = (deg) => {
+  const v = Number(deg);
+  return Number.isFinite(v) ? Math.min(90, Math.max(0, v)) : 0;
+};
+
+const RAD = Math.PI / 180;
+
+/** Vector unitario (Este, Norte, Arriba) de una línea trend/plunge, hacia abajo. */
+function lineVec(trend, plunge) {
+  const t = trend * RAD;
+  const p = plunge * RAD;
+  return [Math.sin(t) * Math.cos(p), Math.cos(t) * Math.cos(p), -Math.sin(p)];
+}
+
+/**
+ * Rake y desajuste de una línea respecto de su plano.
+ *
+ * @returns {{rake: number, misfit: number}|null} `rake` en [0, 180], medido
+ *   dentro del plano desde el rumbo RHR hacia el manteo; `misfit` es el ángulo
+ *   entre la línea y el plano, 0 si cae exactamente en él.
+ */
+export function lineOnPlane(strike, dip, trend, plunge) {
+  if (![strike, dip, trend, plunge].every(Number.isFinite)) return null;
+  const s = lineVec(strike, 0);
+  const d = lineVec(strike + 90, dip);
+  const l = lineVec(trend, plunge);
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const n = [s[1] * d[2] - s[2] * d[1], s[2] * d[0] - s[0] * d[2], s[0] * d[1] - s[1] * d[0]];
+  const misfit = Math.asin(Math.min(1, Math.abs(dot(l, n)))) / RAD;
+  let ls = dot(l, s);
+  let ld = dot(l, d);
+  // La línea es un eje: si la proyección cae hacia arriba del plano, se toma
+  // el sentido contrario, que es la misma línea.
+  if (ld < 0 || (ld === 0 && ls < 0)) {
+    ls = -ls;
+    ld = -ld;
+  }
+  const rake = Math.atan2(ld, ls) / RAD;
+  return { rake, misfit };
+}
+
+/** Trend/plunge de una línea dentro del plano, a partir de su rake. */
+export function lineFromRake(strike, dip, rake) {
+  const s = lineVec(strike, 0);
+  const d = lineVec(strike + 90, dip);
+  const c = Math.cos(rake * RAD);
+  const k = Math.sin(rake * RAD);
+  const v = [s[0] * c + d[0] * k, s[1] * c + d[1] * k, s[2] * c + d[2] * k];
+  const plunge = Math.asin(Math.min(1, Math.max(-1, -v[2]))) / RAD;
+  const trend = norm360(Math.atan2(v[0], v[1]) / RAD);
+  return { trend, plunge };
+}
+
+/** Línea formateada como en la libreta: `12→245`. */
+export function formatTrendPlunge(trend, plunge) {
+  if (!Number.isFinite(trend) || !Number.isFinite(plunge)) return '—';
+  return `${Math.round(plunge)}→${String(Math.round(norm360(trend))).padStart(3, '0')}`;
+}
+
+/** Calidad 1–5 del dato, como la de StraboSpot; `null` si no se dio. */
+export const sanitizeQuality = (v) => {
+  const n = Math.round(Number(v));
+  return v !== null && v !== '' && Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
+};
+
 export { norm360 };

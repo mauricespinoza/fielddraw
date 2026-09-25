@@ -1,5 +1,12 @@
 import { BASEMAPS } from './basemaps.js';
-import { geoAzimuth, lngLatMidpoint } from './structure.js';
+import {
+  LINE_KIND_BY_STRUCTURE,
+  clampPlunge,
+  geoAzimuth,
+  lineOnPlane,
+  lngLatMidpoint,
+  sanitizeQuality,
+} from './structure.js';
 import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
 import { adoptLayer } from './adopt.js';
 import { adoptStrabo } from './strabo/adopt.js';
@@ -258,6 +265,16 @@ let state = {
   /** Valores de partida del método manual, que se editan tras colocarlo. */
   manualStrike: 0,
   manualDip: 30,
+  /**
+   * Plano + línea: si la próxima medida de Flt o S₁ lleva además su estría o
+   * su lineación, y con qué trend/plunge. Solo se aplica a las superficies
+   * de `LINE_KIND_BY_STRUCTURE`.
+   */
+  measureLine: false,
+  manualTrend: 0,
+  manualPlunge: 0,
+  /** Calidad 1–5 de la próxima medida, o `null` si no se califica. */
+  measureQuality: null,
   /**
    * Última lectura del método 'device': rumbo, manteo y su desviación
    * estándar entre las muestras tomadas mientras el teléfono está apoyado, o
@@ -1265,6 +1282,27 @@ export const setMeasureUnit = (measureUnit) => set({ measureUnit });
 export const setDeviceReading = (deviceReading) => set({ deviceReading });
 export const setManualStrike = (manualStrike) => set({ manualStrike: norm360(manualStrike) });
 export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) });
+export const setMeasureLine = (measureLine) => set({ measureLine: !!measureLine });
+export const setManualTrend = (manualTrend) => set({ manualTrend: norm360(Number(manualTrend) || 0) });
+export const setManualPlunge = (manualPlunge) => set({ manualPlunge: clampPlunge(manualPlunge) });
+export const setMeasureQuality = (q) => set({ measureQuality: sanitizeQuality(q) });
+
+/**
+ * Deja coherentes los campos de la línea de una medida: solo Flt y S₁ la
+ * llevan, y el rake y el desajuste se recalculan de rumbo, manteo y línea.
+ */
+function syncLineProps(props) {
+  if (!LINE_KIND_BY_STRUCTURE[props.type] || !Number.isFinite(props.lineTrend) || !Number.isFinite(props.linePlunge)) {
+    for (const k of ['lineTrend', 'linePlunge', 'rake', 'lineMisfit']) delete props[k];
+    return props;
+  }
+  const r = lineOnPlane(props.strike, props.dip, props.lineTrend, props.linePlunge);
+  if (r) {
+    props.rake = Math.round(r.rake * 10) / 10;
+    props.lineMisfit = Math.round(r.misfit * 10) / 10;
+  }
+  return props;
+}
 
 export function clearPendingPlane() {
   set({ pendingPlane: null });
@@ -1309,6 +1347,8 @@ export function createMeasurement({
   quality = {},
   note = '',
   unitId,
+  line,
+  rating,
 }) {
   const id = newId();
   const rumbo = norm360(strike);
@@ -1352,6 +1392,18 @@ export function createMeasurement({
     },
     geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
   };
+  // La línea (estría o lineación) se hereda de la paleta si no se pasó otra,
+  // y solo en las superficies que la admiten.
+  const linea = line !== undefined ? line : state.measureLine
+    ? { trend: state.manualTrend, plunge: state.manualPlunge }
+    : null;
+  if (linea && LINE_KIND_BY_STRUCTURE[tipo]) {
+    feature.properties.lineTrend = norm360(Number(linea.trend) || 0);
+    feature.properties.linePlunge = clampPlunge(linea.plunge);
+  }
+  syncLineProps(feature.properties);
+  const calidad = sanitizeQuality(rating !== undefined ? rating : state.measureQuality);
+  if (calidad !== null) feature.properties.quality = calidad;
   pushHistory();
   /*
    * Colocada la medida, la herramienta vuelve a ELEGIR.
@@ -1552,6 +1604,24 @@ export function updateMeasurement(patch) {
         delete props.faultSense;
       }
       if (patch.overturned !== undefined) props.overturned = !!patch.overturned;
+      if (patch.note !== undefined) props.note = String(patch.note ?? '');
+      if (patch.quality !== undefined) {
+        const q = sanitizeQuality(patch.quality);
+        if (q === null) delete props.quality;
+        else props.quality = q;
+      }
+      // `line: null` quita la línea; `{trend, plunge}` (o uno de los dos) la
+      // pone o la retoca.
+      if (patch.line === null) {
+        delete props.lineTrend;
+        delete props.linePlunge;
+      } else if (patch.line) {
+        const t = patch.line.trend ?? props.lineTrend ?? 0;
+        const pl = patch.line.plunge ?? props.linePlunge ?? 0;
+        props.lineTrend = norm360(Number(t) || 0);
+        props.linePlunge = clampPlunge(pl);
+      }
+      syncLineProps(props);
       if (patch.strike !== undefined || patch.dip !== undefined) {
         props.dipAzimuth = norm360(props.strike + 90);
         if (props.method !== 'manual') {
@@ -1929,6 +1999,8 @@ export const SETTING_KEYS = [
   'measureOverturned',
   'measureFaultSense',
   'measureUnit',
+  'measureLine',
+  'measureQuality',
   'profileSource',
   'opentopoDem',
   'profileSamples',
@@ -2001,6 +2073,8 @@ export function loadProject({
     // La lista de escalas viene de un archivo que se puede editar a mano; si
     // llega rota, el desplegable se quedaría vacío o con basura.
     patch.scalePresets = sanitizeScales(settings.scalePresets);
+    if (settings.measureQuality !== undefined) patch.measureQuality = sanitizeQuality(settings.measureQuality);
+    if (settings.measureLine !== undefined) patch.measureLine = !!settings.measureLine;
     patch.scaleLock =
       Number.isFinite(Number(settings.scaleLock)) && Number(settings.scaleLock) > 0
         ? clampScale(Number(settings.scaleLock))

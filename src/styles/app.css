@@ -2381,6 +2381,41 @@ input[type='radio'] {
   resize: vertical;
 }
 
+/*
+ * Notas de un punto de control: recuadro grande que crece con el texto
+ * (ver `textareaField`, opción `large`) para leer la nota de corrido, y en
+ * pantalla grande con la esquina de arrastre en las DOS direcciones: la
+ * paleta se ajusta al ancho que se le dé al recuadro.
+ */
+.palette-textarea.notes-large textarea {
+  min-height: 200px;
+  max-height: 70vh;
+  max-height: 70dvh;
+  overflow-y: auto;
+}
+
+@media (min-width: 681px) and (min-height: 521px) {
+  .palette-textarea.notes-large textarea {
+    resize: both;
+    min-width: 100%;
+    max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 150px);
+  }
+
+  .palette.palette-wide:has(.notes-large),
+  .props-menu:has(.notes-large) {
+    width: fit-content;
+    min-width: min(300px, 92vw);
+    max-width: calc(100vw - var(--safe-l) - var(--safe-r) - 120px);
+  }
+}
+
+@media (max-width: 680px), (max-height: 520px) {
+  .palette-textarea.notes-large textarea {
+    min-height: 35vh;
+    min-height: 35dvh;
+  }
+}
+
 /* Selector de unidad del panel de medir: una fila de chips por unidad no cabe
    en la columna angosta, y aquí lo que importa es tocar rápido. */
 .palette-select {

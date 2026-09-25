@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.38.0';
+export const APP_VERSION = '0.39.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,21 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.39.0',
+    highlights: [
+      'Plane + line: fault planes (Flt) can carry their striae and foliation (S₁) its lineation L₁, as trend/plunge; the rake is computed and a line that falls off its plane is flagged.',
+      'Every structural measurement has Notes and a Quality rating from 1 to 5.',
+      'Observation points: a much larger Notes box that grows with the text; on a computer, drag its corner to resize it.',
+      'Stereogram ▸ Compass: no needle — the compass rose turns so N stays on true north, and the strike of the top of the device from north is shown.',
+    ],
+    items: [
+      'Plano + línea: al elegir Flt o S₁ la paleta ofrece «+ Striae» o «+ Lineation L₁» con Trend y Plunge; la línea se guarda en la misma medida (lineTrend, linePlunge) con su rake desde el rumbo RHR. También se agrega, edita o quita desde el menú de la medida, que avisa si la línea se sale más de 10° del plano. Viaja al GeoPackage (line_type, line_trend, line_plunge, rake) y a StraboSpot como `associated_orientation` lineal del plano, y vuelve de ambos.',
+      'Cada medida estructural tiene Notes y Quality 1–5 en su menú; la calidad también se elige en la paleta antes de medir. Quality va al GeoPackage (columna quality) y a StraboSpot como el `quality` de la medición; si no se califica, no se inventa.',
+      'Puntos de observación: el recuadro de Notes es mucho más alto y crece con el texto para leer la nota de corrido; en pantalla grande tiene esquina para estirarlo en alto y ancho, y la paleta se ensancha con él.',
+      'Pestaña Compass del Stereograma: sin aguja. La rosa de puntos cardinales (con NE, SE, SW, NW y grados cada 30°) gira en pantalla manteniendo la N en el norte real, con los rótulos derechos; una marca fija arriba señala el borde superior del teléfono y debajo se lee su rumbo desde el norte.',
+    ],
+  },
   {
     version: '0.38.0',
     highlights: [

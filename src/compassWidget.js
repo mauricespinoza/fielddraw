@@ -8,11 +8,12 @@
  * los dos, porque miden cosas distintas: Device dibuja el símbolo de
  * rumbo/manteo del mapa (`style: 'symbol'`) y debajo el dato completo —rumbo,
  * manteo y el error de cada uno—, para reconocer en terreno la misma medida
- * que se va a ver después y anotarla. Compass dibuja una aguja de brújula
- * (`style: 'needle'`, el valor por omisión) y debajo solo el rumbo al que
- * apunta el teléfono, sin manteo: ahí se está orientando el propio teléfono,
- * como con cualquier brújula de mano, no midiendo una superficie ni anotando
- * un dato.
+ * que se va a ver después y anotarla. Compass (`style: 'needle'`, el valor
+ * por omisión) NO dibuja aguja: solo la rosa de los puntos cardinales, que
+ * gira en pantalla para que su N quede siempre sobre el norte real, con una
+ * marca fija arriba —el borde superior del teléfono— y debajo el rumbo entre
+ * ese borde y el norte. Ahí se está orientando el propio teléfono, como con
+ * cualquier brújula de mano, no midiendo una superficie ni anotando un dato.
  *
  * **EN TONOS CLAROS, Y NO POR GUSTO.** El resto de la aplicación es oscura
  * porque de noche o bajo techo cansa menos, pero esto se mira a mediodía, al
@@ -54,6 +55,7 @@ const RUMBOS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'S
 const cuadrante = (az) => (Number.isFinite(az) ? RUMBOS[Math.round(((az % 360) + 360) % 360 / 22.5) % 16] : '');
 
 const CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
+const CARDINAL_ROSA = { ...CARDINAL, 45: 'NE', 135: 'SE', 225: 'SW', 315: 'NW' };
 
 /**
  * Construye la rosa de la brújula dentro de un `<svg>` ya existente, vacío o
@@ -68,12 +70,11 @@ const CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
  *
  * @param {SVGElement} svg
  * @param {{size?: number, style?: 'needle'|'symbol'}} opts — `size` es el
- *   diámetro del lienzo de la rosa. `style` decide qué se dibuja girando: la
- *   AGUJA DE BRÚJULA de siempre (`'needle'`, el valor por omisión, para la
- *   pestaña Compass del Stereograma) o el SÍMBOLO DE RUMBO/MANTEO del mapa
- *   (`'symbol'`, para el panel Device al tomar una medida) — ver la nota bajo
- *   `needle`/`dipSymbol` más abajo sobre por qué son dos dibujos distintos y
- *   no uno reetiquetado.
+ *   diámetro del lienzo de la rosa. `style` decide qué se dibuja: la ROSA
+ *   SIN AGUJA que gira con el norte (`'needle'`, el valor por omisión, para
+ *   la pestaña Compass del Stereograma; el nombre se conserva para no romper
+ *   a quien la llama) o el SÍMBOLO DE RUMBO/MANTEO del mapa (`'symbol'`, para
+ *   el panel Device al tomar una medida).
  */
 export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   const alto = size + 88; // la rosa, y debajo el número con sus dos rótulos
@@ -91,6 +92,9 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   svg.appendChild(el('rect', { x: 0, y: 0, width: size, height: alto, rx: 12, fill: PAPEL }));
 
   const g = el('g', { class: 'compass-frame' });
+  // Rótulos de la rosa: giran con ella, pero cada uno se endereza sobre su
+  // propio centro para que se lea sin torcer la cabeza.
+  const rotulos = [];
   g.append(
     el('circle', { cx, cy, r: R, fill: '#ffffff', stroke: TINTA, 'stroke-width': 1.6 }),
     el('circle', { cx, cy, r: R * 0.55, fill: 'none', stroke: TENUE, 'stroke-width': 0.9, opacity: 0.5 }),
@@ -112,54 +116,62 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
         'stroke-width': mayor ? 2 : media ? 1.2 : 0.8,
       }),
     );
-    if (CARDINAL[deg]) {
+    const rotulo = style === 'needle' ? CARDINAL_ROSA[deg] : CARDINAL[deg];
+    if (rotulo) {
+      const cardinal = deg % 90 === 0;
+      const x = cx + Math.sin(rad) * (R - 26);
+      const y = cy - Math.cos(rad) * (R - 26);
       const t = el('text', {
-        x: cx + Math.sin(rad) * (R - 26),
-        y: cy - Math.cos(rad) * (R - 26),
+        x,
+        y,
         'text-anchor': 'middle',
         'dominant-baseline': 'middle',
-        'font-size': 13,
+        'font-size': style === 'needle' ? (cardinal ? 22 : 11) : 13,
         'font-weight': 700,
-        fill: deg === 0 ? MANTEO : TINTA,
+        fill: deg === 0 ? MANTEO : cardinal ? TINTA : TENUE,
       });
-      t.textContent = CARDINAL[deg];
+      t.textContent = rotulo;
       g.appendChild(t);
+      rotulos.push({ t, x, y });
+    }
+    // Grados cada 30° fuera de los cardinales, para leer la rosa a ojo.
+    if (style === 'needle' && media && !mayor) {
+      const x = cx + Math.sin(rad) * (R - 22);
+      const y = cy - Math.cos(rad) * (R - 22);
+      const t = el('text', {
+        x, y, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+        'font-size': 9.5, fill: TENUE, 'font-variant-numeric': 'tabular-nums',
+      });
+      t.textContent = String(deg);
+      g.appendChild(t);
+      rotulos.push({ t, x, y });
     }
   }
   svg.appendChild(g);
 
   /*
-   * UNA AGUJA DE BRÚJULA, NO EL SÍMBOLO DE RUMBO Y MANTEO DEL MAPA.
+   * SIN AGUJA: SOLO LA ROSA QUE GIRA.
    *
-   * La versión anterior dibujaba literalmente ese símbolo —un trazo largo de
-   * rumbo con un tic corto de manteo a un lado— porque es el mismo dato, pero
-   * sobre un disco graduado con los cuatro cardinales eso se lee como un
-   * error: parece un compás mal calibrado, no una brújula. Esto en cambio es
-   * un rombo alargado partido en dos mitades de color —la punta clara
-   * apuntando a favor del manteo, la cola oscura al lado contrario—, que es
-   * literalmente cómo se ve la aguja de cualquier brújula de geólogo. En
-   * la pestaña Compass la aguja NO gira: queda fija hacia lo alto de la
-   * pantalla, que es hacia donde apunta el teléfono, y lo que gira bajo ella
-   * es el marco (ver `update`).
+   * En la pestaña Compass lo único que se mueve es la rosa de los puntos
+   * cardinales, que gira al revés del rumbo para que su N quede siempre
+   * sobre el norte real. Lo fijo es una marca pequeña en lo alto del disco:
+   * el borde superior del teléfono, que es lo que se está apuntando. El número
+   * de abajo es el ángulo entre ese borde y el norte, en sentido horario.
    */
-  let needle = null;
+  let lubber = null;
   let dipSymbol = null;
-  const L = R - 14; // qué tan larga es la aguja, o el trazo de rumbo
+  const L = R - 14; // qué tan largo es el trazo de rumbo del símbolo
 
   if (style === 'needle') {
-    needle = el('g', { class: 'compass-needle', visibility: 'hidden' });
-    const W = 9; // medio ancho en el centro, donde el rombo es más ancho
-    const cola = el('polygon', {
-      points: `${cx},${cy + L} ${cx + W},${cy} ${cx - W},${cy}`,
-      fill: TINTA, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
-    });
-    const punta = el('polygon', {
-      points: `${cx},${cy - L} ${cx + W},${cy} ${cx - W},${cy}`,
-      fill: MANTEO, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
-    });
-    const hub = el('circle', { cx, cy, r: 4, fill: PAPEL, stroke: TINTA, 'stroke-width': 1.4 });
-    needle.append(cola, punta, hub);
-    svg.appendChild(needle);
+    lubber = el('g', { class: 'compass-lubber' });
+    lubber.append(
+      el('polygon', {
+        points: `${cx},${cy - R + 3} ${cx - 8},${cy - R - 11} ${cx + 8},${cy - R - 11}`,
+        fill: TINTA, stroke: TINTA, 'stroke-width': 1, 'stroke-linejoin': 'round',
+      }),
+      el('circle', { cx, cy, r: 2.5, fill: TENUE }),
+    );
+    svg.appendChild(lubber);
   } else {
     /*
      * EL SÍMBOLO DE RUMBO Y MANTEO DEL MAPA, NO UNA AGUJA DE BRÚJULA.
@@ -203,7 +215,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     x: cx, y: size + 46, 'text-anchor': 'middle', 'font-size': 11.5,
     'font-weight': 600, fill: TENUE, 'letter-spacing': 0.4,
   });
-  notacion.textContent = style === 'needle' ? 'Heading from north' : 'Strike (RHR) / Dip';
+  notacion.textContent = style === 'needle' ? 'Strike · top of device from N' : 'Strike (RHR) / Dip';
   svg.appendChild(notacion);
 
   const sub = el('text', {
@@ -212,7 +224,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   svg.appendChild(sub);
 
   /**
-   * Refresca la aguja y el texto.
+   * Refresca la rosa (o el símbolo) y el texto.
    *
    * En `style: 'needle'` la lectura es `{heading}`, el ángulo desde el norte
    * al que apunta el teléfono —una brújula de verdad, sin manteo que leer—.
@@ -224,26 +236,20 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     if (style === 'needle') {
       const heading = reading && Number.isFinite(reading.heading) ? norm360(reading.heading) : null;
       if (heading === null) {
-        needle.setAttribute('visibility', 'hidden');
         g.removeAttribute('transform');
+        for (const r of rotulos) r.t.removeAttribute('transform');
         label.textContent = '—';
         sub.textContent = '';
         return;
       }
       /*
-       * LO QUE GIRA ES EL MARCO, NO LA AGUJA.
-       *
-       * La aguja queda fija apuntando a lo alto de la pantalla —hacia donde
-       * apunta el teléfono, como la línea de fe de una brújula de mano— y el
-       * marco graduado gira al revés del rumbo, de modo que su N queda siempre
-       * sobre el norte real. Así se lee como una brújula de verdad: al girar
-       * el teléfono la rosa se mueve bajo la aguja, y el número que queda bajo
-       * la punta es el rumbo al que se está mirando. Girar la aguja con el
-       * marco quieto dibujaba lo contrario: una rosa pegada a la pantalla, con
-       * su N señalando lo alto del teléfono y no el norte.
+       * LO QUE GIRA ES LA ROSA. La marca de arriba queda fija —el borde
+       * superior del teléfono— y la rosa gira al revés del rumbo, de modo que
+       * su N queda siempre sobre el norte real y lo que queda bajo la marca es
+       * el rumbo al que apunta el teléfono.
        */
-      needle.setAttribute('visibility', 'visible');
       g.setAttribute('transform', `rotate(${-heading} ${cx} ${cy})`);
+      for (const r of rotulos) r.t.setAttribute('transform', `rotate(${heading} ${r.x} ${r.y})`);
       label.textContent = `${String(Math.round(heading) % 360).padStart(3, '0')}°`;
       sub.textContent = cuadrante(heading);
       return;

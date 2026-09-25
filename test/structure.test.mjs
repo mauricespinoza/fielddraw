@@ -565,5 +565,62 @@ ok('y también por abajo', store.getState().terrainExaggeration === 0.5);
 store.setProfileSamples(5);
 ok('las muestras del perfil tienen mínimo', store.getState().profileSamples === 20);
 
+console.log('== plano + línea (estría / lineación) ==');
+{
+  // Plano 000/30 (mantea al E). Línea de máxima pendiente: 30→090, rake 90.
+  const r = S.lineOnPlane(0, 30, 90, 30);
+  ok('la línea de máxima pendiente tiene rake 90', cerca(r.rake, 90, 1e-6), `${r.rake}`);
+  ok('y cae en el plano', cerca(r.misfit, 0, 1e-6), `${r.misfit}`);
+  // Horizontal a lo largo del rumbo: rake 0 (o 180 para el sentido opuesto).
+  ok('a lo largo del rumbo RHR, rake 0', cerca(S.lineOnPlane(0, 30, 0, 0).rake, 0, 1e-6));
+  ok('contra el rumbo, rake 180', cerca(S.lineOnPlane(0, 30, 180, 0).rake, 180, 1e-6));
+  // Ida y vuelta por lineFromRake.
+  const l = S.lineFromRake(40, 60, 35);
+  const back = S.lineOnPlane(40, 60, l.trend, l.plunge);
+  ok('lineFromRake y lineOnPlane son inversas', cerca(back.rake, 35, 1e-6) && cerca(back.misfit, 0, 1e-6),
+    JSON.stringify({ l, back }));
+  // Una línea vertical sobre un plano de 30° se sale 60° de él.
+  ok('una línea fuera del plano se detecta', cerca(S.lineOnPlane(0, 30, 0, 90).misfit, 60, 1e-6));
+  ok('formatTrendPlunge', S.formatTrendPlunge(245.2, 12.4) === '12→245');
+  ok('calidad 1–5', S.sanitizeQuality(3) === 3 && S.sanitizeQuality('5') === 5);
+  ok('calidad fuera de rango o vacía es null',
+    S.sanitizeQuality(0) === null && S.sanitizeQuality(6) === null && S.sanitizeQuality(null) === null && S.sanitizeQuality('') === null);
+}
+{
+  store.clearFeatures();
+  store.setMeasureType('fault-plane');
+  store.setMeasureLine(true);
+  store.setManualTrend(90);
+  store.setManualPlunge(30);
+  store.setMeasureQuality(4);
+  const f = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 30 });
+  const p = f.properties;
+  ok('Flt hereda la estría de la paleta', p.lineTrend === 90 && p.linePlunge === 30, JSON.stringify(p));
+  ok('y calcula su rake', cerca(p.rake, 90, 0.05));
+  ok('y hereda la calidad', p.quality === 4);
+  store.setSelection([p.id]);
+  store.updateMeasurement({ line: { trend: 0, plunge: 0 }, note: 'slickensides with steps', quality: null });
+  const q = store.getState().features[0].properties;
+  ok('la línea se edita y el rake se recalcula', q.lineTrend === 0 && cerca(q.rake, 0, 0.05), JSON.stringify(q));
+  ok('la nota se guarda', q.note === 'slickensides with steps');
+  ok('la calidad se puede quitar', q.quality === undefined);
+  store.updateMeasurement({ type: 'bedding' });
+  const b = store.getState().features[0].properties;
+  ok('una estratificación no lleva línea', b.lineTrend === undefined && b.rake === undefined);
+  store.setMeasureType('joint');
+  const j = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 30 });
+  ok('una diaclasa no hereda la línea de la paleta', j.properties.lineTrend === undefined);
+  store.setMeasureType('foliation');
+  const s1 = store.createMeasurement({ lngLat: [0, 0], strike: 0, dip: 30, line: { trend: 45, plunge: 10 } });
+  ok('S₁ admite lineación', s1.properties.lineTrend === 45 && s1.properties.linePlunge === 10);
+  store.setSelection([s1.properties.id]);
+  store.updateMeasurement({ line: null });
+  const s1b = store.getState().features.find((x) => x.properties.id === s1.properties.id).properties;
+  ok('y se puede quitar', s1b.lineTrend === undefined && s1b.rake === undefined);
+  store.setMeasureLine(false);
+  store.setMeasureQuality(null);
+  store.setMeasureType('bedding');
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);
