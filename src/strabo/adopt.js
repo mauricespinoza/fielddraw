@@ -41,6 +41,7 @@ import {
   certaintyFor,
 } from '../symbology.js';
 import { CONTROL_POINT_KIND } from '../controlPoints.js';
+import { LINE_KIND_BY_STRUCTURE, lineOnPlane, sanitizeQuality } from '../structure.js';
 
 /**
  * Calidad de la traza de StraboSpot -> certeza de FieldDraw. Es la inversa
@@ -213,6 +214,28 @@ function extras(props, keys) {
 }
 
 const LINE_KEEP = ['Date', 'Field', 'Geologist'];
+
+/**
+ * La estría (Flt) o lineación (S₁) y la calidad 1–5 de una medida de
+ * StraboSpot, en los mismos campos que usa una medida tomada aquí.
+ */
+function straboLineAndQuality(p, tipo, strike, dip) {
+  const out = {};
+  const t = num(p.Trend);
+  const pl = num(p.Plunge);
+  if (LINE_KIND_BY_STRUCTURE[tipo] && t !== null && pl !== null) {
+    out.lineTrend = ((t % 360) + 360) % 360;
+    out.linePlunge = Math.min(90, Math.max(0, pl));
+    const r = lineOnPlane(strike, dip, out.lineTrend, out.linePlunge);
+    if (r) {
+      out.rake = Math.round(r.rake * 10) / 10;
+      out.lineMisfit = Math.round(r.misfit * 10) / 10;
+    }
+  }
+  const q = sanitizeQuality(p.Quality);
+  if (q !== null) out.quality = q;
+  return out;
+}
 const STRUCTURE_KEEP = [
   'Date',
   'Field',
@@ -338,6 +361,7 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
         method: 'strabospot',
         ...(r.type === 'fault-plane' && sentido ? { faultSense: sentido } : {}),
         ...(unidad ? { unitId: unidad.id, unit: unidad.name, code: unidad.code } : {}),
+        ...straboLineAndQuality(p, r.type, strike, dip),
         note: provenance(p, datasetName),
       },
       geometry: f.geometry,

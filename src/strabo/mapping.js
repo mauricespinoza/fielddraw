@@ -23,11 +23,15 @@
  *
  * Decisiones que no las decide el dato y que se tomaron explícitamente:
  *
- * - **`quality` de una medición NO se escribe nunca.** Es una escala 1–5 de
- *   cómo estaba expuesto y se midió el plano, y eso la app no lo sabe: la
- *   incertidumbre del ajuste sobre el DEM mide otra cosa. La trazabilidad
- *   completa (método, σ, RMS, base, fuente del DEM) viaja igual, en `notes` de
- *   la medición y en el bloque `fielddraw` del spot.
+ * - **`quality` de una medición solo se escribe si quien midió la calificó.**
+ *   Es una escala 1–5 de cómo estaba expuesto y se midió el plano, y eso la
+ *   app no lo deduce: la incertidumbre del ajuste sobre el DEM mide otra cosa.
+ *   Se toma tal cual del campo Quality de la medida, y si está vacío no se
+ *   inventa. La trazabilidad completa (método, σ, RMS, base, fuente del DEM)
+ *   viaja igual, en `notes` de la medición y en el bloque `fielddraw` del spot.
+ * - **La estría o lineación va ANIDADA** en `associated_orientation` de la
+ *   medición planar, como la guarda la propia app, y no como una medición
+ *   suelta: es la misma observación sobre el mismo plano.
  * - **Los ejes de pliegue se suben como `anticline` / `syncline`**, no como
  *   antiforme/sinforme, que es lo que espera una carta publicada.
  * - **«Structural contact» se sube como contacto**, no como estructura: sigue
@@ -210,7 +214,24 @@ export function planarOrientation(props, id) {
     // StraboSpot; el mismo que se lee de vuelta al adoptarlo.
     fault_or_sz_type:
       props.type === 'fault-plane' ? FAULT_OR_SZ_BY_SENSE[props.faultSense] : undefined,
+    quality: Number.isInteger(props.quality) && props.quality >= 1 && props.quality <= 5
+      ? String(props.quality)
+      : undefined,
     notes: measurementProvenance(props),
+    associated_orientation:
+      Number.isFinite(props.lineTrend) && Number.isFinite(props.linePlunge)
+        ? [
+          pruneEmpty({
+            id: id + 1,
+            type: 'linear_orientation',
+            trend: deg(props.lineTrend),
+            plunge: deg(props.linePlunge),
+            rake: deg(props.rake),
+            rake_calculated: Number.isFinite(props.rake) ? 'yes' : undefined,
+            notes: props.type === 'fault-plane' ? 'Striae on the fault plane' : 'Lineation L1 on S1',
+          }),
+        ]
+        : undefined,
   });
 }
 

@@ -37,9 +37,12 @@ import {
 } from './planeTrace.js';
 import {
   DEM_METHODS,
+  LINE_KIND_BY_STRUCTURE,
   MEASURE_METHODS,
   METHOD_BY_ID,
   formatStrikeDip,
+  formatTrendPlunge,
+  norm360,
   planeFromPoints,
   quadrant,
 } from './structure.js';
@@ -184,6 +187,25 @@ function chip({ label, title, color, dash, swatch, glyph, active, disabled, onCl
   return b;
 }
 
+/**
+ * Calidad del dato, de 1 (pobre) a 5 (excelente), la misma escala que usa
+ * StraboSpot. Tocar el valor activo lo quita: no calificar es válido.
+ */
+const QUALITY_HELP = ['', 'Poor', 'Fair', 'Good', 'Very good', 'Excellent'];
+function qualityChips(row, value, onPick) {
+  for (let q = 1; q <= 5; q++) {
+    row.appendChild(
+      chip({
+        label: String(q),
+        title: `Quality ${q} — ${QUALITY_HELP[q]}${value === q ? ' (tap again to clear)' : ''}`,
+        glyph: '★',
+        active: value === q,
+        onClick: () => onPick(value === q ? null : q),
+      }),
+    );
+  }
+}
+
 /** Grupo etiquetado dentro de la paleta; devuelve el contenedor de los chips. */
 function paletteGroup(parent, label) {
   const group = document.createElement('div');
@@ -264,9 +286,14 @@ function textField(label, value, { placeholder = '', title = '', event = 'input'
  * altura de una línea es lo que obligaba a escribir la mitad de la nota y
  * confiar en la memoria para el resto.
  */
-function textareaField(label, value, { placeholder = '', title = '', event = 'input', rows = 6 } = {}, onInput) {
+function textareaField(
+  label,
+  value,
+  { placeholder = '', title = '', event = 'input', rows = 6, large = false } = {},
+  onInput,
+) {
   const wrap = document.createElement('label');
-  wrap.className = 'palette-textarea';
+  wrap.className = `palette-textarea${large ? ' notes-large' : ''}`;
   if (title) wrap.title = title;
   const l = document.createElement('span');
   l.textContent = label;
@@ -278,6 +305,24 @@ function textareaField(label, value, { placeholder = '', title = '', event = 'in
   // ortográfico ayuda en vez de estorbar.
   area.spellcheck = true;
   area.addEventListener(event, () => onInput(area.value));
+  /*
+   * Una nota larga se lee ENTERA, sin barra de desplazamiento interna: el
+   * recuadro crece con el texto (nunca encoge por debajo de lo que se haya
+   * estirado a mano con la esquina) hasta el tope que fija el CSS.
+   */
+  if (large) {
+    const crecer = () => {
+      area.style.height = 'auto';
+      const manual = Number(area.dataset.manualHeight) || 0;
+      area.style.height = `${Math.max(area.scrollHeight + 2, manual)}px`;
+    };
+    area.addEventListener('input', crecer);
+    // La esquina de arrastre fija un alto mínimo propio que el autoajuste respeta.
+    area.addEventListener('pointerup', () => {
+      area.dataset.manualHeight = String(area.offsetHeight);
+    });
+    requestAnimationFrame(crecer);
+  }
   wrap.append(l, area);
   return wrap;
 }
@@ -624,6 +669,46 @@ function buildPalette() {
       }
     }
 
+    /*
+     * Plano + línea: Flt con su estría, S₁ con su lineación L₁. La línea se
+     * anota como trend/plunge y viaja con la misma medida, no como un punto
+     * aparte: son una sola observación sobre la misma superficie.
+     */
+    const lineKind = LINE_KIND_BY_STRUCTURE[s.measureType];
+    if (lineKind) {
+      const lin = paletteGroup(scroll, 'Plane + line');
+      lin.appendChild(
+        chip({
+          label: `+ ${lineKind.short}`,
+          title: `${lineKind.help}: record its trend and plunge with the plane`,
+          glyph: '↗',
+          active: s.measureLine,
+          onClick: () => store.setMeasureLine(!s.measureLine),
+        }),
+      );
+      if (s.measureLine) {
+        lin.appendChild(
+          numberField('Trend', s.manualTrend, { min: 0, max: 359.9, step: 1 }, (v) => store.setManualTrend(v)),
+        );
+        lin.appendChild(
+          numberField('Plunge', s.manualPlunge, { min: 0, max: 90, step: 1 }, (v) => store.setManualPlunge(v)),
+        );
+      }
+    }
+
+    // En la columna angosta de la paleta cinco chips serían una torre: aquí
+    // va un desplegable; el menú de la medida, más ancho, sí usa los chips.
+    const cal = paletteGroup(scroll, 'Quality');
+    cal.appendChild(
+      selectField(
+        'Quality',
+        [1, 2, 3, 4, 5].map((q) => ({ id: String(q), label: `${q} · ${QUALITY_HELP[q]}` })),
+        s.measureQuality ? String(s.measureQuality) : '',
+        (v) => store.setMeasureQuality(v === '' ? null : Number(v)),
+        { empty: 'Not rated' },
+      ),
+    );
+
     const unidades = paletteGroup(scroll, 'Unit');
     unitSelect(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
 
@@ -750,6 +835,8 @@ function buildPalette() {
         {
           placeholder: 'lithology, outcrop, what you saw',
           title: 'The lithology goes here: it is prose, and it travels to StraboSpot as the spot’s notes',
+          rows: 10,
+          large: true,
         },
         (v) => store.setControlPointField({ note: v }),
       ),
@@ -1346,7 +1433,9 @@ function describeFeature(f, s) {
     const tipo = STRUCTURE_TYPE_BY_ID.get(p.type);
     const sentido = p.type === 'fault-plane' ? FAULT_SENSE_BY_ID.get(p.faultSense) : null;
     return {
-      main: `${tipo ? tipo.label : 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(p.strike, p.dip)}`,
+      main: `${tipo ? tipo.label : 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(p.strike, p.dip)}${
+        Number.isFinite(p.lineTrend) ? ` · ${formatTrendPlunge(p.lineTrend, p.linePlunge)}` : ''
+      }`,
       sub: p.unit || 'Measurement',
       color: tipo ? tipo.color : '#888888',
     };
@@ -1478,7 +1567,9 @@ export function openPropsMenu(screen) {
   if (medidas.length === 1 && sel.length === 1) {
     const pm = medidas[0].properties;
     const sentido = pm.type === 'fault-plane' ? FAULT_SENSE_BY_ID.get(pm.faultSense) : null;
-    $('props-title').textContent = `${STRUCTURE_TYPE_BY_ID.get(pm.type)?.label || 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(pm.strike, pm.dip)}`;
+    $('props-title').textContent = `${STRUCTURE_TYPE_BY_ID.get(pm.type)?.label || 'Measurement'}${sentido ? ` (${sentido.label.toLowerCase()})` : ''} ${formatStrikeDip(pm.strike, pm.dip)}${
+      Number.isFinite(pm.lineTrend) ? ` · ${formatTrendPlunge(pm.lineTrend, pm.linePlunge)}` : ''
+    }`;
     measurementSection(body, medidas[0], () => openPropsMenu(screen));
 
     const del = document.createElement('button');
@@ -4665,7 +4756,7 @@ function controlPointSection(body, punto, reabrir) {
     textareaField(
       'Notes',
       p.note,
-      { placeholder: 'lithology, outcrop, what you saw', event: 'change' },
+      { placeholder: 'lithology, outcrop, what you saw', event: 'change', rows: 10, large: true },
       (v) => store.updateControlPoint({ note: v }),
     ),
   );
@@ -4761,6 +4852,84 @@ function measurementSection(body, medida, reabrir) {
     sec.appendChild(inv);
   }
 
+  /*
+   * Plano + línea. Solo Flt (estría) y S₁ (lineación L₁) la admiten; el rake
+   * y cuánto se sale la línea del plano se recalculan en el store.
+   */
+  const lineKind = LINE_KIND_BY_STRUCTURE[p.type];
+  if (lineKind) {
+    const lin = section(body, lineKind.label);
+    const tiene = Number.isFinite(p.lineTrend) && Number.isFinite(p.linePlunge);
+    if (!tiene) {
+      const add = document.createElement('button');
+      add.className = 'pill wide';
+      add.textContent = `Add ${lineKind.label.toLowerCase()}`;
+      add.title = `${lineKind.help}: trend and plunge`;
+      add.addEventListener('click', () => {
+        // Arranca en la línea de máxima pendiente (rake 90°), que es lo más
+        // común en una estría normal o inversa; se corrige al escribir.
+        store.updateMeasurement({ line: { trend: norm360(p.dipAzimuth ?? (p.strike ?? 0) + 90), plunge: p.dip ?? 0 } });
+        reabrir();
+      });
+      lin.appendChild(add);
+    } else {
+      const filaL = document.createElement('div');
+      filaL.className = 'palette-row';
+      filaL.append(
+        numberField('Trend', p.lineTrend, { min: 0, max: 359.9, step: 1 }, (v) =>
+          store.updateMeasurement({ line: { trend: v } }),
+        ),
+        numberField('Plunge', p.linePlunge, { min: 0, max: 90, step: 1 }, (v) =>
+          store.updateMeasurement({ line: { plunge: v } }),
+        ),
+      );
+      lin.appendChild(filaL);
+      if (Number.isFinite(p.rake)) {
+        measureRow(
+          lin,
+          'Rake',
+          `${Math.round(p.rake)}° from strike (RHR)`,
+          'Angle within the plane from the right-hand-rule strike to the line',
+        );
+      }
+      if (Number.isFinite(p.lineMisfit) && p.lineMisfit > 10) {
+        measureRow(
+          lin,
+          'Check',
+          `the line is ${Math.round(p.lineMisfit)}° off the plane`,
+          'A line measured on a surface should lie in it: re-check the trend and plunge',
+        );
+      }
+      const quitar = document.createElement('button');
+      quitar.className = 'pill';
+      quitar.textContent = `Remove ${lineKind.label.toLowerCase()}`;
+      quitar.addEventListener('click', () => {
+        store.updateMeasurement({ line: null });
+        reabrir();
+      });
+      lin.appendChild(quitar);
+    }
+  }
+
+  const rating = section(body, 'Quality');
+  const ratingRow = document.createElement('div');
+  ratingRow.className = 'palette-row';
+  qualityChips(ratingRow, Number.isFinite(p.quality) ? p.quality : null, (q) => {
+    store.updateMeasurement({ quality: q });
+    reabrir();
+  });
+  rating.appendChild(ratingRow);
+
+  const notas = section(body, 'Notes');
+  notas.appendChild(
+    textareaField(
+      'Notes',
+      p.note,
+      { placeholder: 'outcrop, kinematic indicators, what you saw', event: 'change', rows: 4 },
+      (v) => store.updateMeasurement({ note: v }),
+    ),
+  );
+
   const uni = section(body, 'Unit');
   const uniRow = document.createElement('div');
   uniRow.className = 'palette-row';
@@ -4776,7 +4945,7 @@ function measurementSection(body, medida, reabrir) {
    * que nadie puede evaluar, y que acaba citado como si fuera de brújula.
    */
   const met = METHOD_BY_ID.get(p.method);
-  const cal = section(body, 'Quality');
+  const cal = section(body, 'Method and uncertainty');
   // Los dos métodos que no salen del catálogo: una medida retocada a mano y una
   // adoptada de StraboSpot, que se tomó con brújula pero no aquí.
   const OTROS_METODOS = {
@@ -6101,6 +6270,8 @@ export function initUI() {
       store.changed('measureType') ||
       store.changed('measureOverturned') ||
       store.changed('measureFaultSense') ||
+      store.changed('measureLine') ||
+      store.changed('measureQuality') ||
       store.changed('measureUnit') ||
       // Los campos de TEXTO del punto de control quedan fuera a propósito:
       // repintar la paleta en cada tecla le quitaría el foco al campo.

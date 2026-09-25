@@ -28,6 +28,7 @@ import {
   certaintyFor,
   faultLineTypeFrom,
 } from './symbology.js';
+import { LINE_KIND_BY_STRUCTURE, lineOnPlane, sanitizeQuality } from './structure.js';
 
 /** Certezas admitidas. Cualquier otra cosa cae a «observado». */
 const CERTAINTY_IDS = new Set(['observed', 'inferred', 'covered']);
@@ -202,7 +203,31 @@ const OWN_KEYS = new Set([
   'createdat', 'created_at', 'opacity', 'flip',
   'strike', 'dip', 'dipazimuth', 'method', 'quality', 'overturned',
   'fault_sense', 'faultsense', 'fault_type', 'faulttype',
+  'line_type', 'linetype', 'line_trend', 'linetrend', 'line_plunge', 'lineplunge',
+  'rake', 'linemisfit', 'line_misfit',
 ]);
+
+/**
+ * La línea (estría o lineación) y la calidad 1–5 de una medida, desde las
+ * columnas que escribe la propia exportación a GeoPackage.
+ */
+function lineAndQualityOf(props, tipo, strike, dip) {
+  const out = {};
+  const t = Number(field(props, 'line_trend') ?? field(props, 'lineTrend'));
+  const pl = Number(field(props, 'line_plunge') ?? field(props, 'linePlunge'));
+  if (LINE_KIND_BY_STRUCTURE[tipo] && Number.isFinite(t) && Number.isFinite(pl)) {
+    out.lineTrend = ((t % 360) + 360) % 360;
+    out.linePlunge = Math.min(90, Math.max(0, pl));
+    const r = lineOnPlane(strike, dip, out.lineTrend, out.linePlunge);
+    if (r) {
+      out.rake = Math.round(r.rake * 10) / 10;
+      out.lineMisfit = Math.round(r.misfit * 10) / 10;
+    }
+  }
+  const q = sanitizeQuality(field(props, 'quality'));
+  if (q !== null) out.quality = q;
+  return out;
+}
 
 /** Sentido de un plano de falla desde su columna `fault_sense` (id o etiqueta). */
 function faultSenseOf(props) {
@@ -290,6 +315,7 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
             dipAzimuth: (strike + 90) % 360,
             certainty: 'observed',
             method: 'manual',
+            ...lineAndQualityOf(props, tipoMedida, strike, dip),
           },
           geometry,
         });
