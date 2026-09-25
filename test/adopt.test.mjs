@@ -215,5 +215,30 @@ console.log('== fault_type y fault_sense del GeoPackage ==');
      !('fault_type' in l1.properties) && !('fault_sense' in pt.properties));
 }
 
+console.log('== línea medida como rake, del GeoPackage ==');
+{
+  const r = A.adoptLayer(
+    capa([
+      {
+        type: 'Feature',
+        properties: { type: 'fault-plane', strike: 0, dip: 40, line_trend: 90, line_plunge: 40, rake: 90, line_input: 'rake', quality: 4 },
+        geometry: { type: 'Point', coordinates: [0, 0] },
+      },
+      {
+        type: 'Feature',
+        properties: { type: 'foliation', strike: 0, dip: 30, line_trend: 90, line_plunge: 30, rake: 90, line_input: 'trend' },
+        geometry: { type: 'Point', coordinates: [0, 0] },
+      },
+    ]),
+    { newId: contador() },
+  );
+  const [f, s1] = r.features.map((x) => x.properties);
+  ok('line_input=rake vuelve con el rake como dato', f.lineInput === 'rake' && f.lineRake === 90, JSON.stringify(f));
+  ok('y conserva trend/plunge', f.lineTrend === 90 && f.linePlunge === 40);
+  ok('y la calidad', f.quality === 4);
+  ok('line_input=trend vuelve como trend/plunge', s1.lineInput === 'trend' && s1.lineRake === undefined, JSON.stringify(s1));
+  ok('las columnas no quedan sueltas', !('line_input' in f) && !('line_trend' in f) && !('rake' in s1 && s1.rake !== 90));
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

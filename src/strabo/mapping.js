@@ -227,7 +227,11 @@ export function planarOrientation(props, id) {
             trend: deg(props.lineTrend),
             plunge: deg(props.linePlunge),
             rake: deg(props.rake),
-            rake_calculated: Number.isFinite(props.rake) ? 'yes' : undefined,
+            // Medida como rake, el rake es el dato (no calculado) y trend y
+            // plunge salen de él; si no, el rake es el calculado.
+            rake_calculated: Number.isFinite(props.rake)
+              ? props.lineInput === 'rake' ? 'no' : 'yes'
+              : undefined,
             notes: props.type === 'fault-plane' ? 'Striae on the fault plane' : 'Lineation L1 on S1',
           }),
         ]

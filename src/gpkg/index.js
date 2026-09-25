@@ -8,7 +8,7 @@ import {
   STRUCTURE_TYPE_BY_ID,
   VERTICAL_DIP_MIN,
 } from '../symbology.js';
-import { LINE_KIND_BY_STRUCTURE, formatStrikeDip } from '../structure.js';
+import { LINE_KIND_BY_STRUCTURE, formatStrikeDip, formatTrendPlunge } from '../structure.js';
 import {
   CONTROL_POINT_COLUMNS,
   CONTROL_POINT_ICON_BY_ID,
@@ -218,6 +218,10 @@ CREATE TABLE geol_points (
   line_trend REAL,
   line_plunge REAL,
   rake REAL,
+  -- Cómo se midió la línea: 'rake' (el rake es el dato y trend/plunge se
+  -- calcularon de él), 'trend' (al revés) o 'edge' (canto del teléfono).
+  -- Trend, plunge y rake se escriben SIEMPRE los tres.
+  line_input TEXT,
   -- Calidad del dato 1-5, la misma escala de StraboSpot.
   quality INTEGER,
   created_at TEXT
@@ -388,7 +392,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
           'type', 'strike', 'dip', 'dip_dir', 'overturned', 'method',
           'strike_sd', 'dip_sd', 'rms_m', 'n_points', 'base_m', 'spread_m',
           'pole_sd', 'dem_source', 'unit', 'code', 'label', 'note', 'fault_sense',
-          'line_type', 'line_trend', 'line_plunge', 'rake', 'quality', 'created_at',
+          'line_type', 'line_trend', 'line_plunge', 'rake', 'line_input', 'quality', 'created_at',
         ],
         /*
          * Los campos de calidad se exportan junto al dato y no solo se muestran
@@ -423,7 +427,13 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
             p.type === 'fault-plane' && FAULT_SENSE_BY_ID.has(p.faultSense)
               ? ` (${FAULT_SENSE_BY_ID.get(p.faultSense).label.toLowerCase()})`
               : ''
-          } ${formatStrikeDip(p.strike, p.dip)}`,
+          } ${formatStrikeDip(p.strike, p.dip)}${
+            Number.isFinite(p.lineTrend)
+              ? ` · ${LINE_KIND_BY_STRUCTURE[p.type]?.label || 'line'} ${formatTrendPlunge(p.lineTrend, p.linePlunge)}${
+                Number.isFinite(p.rake) ? ` (rake ${Math.round(p.rake)}°)` : ''
+              }`
+              : ''
+          }`,
           p.note || null,
           p.type === 'fault-plane' && FAULT_SENSE_BY_ID.has(p.faultSense)
             ? FAULT_SENSE_BY_ID.get(p.faultSense).label
@@ -432,6 +442,7 @@ export async function exportGeoPackage(features, units, ornaments, controlPointS
           Number.isFinite(p.lineTrend) ? p.lineTrend : null,
           Number.isFinite(p.linePlunge) ? p.linePlunge : null,
           Number.isFinite(p.rake) ? p.rake : null,
+          Number.isFinite(p.lineTrend) ? p.lineInput || 'trend' : null,
           Number.isFinite(p.quality) ? p.quality : null,
         ],
         qml: buildPointQML(tiposMedidos, {

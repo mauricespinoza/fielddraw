@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.40.0';
+export const APP_VERSION = '0.41.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,16 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.41.0',
+    highlights: [
+      'A line measured as a rake keeps the rake as the measured value; the measurement menu and the exports also give its trend and plunge.',
+    ],
+    items: [
+      'Línea medida como rake: el rake queda como el dato medido y trend/plunge se calculan de él y del plano. Si después se corrige el rumbo o el manteo, la línea sigue al plano con el mismo rake. El menú de la medida dice cómo se midió («Measured as rake» / «Measured as trend/plunge»), deja editar ese valor y muestra el otro ya calculado.',
+      'Exportación: el GeoPackage escribe siempre line_trend, line_plunge y rake, más la columna nueva line_input (rake, trend o edge) y la línea en el rótulo («Striae 19→024 (rake 30°)»). StraboSpot recibe trend, plunge y rake, con rake_calculated = no cuando se midió como rake. Al reimportar el GeoPackage se recupera el rake como dato.',
+    ],
+  },
   {
     version: '0.40.0',
     highlights: [
