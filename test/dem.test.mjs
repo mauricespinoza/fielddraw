@@ -276,5 +276,49 @@ console.log('== el muestreador siempre contesta ==');
   ok('pero no se reintenta en cada muestra del mismo perfil', intentos === antes, `${intentos} vs ${antes}`);
 }
 
+console.log('== dem: TileDemSampler con un DEM propio ==');
+{
+  // Un ImageBitmap cerrado mide 0 x 0. El muestreador leía el tamaño DESPUES
+  // de close(), asi que toda tesela salia vacia y la app rechazaba cualquier
+  // DEM importado ("does not decode as Terrain-RGB"). Estos dobles reproducen
+  // esa regla: el ancho y el alto desaparecen al cerrar.
+  const ancho = 4;
+  const pixeles = new Uint8ClampedArray(ancho * ancho * 4);
+  for (let i = 0; i < ancho * ancho; i++) {
+    // 1000 m en terrarium: R=131, G=232, B=0.
+    pixeles.set([131, 232, 0, 255], i * 4);
+  }
+  const antes = { createImageBitmap: globalThis.createImageBitmap, document: globalThis.document };
+  globalThis.createImageBitmap = async () => {
+    const bmp = { width: ancho, height: ancho };
+    bmp.close = () => {
+      bmp.width = 0;
+      bmp.height = 0;
+    };
+    return bmp;
+  };
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        drawImage() {},
+        getImageData: (_x, _y, w, h) => ({ data: w * h === ancho * ancho ? pixeles : new Uint8ClampedArray(0) }),
+      }),
+    }),
+  };
+  try {
+    const descriptor = { maxzoom: 2, bounds: [-180, -85, 180, 85] };
+    const muestreador = new D.TileDemSampler(descriptor, async () => new Uint8Array([1, 2, 3]), { tileSize: ancho });
+    const cota = await muestreador.elevationAt(10, 10);
+    ok('lee la cota de una tesela decodificada', cota !== null && cerca(cota, 1000, 1e-3), String(cota));
+    ok('toma el tamano de la tesela de la imagen, no de un bitmap cerrado', muestreador.tileSize === ancho, String(muestreador.tileSize));
+  } finally {
+    globalThis.createImageBitmap = antes.createImageBitmap;
+    if (antes.document === undefined) delete globalThis.document;
+    else globalThis.document = antes.document;
+  }
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);
