@@ -655,14 +655,17 @@ export class TileDemSampler {
         const bytes = await this.readTile(this.descriptor, z, x, y);
         if (!bytes || bytes.length === 0) return null;
         const bitmap = await createImageBitmap(new Blob([bytes]));
+        // Se leen ANTES de `close()`: un ImageBitmap cerrado mide 0 × 0, y
+        // con eso la tesela salía vacía y toda cota leída era null.
+        const { width, height } = bitmap;
         const canvas = document.createElement('canvas');
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
+        canvas.width = width;
+        canvas.height = height;
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(bitmap, 0, 0);
-        const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+        const { data } = ctx.getImageData(0, 0, width, height);
         bitmap.close();
-        const out = new Float32Array(bitmap.width * bitmap.height);
+        const out = new Float32Array(width * height);
         for (let i = 0, j = 0; i < data.length; i += 4, j++) {
           out[j] =
             this.encoding === 'mapbox'
@@ -670,7 +673,7 @@ export class TileDemSampler {
               : decodeElevation(data[i], data[i + 1], data[i + 2]);
         }
         // El tamaño real manda sobre el supuesto: hay teselas de 512.
-        this.tileSize = bitmap.width;
+        this.tileSize = width;
         return out;
       } catch {
         // Un hueco de cobertura no es un error que deba tumbar el perfil.
