@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.41.0';
+export const APP_VERSION = '0.41.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.41.1',
+    highlights: [
+      'Fix: importing your own elevation model (Terrain-RGB .pmtiles) was always rejected as "does not decode as Terrain-RGB"; it now loads.',
+    ],
+    items: [
+      'Importar → Elevation model rechazaba cualquier archivo, incluso un Terrain-RGB correcto: el muestreador leía el tamaño de la tesela después de cerrar la imagen, que entonces medía 0 × 0, y toda cota salía vacía. Ahora se lee antes de cerrarla.',
+    ],
+  },
   {
     version: '0.41.0',
     highlights: [
