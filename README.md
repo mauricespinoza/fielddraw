@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -2724,6 +2724,56 @@ dibujo —sin tocar los que están, porque no hay forma de saber si cambiaron—
 desde ahí ya compara. Por la misma razón, un elemento sin huella propia se
 trata como editado: ante la duda, se pregunta.
 
+### Subir los cambios al mismo dataset
+
+El botón **⬆** aparece en el dataset **abierto** y devuelve las ediciones a ese
+mismo dataset de StraboSpot (`src/strabo/push.js`). La dificultad es que la
+única escritura comprobada, `POST /db/datasetspots/{id}`, **reemplaza el dataset
+entero**: subir un cambio es mandar todo. Lo que lo hace seguro es que lo
+mandado sea exactamente lo de arriba con solo lo editado cambiado, y cada paso
+existe para garantizarlo:
+
+1. **Al día o nada.** Si las huellas de lo que hay arriba no son las de la
+   última sincronización, no se sube: primero ⟳. Subir encima pisaría lo que
+   otra persona hizo mientras tanto.
+2. **Leer entero.** Se baja el dataset en su forma **nativa**
+   (`GET /db/datasetspots/{id}`) y sus ids tienen que ser exactamente los de la
+   lectura de siempre (`datasetspotsarc`). Si no cuadran, no se escribe.
+3. **Solo lo editado.** Ningún spot se regenera desde el dibujo. Se parte del
+   spot nativo y se le cambian solo los campos editados; para saber cuáles,
+   cada elemento se compara con lo que daría adoptar hoy ese mismo spot sin
+   tocar. Fotos, otras mediciones, muestras y campos que FieldDraw no conoce
+   viajan intactos.
+4. **Revisar.** Se enseña qué spots cambian y qué campos, cuáles no se pueden
+   subir y por qué, y dos casillas: añadir lo dibujado aquí como spots nuevos,
+   y borrar allá lo que aquí se borró (apagada por omisión).
+5. **Volver a comprobar** al confirmar: si algo cambió mientras se revisaba, se
+   vuelve a enseñar.
+6. **Respaldo.** Antes de escribir se descarga el dataset tal como está arriba
+   (`strabospot-backup-<dataset>-<fecha>.json`).
+7. **Verificar.** Se vuelve a leer: tienen que estar los spots enviados, ni uno
+   más ni uno menos. Después las huellas se renuevan, y lo subido deja de
+   contar como editado.
+
+| Editado aquí | Sube como |
+| --- | --- |
+| Tipo o certeza de una traza | `trace`: se quitan las claves de clasificación viejas (una falla que pasa a contacto pierde su `shear_sense`) y se ponen las nuevas; el resto del objeto se conserva |
+| Certeza de un polígono | `surface_feature.surface_feature_quality` |
+| Rumbo, manteo, tipo de plano, sentido, volcamiento, calidad | la orientación planar del spot con el rumbo y manteo de origen; las demás orientaciones del spot no se tocan |
+| Nombre y datos de la muestra de un punto de control | `name`, y la muestra con el mismo código en `samples[]` |
+| Ubicación | `geometry` (un punto conserva su altitud) |
+| Notas | `notes` del spot, sin la procedencia que añade la adopción |
+
+**Lo que no se sube** —y se dice por qué en la revisión— es lo que no se puede
+traducir sin adivinar: un spot partido o unido aquí, una medida cuya
+orientación no se identifica (dos con el mismo rumbo y manteo), un cambio de
+unidad (vive en los tags del proyecto) o de estría/lineación. Esos spots se
+quedan allá como estaban y aquí siguen marcados como editados.
+
+`GET /db/datasetspots/{id}` es el camino que documenta la API pero no se pudo
+probar contra el servidor al escribirlo. Si respondiera otra cosa, el paso 2 lo
+detecta y no se escribe nada.
+
 **Sesión.** HTTP Basic con el correo como usuario. Las credenciales viven
 **solo en memoria**, nunca en localStorage: dejarlas escritas en el disco de
 una tablet que va a terreno no compensa el ahorro de volver a escribirlas.
@@ -2879,9 +2929,12 @@ importado sigue teniendo sus dientes, y una traza inferida sigue segmentada. Lo
 
 ## Subir el dibujo a StraboSpot
 
-Siempre a un dataset **nuevo** del proyecto elegido: `POST /db/datasetspots/{id}`
-reemplaza todos los spots del dataset de destino, así que escribir en uno
-existente lo destruiría.
+El botón del pie del panel sube el dibujo siempre a un dataset **nuevo** del
+proyecto elegido: `POST /db/datasetspots/{id}` reemplaza todos los spots del
+dataset de destino, así que escribir así en uno existente lo destruiría. Para
+devolver ediciones a un dataset que ya existe está **⬆** (ver *Subir los
+cambios al mismo dataset*), que reenvía lo de arriba intacto con solo lo
+editado cambiado.
 
 Se sube el dibujo **menos lo de los datasets con el candado cerrado**: es
 trabajo de otra persona del mismo proyecto que ya está en StraboSpot, y subirlo

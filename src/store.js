@@ -2645,6 +2645,50 @@ export function applyStraboUpdate(key, { data, baseline, plan, choices = {} }) {
   return { added: r.features.length, removed: quitados, warnings: r.warnings };
 }
 
+/**
+ * Deja constancia de una subida que ya llegó a StraboSpot.
+ *
+ * Lo de aquí y lo de allá vuelven a coincidir: las huellas de referencia son
+ * las de lo recién subido, y cada elemento del dataset renueva la suya, así
+ * que deja de contar como editado. Los elementos propios que se subieron como
+ * spots nuevos pasan a ser del dataset, con el id de su spot.
+ *
+ * No va al historial: deshacer no puede deshacer la subida, que ya está allá.
+ *
+ * @param {string} key
+ * @param {{baseline: object, newSpotIds?: Object<string,string>, deletedSpotIds?: string[]}} r
+ *   `newSpotIds` va de id de elemento a id del spot nuevo; `skippedSpotIds`,
+ *   los spots editados que no se pudieron subir.
+ */
+export function markStraboPushed(key, { baseline, newSpotIds = {}, deletedSpotIds = [], skippedSpotIds = [] }) {
+  const d = state.straboDatasets.find((x) => x.key === key);
+  if (!d) return;
+  const syncedAt = new Date().toISOString();
+  // Lo que no se subió sigue editado aquí: su huella no se renueva, o la
+  // próxima actualización lo pisaría creyéndolo intacto.
+  const borrados = new Set([...deletedSpotIds, ...skippedSpotIds].map(String));
+  const features = state.features.map((f) => {
+    const p = f.properties || {};
+    const nuevo = newSpotIds[p.id];
+    if (nuevo === undefined && p.straboDataset !== key) return f;
+    if (nuevo === undefined && borrados.has(String(p.straboSpotId))) return f;
+    const props = { ...p };
+    if (nuevo !== undefined) {
+      props.straboDataset = key;
+      props.straboDatasetName = d.datasetName;
+      props.straboSpotId = String(nuevo);
+    }
+    delete props.straboLocalHash;
+    const g = { ...f, properties: props };
+    props.straboLocalHash = featureFingerprint(g);
+    return g;
+  });
+  set({
+    features,
+    straboDatasets: state.straboDatasets.map((x) => (x.key === key ? { ...x, baseline, syncedAt } : x)),
+  });
+}
+
 /** Datasets listos para guardar, con su visibilidad y opacidad de capa. */
 export function currentStraboDatasets() {
   const filas = new Map(state.layers.filter((l) => l.kind === 'strabo').map((l) => [l.straboKey, l]));

@@ -20,6 +20,8 @@ import {
 import { mergeGeologicUnitTags } from './mapping.js';
 import { featuresToSpots, uploadBreakdown, uploadableCount } from './upload.js';
 import { baselineOf, planIsEmpty, planUpdate } from './sync.js';
+import { assembleCollection, buildPush, spotIdsOf } from './push.js';
+import { downloadBlob } from '../persistence.js';
 
 /**
  * Panel de StraboSpot: sesión, elegir proyecto y dataset, bajar spots y subir
@@ -250,7 +252,20 @@ function renderDatasets() {
       () => checkStraboUpdate(d.key),
     );
     upd.disabled = !api.isAuthenticated() || !d.datasetId;
-    li.append(sw, txt, upd, eye, lock, del);
+    li.append(sw, txt, upd);
+    // Subir solo tiene sentido en el dataset que se está editando.
+    if (!d.locked && d.adopted && d.datasetId) {
+      const up = iconButton(
+        '⬆',
+        api.isAuthenticated()
+          ? `Upload your edits to ${d.datasetName} in StraboSpot`
+          : 'Sign in to StraboSpot to upload',
+        () => checkStraboPush(d.key),
+      );
+      up.disabled = !api.isAuthenticated();
+      li.appendChild(up);
+    }
+    li.append(eye, lock, del);
     list.appendChild(li);
   }
 }
@@ -718,7 +733,7 @@ export async function checkStraboUpdate(key) {
       onMessage(`“${d.datasetName}” is up to date.`, 'info');
       pending = null;
     } else {
-      pending = { key, remote, plan, choices: {} };
+      pending = { mode: 'update', key, remote, plan, choices: {} };
     }
   } catch (err) {
     onMessage(`Could not check for updates: ${err.message}`, 'warn');
@@ -756,6 +771,10 @@ function renderReview() {
     return;
   }
   box.classList.remove('hidden');
+  if (pending.mode === 'push') {
+    renderPushReview(box, d);
+    return;
+  }
   const { plan } = pending;
 
   const h = document.createElement('h3');
@@ -896,6 +915,303 @@ function applyPending() {
   );
   pending = null;
   renderReview();
+}
+
+/* ---------- subir los cambios al mismo dataset ---------- */
+
+/**
+ * SUBIR A UN DATASET QUE YA EXISTE
+ *
+ * StraboSpot reemplaza el dataset entero con lo que se le manda, así que cada
+ * paso de aquí existe para que lo mandado sea lo de arriba más lo editado, y
+ * nada menos:
+ *
+ * 1. **Al día o nada.** Si arriba cambió algo desde la última sincronización,
+ *    no se sube: primero ⟳. Subir encima pisaría el trabajo de otro.
+ * 2. **Leer entero.** Se baja el dataset en su forma nativa y sus ids tienen
+ *    que ser exactamente los de la lectura de siempre. Si no cuadran, no se
+ *    escribe.
+ * 3. **Solo lo editado.** Cada spot cambiado parte de su versión nativa y
+ *    cambia solo los campos editados aquí (ver `push.js`).
+ * 4. **Revisar.** Se enseña qué se cambia, qué no se puede subir y por qué, y
+ *    se elige si añadir lo dibujado aquí y si borrar lo que aquí se borró.
+ * 5. **Volver a comprobar.** Al confirmar se repite todo; si algo cambió
+ *    mientras se revisaba, se vuelve a enseñar.
+ * 6. **Respaldo.** Antes de escribir, se descarga una copia del dataset tal
+ *    como está arriba.
+ * 7. **Verificar.** Después se vuelve a leer: tienen que estar los spots que
+ *    se mandaron, ni uno más ni uno menos.
+ */
+
+/** Lo dibujado aquí que no es de ningún dataset y se podría subir. */
+function ownUploadable() {
+  return store
+    .unlockedFeatures()
+    .filter((f) => !f.properties.straboDataset && uploadableCount([f]) === 1);
+}
+
+const sameKeys = (a, b) => {
+  const ka = Object.keys(a || {});
+  const kb = Object.keys(b || {});
+  return ka.length === kb.length && ka.every((k) => a[k] === b[k]);
+};
+
+async function preparePush(d) {
+  if (!d.baseline) {
+    throw new Error(`Press ⟳ on “${d.datasetName}” first, so FieldDraw knows exactly what is in StraboSpot.`);
+  }
+  const remote = await fetchDataset(d.datasetId, d.projectId, { field: d.field, geologist: d.geologist });
+  if (!sameKeys(d.baseline, remote.baseline)) {
+    throw new Error(
+      `“${d.datasetName}” changed in StraboSpot since your last sync. Press ⟳ to bring those ` +
+        'changes in first, then upload: uploading now would overwrite them.',
+    );
+  }
+  const native = await api.getNativeDatasetSpots(d.datasetId);
+  const esperados = Object.keys(remote.baseline);
+  const leidos = spotIdsOf(native);
+  if (leidos.size !== esperados.length || !esperados.every((id) => leidos.has(id))) {
+    throw new Error(
+      `Could not read the whole of “${d.datasetName}” from StraboSpot (${leidos.size} of ` +
+        `${esperados.length} spots). Nothing was written.`,
+    );
+  }
+  const push = buildPush({ native, data: remote, dataset: d, features: featuresOf(d.key) });
+  return { mode: 'push', key: d.key, remote, native, push, nuevos: ownUploadable() };
+}
+
+/** Firma de lo que se va a subir, para saber si cambió al confirmar. */
+const pushKey = (p) =>
+  JSON.stringify([
+    p.push.changed.map((c) => [c.id, c.fields]),
+    p.push.skipped.map((c) => c.id),
+    p.push.deleted.map((c) => c.id),
+    p.nuevos.map((f) => f.properties.id),
+  ]);
+
+export async function checkStraboPush(key) {
+  const d = store.getState().straboDatasets.find((x) => x.key === key);
+  if (!d) return;
+  if (!api.isAuthenticated()) {
+    onMessage('Sign in to StraboSpot to upload.', 'warn');
+    return;
+  }
+  if (d.locked || !d.adopted || !d.datasetId) {
+    onMessage(`Open the lock of “${d.datasetName}” to upload its changes.`, 'warn');
+    return;
+  }
+  onBusy(`Comparing “${d.datasetName}” with StraboSpot…`);
+  try {
+    pending = { ...(await preparePush(d)), includeNew: false, includeDelete: false };
+  } catch (err) {
+    pending = null;
+    onMessage(err.message, 'warn');
+  } finally {
+    onBusy(null);
+    renderReview();
+  }
+}
+
+function lista(box, items, render) {
+  const ul = document.createElement('ul');
+  ul.className = 'strabo-conflicts';
+  for (const it of items) {
+    const li = document.createElement('li');
+    const t = document.createElement('span');
+    t.className = 'sp-text';
+    const main = document.createElement('span');
+    main.className = 'sp-main';
+    const sub = document.createElement('span');
+    sub.className = 'sp-sub';
+    const [a, b] = render(it);
+    main.textContent = a;
+    sub.textContent = b;
+    t.append(main, sub);
+    li.appendChild(t);
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
+}
+
+function parrafo(box, text, cls = 'hint') {
+  const p = document.createElement('p');
+  p.className = cls;
+  p.textContent = text;
+  box.appendChild(p);
+}
+
+function casilla(box, text, checked, onChange) {
+  const label = document.createElement('label');
+  label.className = 'check';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = checked;
+  cb.addEventListener('change', () => onChange(cb.checked));
+  label.append(cb, document.createTextNode(` ${text}`));
+  box.appendChild(label);
+}
+
+function renderPushReview(box, d) {
+  const { push, nuevos } = pending;
+  const h = document.createElement('h3');
+  h.className = 'palette-label';
+  h.textContent = `Upload to “${d.datasetName}”`;
+  box.appendChild(h);
+
+  if (push.changed.length) {
+    parrafo(box, `${push.changed.length} spot(s) edited here will be updated in StraboSpot:`);
+    lista(box, push.changed, (c) => [c.name, `Changes: ${c.fields.join(', ')}`]);
+  } else {
+    parrafo(box, 'No spot of this dataset was edited here.');
+  }
+  if (push.skipped.length) {
+    parrafo(box, `${push.skipped.length} edited spot(s) cannot be uploaded and stay as they are in StraboSpot:`, 'hint footnote');
+    lista(box, push.skipped, (c) => [c.name, c.reasons.join('; ')]);
+  }
+  if (nuevos.length) {
+    casilla(box, `Also add ${nuevos.length} feature(s) drawn here as new spots`, pending.includeNew, (v) => {
+      pending.includeNew = v;
+    });
+  }
+  if (push.deleted.length) {
+    casilla(
+      box,
+      `Delete ${push.deleted.length} spot(s) you deleted here: ${push.deleted.map((x) => x.name).join(', ')}`,
+      pending.includeDelete,
+      (v) => {
+        pending.includeDelete = v;
+      },
+    );
+  }
+  parrafo(
+    box,
+    'Every other spot is sent back exactly as it is in StraboSpot, photos and samples included. ' +
+      'A backup of the dataset as it is now is downloaded to this device before anything is written.',
+    'hint footnote',
+  );
+
+  const acciones = document.createElement('div');
+  acciones.className = 'field-row';
+  const subir = document.createElement('button');
+  subir.className = 'pill accent';
+  subir.textContent = 'Upload';
+  subir.addEventListener('click', confirmPush);
+  const cancelar = document.createElement('button');
+  cancelar.className = 'pill';
+  cancelar.textContent = 'Cancel';
+  cancelar.addEventListener('click', () => {
+    pending = null;
+    renderReview();
+  });
+  acciones.append(subir, cancelar);
+  box.appendChild(acciones);
+}
+
+/** «strabospot-backup-ana-2026-10-04T15-20-03.json» */
+function backupName(d) {
+  const slug = String(d.datasetName || 'dataset')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'dataset';
+  return `strabospot-backup-${slug}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+}
+
+async function confirmPush() {
+  if (!pending || pending.mode !== 'push') return;
+  const d = store.getState().straboDatasets.find((x) => x.key === pending.key);
+  if (!d) return;
+  const { includeNew, includeDelete } = pending;
+  onBusy('Checking StraboSpot again…');
+  let respaldo = null;
+  try {
+    const fresh = await preparePush(d);
+    if (pushKey(fresh) !== pushKey(pending)) {
+      pending = { ...fresh, includeNew, includeDelete };
+      onMessage('Something changed while reviewing: check the list again before uploading.', 'warn');
+      return;
+    }
+
+    const st = store.getState();
+    const nuevos = includeNew ? fresh.nuevos : [];
+    const added = nuevos.length
+      ? featuresToSpots(nuevos, { field: d.field, geologist: d.geologist, units: st.units })
+      : null;
+    const newSpotIds = {};
+    if (added) {
+      nuevos.forEach((f, i) => {
+        newSpotIds[f.properties.id] = String(added.collection.features[i].properties.id);
+      });
+    }
+    const deletedIds = includeDelete ? fresh.push.deleted.map((x) => x.id) : [];
+    if (fresh.push.changed.length === 0 && deletedIds.length === 0 && !added) {
+      onMessage('There is nothing to upload.', 'info');
+      pending = null;
+      return;
+    }
+    const collection = assembleCollection(fresh.native, {
+      spots: fresh.push.spots,
+      deletedIds,
+      added: added ? added.collection.features : [],
+    });
+    const esperados = spotIdsOf(collection);
+
+    respaldo = backupName(d);
+    downloadBlob(
+      new Blob([JSON.stringify(fresh.native)], { type: 'application/json' }),
+      respaldo,
+    );
+
+    onBusy(`Uploading to “${d.datasetName}”…`);
+    await api.uploadSpots(d.datasetId, collection);
+
+    onBusy('Verifying…');
+    const despues = spotIdsOf(await api.getNativeDatasetSpots(d.datasetId));
+    if (despues.size !== esperados.size || ![...esperados].every((id) => despues.has(id))) {
+      throw new Error(
+        `StraboSpot now shows ${despues.size} spot(s) where ${esperados.size} were sent. ` +
+          `The dataset as it was before is in the backup file ${respaldo}.`,
+      );
+    }
+
+    let notaTags = '';
+    if (added && added.tags.length && $('strabo-upload-tags').checked) {
+      try {
+        await writeUnitTags(d.projectId, added.tags);
+      } catch (err) {
+        notaTags = ` The new spots are up, but their geologic-unit tags could not be written (${err.message}).`;
+      }
+    }
+
+    const remote2 = await fetchDataset(d.datasetId, d.projectId, { field: d.field, geologist: d.geologist });
+    store.markStraboPushed(d.key, {
+      baseline: remote2.baseline,
+      newSpotIds,
+      deletedSpotIds: deletedIds,
+      skippedSpotIds: fresh.push.skipped.map((x) => x.id),
+    });
+
+    const partes = [];
+    if (fresh.push.changed.length) partes.push(`${fresh.push.changed.length} spot(s) updated`);
+    if (added) partes.push(`${added.count} new`);
+    if (deletedIds.length) partes.push(`${deletedIds.length} deleted`);
+    if (fresh.push.skipped.length) partes.push(`${fresh.push.skipped.length} left as they were`);
+    onMessage(
+      `Uploaded to “${d.datasetName}”: ${partes.join(', ')}. Backup saved as ${respaldo}.${notaTags}`,
+      'info',
+    );
+    pending = null;
+  } catch (err) {
+    onMessage(
+      `Upload stopped: ${err.message}` +
+        (respaldo && !/backup file/.test(err.message) ? ` A backup was saved as ${respaldo}.` : ''),
+      'warn',
+    );
+  } finally {
+    onBusy(null);
+    renderReview();
+  }
 }
 
 /** `/db/project/{id}` trae los tags con la lista de spots de cada uno. */

@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v49';
+const VERSION = 'v50';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -126,6 +126,7 @@ const SHELL = [
   './src/strabo/panel.js',
   './src/strabo/style.js',
   './src/strabo/sync.js',
+  './src/strabo/push.js',
   './src/styles/app.css',
   './src/gpkg/index.js',
   './src/gpkg/qml.js',
