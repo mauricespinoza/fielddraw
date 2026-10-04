@@ -80,6 +80,15 @@ export const CHANGELOG = [
     ],
   },
   {
+    version: '0.41.1',
+    highlights: [
+      'Fix: importing your own elevation model (Terrain-RGB .pmtiles) was always rejected as "does not decode as Terrain-RGB"; it now loads.',
+    ],
+    items: [
+      'Importar → Elevation model rechazaba cualquier archivo, incluso un Terrain-RGB correcto: el muestreador leía el tamaño de la tesela después de cerrar la imagen, que entonces medía 0 × 0, y toda cota salía vacía. Ahora se lee antes de cerrarla.',
+    ],
+  },
+  {
     version: '0.41.0',
     highlights: [
       'A line measured as a rake keeps the rake as the measured value; the measurement menu and the exports also give its trend and plunge.',
