@@ -785,12 +785,12 @@ function renderReview() {
     p.className = 'hint footnote';
     p.textContent =
       `${plan.conflicts.length} spot(s) changed on both sides. Choose for each one; ` +
-      'what you keep here is never lost unless you pick “Theirs”.';
+      'what you keep here is never lost unless you pick “Web” (the StraboSpot version).';
     box.appendChild(p);
 
     const todos = document.createElement('div');
     todos.className = 'strabo-review-all';
-    for (const [label, value] of [['Keep all mine', 'mine'], ['Take all theirs', 'theirs']]) {
+    for (const [label, value] of [['Keep all mine', 'mine'], ['Take all from Web', 'theirs']]) {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
@@ -818,7 +818,7 @@ function renderReview() {
       const choice = document.createElement('span');
       choice.className = 'seg';
       const actual = pending.choices[c.spotId] === 'theirs' ? 'theirs' : 'mine';
-      for (const [label, value] of [['Mine', 'mine'], ['Theirs', 'theirs']]) {
+      for (const [label, value] of [['Mine', 'mine'], ['Web', 'theirs']]) {
         const b = document.createElement('button');
         b.type = 'button';
         b.textContent = label;

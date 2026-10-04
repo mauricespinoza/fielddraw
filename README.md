@@ -2709,7 +2709,7 @@ Hay dos lados que pueden haberse movido, y cada uno se mide con una huella:
 | igual | nada | nada: manda lo de aquí |
 
 Un conflicto **nunca se resuelve solo**: la revisión lo lista con el nombre del
-spot y se elige *Mine* o *Theirs* (o todos de una vez). Por omisión gana lo de
+spot y se elige *Mine* (lo de aquí) o *Web* (la versión de StraboSpot), o todos de una vez. Por omisión gana lo de
 aquí, que es lo único que no se puede volver a bajar. Si mientras se revisa se
 sigue editando y los conflictos cambian, al aplicar se vuelve a enseñar la
 lista en vez de aplicar decisiones tomadas sobre otra situación.
