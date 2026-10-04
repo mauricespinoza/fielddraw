@@ -23,6 +23,55 @@ export const STRABO_STRUCTURES_SOURCE = 'strabo-structures-src';
 export const STRABO_OBSERVATIONS_SOURCE = 'strabo-observations-src';
 export const STRABO_LINES_SOURCE = 'strabo-lines-src';
 
+/**
+ * VARIOS DATASETS A LA VEZ
+ *
+ * Cada dataset cargado tiene sus propias fuentes y capas, con el mismo id
+ * base y su clave detrás de una arroba: `strabo-lines-line@3`. Así cada uno se
+ * enciende, se apaga, se ordena y se transparenta por separado desde el panel
+ * de capas —que es lo que permite mirar el trabajo de dos geólogos y apagar
+ * uno— sin que las expresiones de simbología tengan que saber de datasets.
+ *
+ * Sin clave se usan los ids de siempre, que es lo que siguen viendo las
+ * pruebas y cualquier código que no hable de datasets.
+ */
+export const withStraboKey = (base, key) =>
+  key === undefined || key === null || key === '' ? base : `${base}@${key}`;
+
+/** `strabo-lines-line@3` -> `strabo-lines-line`. */
+export const straboBaseId = (id) => String(id).split('@')[0];
+
+/** Clave del dataset dueño de una capa, o null si es una capa sin clave. */
+export const straboKeyOf = (id) => {
+  const i = String(id).indexOf('@');
+  return i < 0 ? null : String(id).slice(i + 1);
+};
+
+export function straboSourceIds(key) {
+  return {
+    structures: withStraboKey(STRABO_STRUCTURES_SOURCE, key),
+    observations: withStraboKey(STRABO_OBSERVATIONS_SOURCE, key),
+    lines: withStraboKey(STRABO_LINES_SOURCE, key),
+  };
+}
+
+/**
+ * Color propio de cada dataset, para distinguir de un vistazo de quién es
+ * cada traza. El primero es el morado de siempre; los demás se eligieron
+ * legibles sobre imagen satelital y lejos de los colores de la simbología
+ * geológica (rojo de falla, negro de contacto).
+ */
+export const STRABO_DATASET_COLORS = [
+  '#7E57C2',
+  '#26A69A',
+  '#FFA726',
+  '#EC407A',
+  '#42A5F5',
+  '#D4E157',
+  '#8D6E63',
+  '#26C6DA',
+];
+
 const RASTER_SCALE = 4;
 /** Lado del símbolo en píxeles de pantalla a zoom nominal. */
 const SYMBOL_PX = 26;
@@ -113,41 +162,49 @@ const observationRadius = (scale) => [
   'interpolate', ['linear'], ['zoom'], 10, 3.5 * scale, 16, 7 * scale,
 ];
 
-export function straboLayers(style = defaultStraboStyle()) {
+/**
+ * @param {object} [style]  tamaños de símbolo (ver `style.js`)
+ * @param {string} [key]    clave del dataset; sin ella, los ids de siempre
+ * @param {string} [color]  color propio del dataset
+ */
+export function straboLayers(style = defaultStraboStyle(), key = undefined, color = STRABO_DATASET_COLORS[0]) {
+  const id = (base) => withStraboKey(base, key);
+  const src = straboSourceIds(key);
   return [
     /* ---------------- líneas y polígonos del dataset ---------------- */
     {
-      id: 'strabo-lines-fill',
+      id: id('strabo-lines-fill'),
       type: 'fill',
-      source: STRABO_LINES_SOURCE,
+      source: src.lines,
       filter: ['==', ['geometry-type'], 'Polygon'],
-      paint: { 'fill-color': '#7E57C2', 'fill-opacity': 0.25 },
+      paint: { 'fill-color': color, 'fill-opacity': 0.25 },
     },
     {
-      id: 'strabo-lines-line',
+      id: id('strabo-lines-line'),
       type: 'line',
-      source: STRABO_LINES_SOURCE,
+      source: src.lines,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#7E57C2', 'line-width': 2, 'line-opacity': 0.9 },
+      paint: { 'line-color': color, 'line-width': 2, 'line-opacity': 0.9 },
     },
 
     /* ---------------- observación ---------------- */
     {
-      id: 'strabo-observations',
+      id: id('strabo-observations'),
       type: 'circle',
-      source: STRABO_OBSERVATIONS_SOURCE,
+      source: src.observations,
       paint: {
         'circle-radius': observationRadius(style.observationSize),
         'circle-color': PROCESS_COLORS,
-        'circle-stroke-color': '#0d1117',
+        // El borde dice de qué dataset es; sin clave, el oscuro de siempre.
+        'circle-stroke-color': key === undefined ? '#0d1117' : color,
         'circle-stroke-width': 1.4,
         'circle-opacity': 0.95,
       },
     },
     {
-      id: 'strabo-observations-labels',
+      id: id('strabo-observations-labels'),
       type: 'symbol',
-      source: STRABO_OBSERVATIONS_SOURCE,
+      source: src.observations,
       minzoom: 13,
       layout: {
         'text-field': ['coalesce', ['get', 'Sample Code'], ['get', 'Name'], ''],
@@ -166,9 +223,9 @@ export function straboLayers(style = defaultStraboStyle()) {
 
     /* ---------------- estructuras ---------------- */
     {
-      id: 'strabo-structures',
+      id: id('strabo-structures'),
       type: 'symbol',
-      source: STRABO_STRUCTURES_SOURCE,
+      source: src.structures,
       layout: {
         'icon-image': iconImageExpr,
         // La rotación por Strike es lo que hace que el símbolo apunte como la
@@ -183,9 +240,9 @@ export function straboLayers(style = defaultStraboStyle()) {
       paint: { 'icon-opacity': 1 },
     },
     {
-      id: 'strabo-structures-labels',
+      id: id('strabo-structures-labels'),
       type: 'symbol',
-      source: STRABO_STRUCTURES_SOURCE,
+      source: src.structures,
       minzoom: 14,
       layout: {
         // Rumbo/manteo, que es lo que se anota a mano en un mapa geológico.
@@ -226,13 +283,22 @@ export const STRABO_SOURCES = [
   STRABO_STRUCTURES_SOURCE,
 ];
 
+/** Ids de capa de un dataset, en el orden en que se añaden. */
+export const straboLayerIds = (key) => STRABO_LAYER_IDS.map((id) => withStraboKey(id, key));
+
+/** Las capas pulsables de un dataset. */
+export const straboInteractiveLayerIds = (key) =>
+  STRABO_INTERACTIVE_LAYER_IDS.map((id) => withStraboKey(id, key));
+
 /** Reaplica el tamaño sobre las capas ya añadidas, sin recrearlas. */
-export function applyStraboStyle(map, style) {
-  if (map.getLayer('strabo-structures')) {
-    map.setLayoutProperty('strabo-structures', 'icon-size', structureIconSize(style.structureSize));
+export function applyStraboStyle(map, style, key = undefined) {
+  const structures = withStraboKey('strabo-structures', key);
+  const observations = withStraboKey('strabo-observations', key);
+  if (map.getLayer(structures)) {
+    map.setLayoutProperty(structures, 'icon-size', structureIconSize(style.structureSize));
   }
-  if (map.getLayer('strabo-observations')) {
-    map.setPaintProperty('strabo-observations', 'circle-radius', observationRadius(style.observationSize));
+  if (map.getLayer(observations)) {
+    map.setPaintProperty(observations, 'circle-radius', observationRadius(style.observationSize));
   }
 }
 
@@ -268,13 +334,14 @@ const BASE_FILTER = {
  * conocía, y con `null` esos elementos nuevos aparecen visibles en vez de
  * ocultos por omisión.
  */
-export function applyStraboFilter(map, category, values) {
+export function applyStraboFilter(map, category, values, key = undefined) {
   const field = STRABO_FILTER_FIELD[category];
   const layers = STRABO_FILTER_LAYERS[category] || [];
   const typeFilter = values === null ? null : ['in', ['get', field], ['literal', values]];
-  for (const id of layers) {
+  for (const baseId of layers) {
+    const id = withStraboKey(baseId, key);
     if (!map.getLayer(id)) continue;
-    const base = BASE_FILTER[id];
+    const base = BASE_FILTER[baseId];
     const combined = base && typeFilter ? ['all', base, typeFilter] : typeFilter || base || null;
     map.setFilter(id, combined);
   }

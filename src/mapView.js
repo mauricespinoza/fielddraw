@@ -70,16 +70,13 @@ import {
 } from './controlPointSymbols.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
 import {
-  STRABO_INTERACTIVE_LAYER_IDS,
-  STRABO_LAYER_IDS,
-  STRABO_LINES_SOURCE,
-  STRABO_OBSERVATIONS_SOURCE,
-  STRABO_SOURCES,
-  STRABO_STRUCTURES_SOURCE,
   addStraboImages,
   applyStraboFilter,
   applyStraboStyle,
+  straboInteractiveLayerIds,
+  straboLayerIds,
   straboLayers,
+  straboSourceIds,
 } from './strabo/layers.js';
 import {
   buildCoincidence,
@@ -152,7 +149,7 @@ function mlIdsFor(layer) {
   if (layer.kind === 'hillshade') return HILLSHADE_LAYER_IDS;
   if (layer.kind === 'imported') return importedLayerIds.get(layer.id) || [];
   if (layer.kind === 'tiles') return tileLayerIds.get(layer.id) || [];
-  if (layer.kind === 'strabo') return STRABO_LAYER_IDS;
+  if (layer.kind === 'strabo') return straboLayerIds(layer.straboKey);
   // El dibujo propio va repartido en tres: unidades abajo, trazas —con sus
   // ornamentos, que se dibujan sobre la traza de la falla— encima, y las
   // medidas de rumbo y manteo al final, que son puntos chicos y no deben
@@ -350,6 +347,9 @@ export function createMapView({
   onOpenProps,
   onMapTap,
   onStraboFeatureTap,
+  // Toque sobre un elemento de un dataset de StraboSpot con el candado
+  // cerrado: se leen sus atributos, no se selecciona.
+  onLockedFeatureTap,
   onImportedFeatureTap,
   onScale,
   // Rumbo/manteo en vivo mientras dura el arrastre de Digitize; `null` al
@@ -364,6 +364,8 @@ export function createMapView({
   const snapEl = document.getElementById('snap-marker');
 
   let ready = false;
+  /** Qué datasets de StraboSpot estaban apagados la última vez que se pintó. */
+  let straboHiddenFirma = '';
   let preview = [];
   let lastInfoAt = 0;
 
@@ -664,17 +666,10 @@ export function createMapView({
     });
     for (const l of draftLayers()) map.addLayer(l);
 
-    // StraboSpot: fuentes vacías y capas listas desde el arranque, para que
-    // descargar un dataset sea solo un setData y no una recomposición del
-    // estilo. Los iconos se rasterizan aparte y pueden llegar después.
-    for (const src of STRABO_SOURCES) {
-      map.addSource(src, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-    for (const l of straboLayers(store.getState().straboStyle)) map.addLayer(l);
+    // StraboSpot: los iconos se rasterizan una vez y valen para todos los
+    // datasets. Las fuentes y capas de cada uno se crean al llegar (ver
+    // `syncStrabo`), porque cuántos habrá no se sabe de antemano.
     addStraboImages(map).then(() => map.triggerRepaint());
-    for (const cat of ['structures', 'observations', 'lines']) {
-      applyStraboFilter(map, cat, store.getState().straboFilters[cat]);
-    }
 
     // Ver atributos: solo cuando nadie más está reclamando el toque. Fuera de
     // Navegar, DrawController ya consume el puntero para dibujar o arrastrar,
@@ -741,7 +736,6 @@ export function createMapView({
      * una cruz y la respuesta no se usa para nada.
      */
     const CLICKABLE_LAYER_IDS = [
-      ...(onStraboFeatureTap ? STRABO_INTERACTIVE_LAYER_IDS : []),
       'geology-fill',
       ...GEOLOGY_LINE_LAYER_IDS,
       'structure-symbols',
@@ -780,7 +774,8 @@ export function createMapView({
       if (now - hoverAt < 50) return;
       hoverAt = now;
 
-      const capas = CLICKABLE_LAYER_IDS.filter((id) => map.getLayer(id));
+      const capas = [...(onStraboFeatureTap ? straboClickableIds() : []), ...CLICKABLE_LAYER_IDS]
+        .filter((id) => map.getLayer(id));
       if (capas.length === 0) return;
       const hit = map.queryRenderedFeatures(e.point, { layers: capas }).length > 0;
       const quiero = hit ? 'pointer' : '';
@@ -980,7 +975,7 @@ export function createMapView({
     const restaurado = store.getState().features;
     if (restaurado.length) fitToGeoJSON({ features: restaurado }, 60, 0);
     syncUnitLabels();
-    syncStrabo();
+    syncStrabo({ fit: false });
     syncDraft();
     syncProfile();
     syncPlaneTrace();
@@ -1206,7 +1201,8 @@ export function createMapView({
   function syncGeology() {
     if (!ready) return;
     const src = map.getSource(GEOLOGY_SOURCE);
-    if (src) src.setData({ type: 'FeatureCollection', features: store.getState().features });
+    // Lo de un dataset de StraboSpot apagado con el ojo no se pinta.
+    if (src) src.setData({ type: 'FeatureCollection', features: store.visibleFeatures() });
   }
 
   function syncDraft() {
@@ -1539,22 +1535,86 @@ export function createMapView({
     src.setData({ type: 'FeatureCollection', features: out });
   }
 
-  /** Vuelca las tres colecciones del dataset de StraboSpot a sus fuentes. */
-  function syncStrabo() {
+  /**
+   * Fuentes y capas de cada dataset de StraboSpot, por clave.
+   *
+   * Se crean al llegar un dataset y se quitan al retirarlo; mientras tanto,
+   * cambiar sus datos —abrirlo para editar vacía su capa de consulta— es solo
+   * un `setData`. `loadedAt` distingue una descarga nueva de cualquier otro
+   * cambio: es lo único que merece mover la cámara.
+   */
+  const straboOnMap = new Map();
+  /*
+   * La última descarga vista de cada clave, aparte y sin borrarse al quitar
+   * el dataset: deshacer la retirada lo devuelve con la misma descarga, y eso
+   * no es algo que se acabe de pedir ver.
+   */
+  const straboSeenLoadedAt = new Map();
+
+  /** Las capas pulsables de todos los datasets en el mapa. */
+  function straboClickableIds() {
+    const out = [];
+    for (const key of straboOnMap.keys()) out.push(...straboInteractiveLayerIds(key));
+    return out;
+  }
+
+  /**
+   * @param {{fit?: boolean}} opts `fit:false` al montar el mapa: los datasets
+   *   restaurados de la sesión anterior no son algo que se acabe de pedir.
+   */
+  function syncStrabo({ fit = true } = {}) {
     if (!ready) return;
-    const data = store.getState().strabo;
-    const put = (id, fc) => {
-      const src = map.getSource(id);
-      if (src) src.setData(fc || EMPTY_FC);
-    };
-    put(STRABO_STRUCTURES_SOURCE, data && data.estructuras);
-    put(STRABO_OBSERVATIONS_SOURCE, data && data.observacion);
-    put(STRABO_LINES_SOURCE, data && data.lineas);
+    const st = store.getState();
+    const list = st.straboDatasets;
+    const present = new Set(list.map((d) => d.key));
+
+    for (const [key] of [...straboOnMap]) {
+      if (present.has(key)) continue;
+      for (const id of straboLayerIds(key)) if (map.getLayer(id)) map.removeLayer(id);
+      for (const id of Object.values(straboSourceIds(key))) if (map.getSource(id)) map.removeSource(id);
+      straboOnMap.delete(key);
+    }
+
+    let recien = null;
+    for (const d of list) {
+      const src = straboSourceIds(d.key);
+      let entry = straboOnMap.get(d.key);
+      if (!entry) {
+        for (const id of Object.values(src)) {
+          map.addSource(id, { type: 'geojson', data: EMPTY_FC });
+        }
+        for (const spec of straboLayers(st.straboStyle, d.key, d.color)) {
+          map.addLayer(spec);
+          BASE[spec.id] = baseOpacityOf(spec);
+        }
+        for (const cat of ['structures', 'observations', 'lines']) {
+          applyStraboFilter(map, cat, st.straboFilters[cat], d.key);
+        }
+        entry = {};
+        straboOnMap.set(d.key, entry);
+      }
+      const put = (id, fc) => {
+        const source = map.getSource(id);
+        if (source) source.setData(fc || EMPTY_FC);
+      };
+      if (entry.estructuras !== d.estructuras) put(src.structures, d.estructuras);
+      if (entry.observacion !== d.observacion) put(src.observations, d.observacion);
+      if (entry.lineas !== d.lineas) put(src.lines, d.lineas);
+      if (fit && d.loadedAt && straboSeenLoadedAt.get(d.key) !== d.loadedAt) recien = d;
+      straboSeenLoadedAt.set(d.key, d.loadedAt || null);
+      Object.assign(entry, {
+        estructuras: d.estructuras,
+        observacion: d.observacion,
+        lineas: d.lineas,
+      });
+    }
+
+    applyLayerStack(map, st.layers);
+    if (recien) fitToStrabo(recien);
   }
 
   /** Encuadra el mapa sobre lo que se acaba de traer de StraboSpot. */
-  function fitToStrabo() {
-    const data = store.getState().strabo;
+  function fitToStrabo(data) {
     if (!data) return;
     const fc = {
       type: 'FeatureCollection',
@@ -1989,7 +2049,7 @@ export function createMapView({
     };
     const conUnidades = visible('units');
     const conTrazas = visible('faults');
-    for (const f of st.features) {
+    for (const f of store.visibleFeatures()) {
       if (skip && skip.has(f.properties.id)) continue;
       const poligono = f.geometry && f.geometry.type === 'Polygon';
       if (!(poligono ? conUnidades : conTrazas)) continue;
@@ -2301,10 +2361,15 @@ export function createMapView({
 
   const projectLngLat = (c) => map.project(c);
 
-  /** Con selección se editan solo esos elementos; sin ella, todo el dibujo. */
+  /**
+   * Con selección se editan solo esos elementos; sin ella, todo el dibujo que
+   * se ve y que no está bajo un candado cerrado de StraboSpot.
+   */
   function editableFeatures() {
     const st = store.getState();
-    const base = st.selection.length ? store.selectedFeatures() : st.features;
+    let base = st.selection.length ? store.selectedFeatures() : store.unlockedFeatures();
+    const visibles = new Set(store.visibleFeatures().map((f) => f.properties.id));
+    base = base.filter((f) => visibles.has(f.properties.id));
     // Una medida estructural es un punto: no tiene vértices que mover, y darle
     // una manija haría creer que se puede reformar.
     return base.filter((f) => f.geometry && f.geometry.type !== 'Point');
@@ -2439,7 +2504,19 @@ export function createMapView({
   /* ---------- selección ---------- */
 
   function pickAt(screen, tolerance = 16) {
-    return pickFeature(store.getState().features, screen, projectLngLat, tolerance);
+    return pickFeature(store.visibleFeatures(), screen, projectLngLat, tolerance);
+  }
+
+  /**
+   * Toque sobre algo de un dataset cerrado: no se selecciona —la selección
+   * es la puerta de la edición—, se enseñan sus atributos en solo lectura.
+   * Devuelve si lo atendió.
+   */
+  function lockedTap(hit, screen) {
+    if (!hit || !store.isLockedFeature(hit)) return false;
+    if (store.getState().selection.length) store.clearSelection();
+    if (onLockedFeatureTap) onLockedFeatureTap(hit, screen);
+    return true;
   }
 
   /* ---------- lazo de Elegir: a mano alzada o rectangular ---------- */
@@ -2545,7 +2622,7 @@ export function createMapView({
       return;
     }
 
-    const ids = featuresInRegion(store.getState().features, l.region, projectLngLat);
+    const ids = featuresInRegion(store.visibleFeatures(), l.region, projectLngLat);
     if (additive) {
       const ya = new Set(store.getState().selection);
       for (const id of ids) ya.add(id);
@@ -2568,6 +2645,7 @@ export function createMapView({
    */
   function selectAt(screen, { tolerance = 12, additive = false } = {}) {
     const hit = pickAt(screen, tolerance);
+    if (lockedTap(hit, screen)) return true;
     if (hit) {
       const id = hit.properties.id;
       if (additive) store.toggleSelection(id);
@@ -2599,7 +2677,7 @@ export function createMapView({
       [screen[0] - tolerance, screen[1] - tolerance],
       [screen[0] + tolerance, screen[1] + tolerance],
     ];
-    const capas = STRABO_INTERACTIVE_LAYER_IDS.filter((id) => map.getLayer(id));
+    const capas = straboClickableIds().filter((id) => map.getLayer(id));
     if (capas.length === 0) return null;
     const hits = map.queryRenderedFeatures(box, { layers: capas });
     return hits.length ? hits[0] : null;
@@ -2696,6 +2774,10 @@ export function createMapView({
      * por medio milímetro contra una línea de dos píxeles de ancho.
      */
     const hit = pickAt(screen) || pickAt(screen, MENU_PICK_PX);
+    if (lockedTap(hit, screen)) {
+      highlightForeign(null);
+      return;
+    }
     const seleccion = store.getState().selection;
     if (hit && !seleccion.includes(hit.properties.id)) {
       store.setSelection([hit.properties.id]);
@@ -3154,7 +3236,7 @@ export function createMapView({
 
       // Cortar usando un elemento que ya existe: se toca y se usa como cuchilla.
       if (st.tool === 'cut' && st.cutSource === 'feature') {
-        const hit = pickFeature(st.features, screen, projectLngLat, 16);
+        const hit = pickFeature(store.visibleFeatures(), screen, projectLngLat, 16);
         if (hit) store.requestCutByFeature(hit.properties.id);
         else onEditMessage('Tap the line or polygon you want to split with.', 'warn');
         return;
@@ -3352,10 +3434,23 @@ export function createMapView({
       applyLineColors();
       applyLineWidths();
     }
-    if (store.changed('strabo')) {
-      syncStrabo();
-      applyLayerStack(map, store.getState().layers);
-      if (store.getState().strabo) fitToStrabo();
+    if (store.changed('straboDatasets')) syncStrabo();
+    /*
+     * El ojo de un dataset apaga también lo que ya pasó al dibujo, y el
+     * candado decide qué tiene manijas: los dos cambian lo que hay que
+     * volver a pintar aunque `features` no se haya movido.
+     */
+    if (store.changed('straboDatasets') || store.changed('layers')) {
+      const firma = [...store.hiddenStraboKeys()].sort().join('|');
+      if (firma !== straboHiddenFirma) {
+        straboHiddenFirma = firma;
+        if (!store.changed('features')) {
+          syncGeology();
+          syncUnitLabels();
+          collectSnapSources();
+        }
+      }
+      if (store.changed('straboDatasets')) rebuildHandles();
     }
     if (store.changed('structureStyle')) applyStructureStyle(map, store.getState().structureStyle);
     if (store.changed('controlPointStyle') || store.changed('units')) {
@@ -3376,11 +3471,15 @@ export function createMapView({
       applyStructureStyle(map, st2.structureStyle, st2.importStyle);
       applyControlPointStyle(map, st2.controlPointStyle, st2.units, st2.importStyle);
     }
-    if (store.changed('straboStyle')) applyStraboStyle(map, store.getState().straboStyle);
+    if (store.changed('straboStyle')) {
+      for (const key of straboOnMap.keys()) applyStraboStyle(map, store.getState().straboStyle, key);
+    }
     if (store.changed('straboFilters')) {
       const filters = store.getState().straboFilters;
-      for (const cat of ['structures', 'observations', 'lines']) {
-        applyStraboFilter(map, cat, filters[cat]);
+      for (const key of straboOnMap.keys()) {
+        for (const cat of ['structures', 'observations', 'lines']) {
+          applyStraboFilter(map, cat, filters[cat], key);
+        }
       }
     }
     if (store.changed('imported')) syncImported();

@@ -25,6 +25,8 @@ import {
   sanitizeStructureStyle,
 } from './symbology.js';
 import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
+import { STRABO_DATASET_COLORS } from './strabo/layers.js';
+import { featureFingerprint, resolvePlan, subsetBySpot } from './strabo/sync.js';
 import {
   CONTROL_POINT_KIND,
   CONTROL_POINT_TOOL,
@@ -365,10 +367,13 @@ let state = {
   extendFrom: null,
 
   /**
-   * Datos traídos de StraboSpot: {datasetId, datasetName, estructuras,
-   * observacion, lineas} con las tres colecciones ya en GeoJSON.
+   * Datasets traídos de StraboSpot, uno por fila del panel de capas:
+   * `{key, datasetId, datasetName, projectId, color, locked, adopted,
+   * estructuras, observacion, lineas, loadedAt}`. Las tres colecciones son la
+   * capa de consulta, ya en GeoJSON; quedan vacías una vez que el dataset se
+   * abrió y sus elementos pasaron al dibujo. Ver «StraboSpot» más abajo.
    */
-  strabo: null,
+  straboDatasets: [],
   /**
    * Escala del icono de las capas de StraboSpot. Independiente de los
    * ornamentos de falla propios: son símbolos ajenos, importados, y quien los
@@ -1026,9 +1031,13 @@ export function finishDraft() {
 }
 
 export function deleteLastFeature() {
-  if (state.features.length === 0) return;
+  // El último que se puede tocar: lo de un dataset cerrado no se borra así.
+  const locked = lockedStraboKeys();
+  let i = state.features.length - 1;
+  while (i >= 0 && isLockedFeature(state.features[i], locked)) i--;
+  if (i < 0) return;
   pushHistory();
-  set({ features: state.features.slice(0, -1) });
+  set({ features: [...state.features.slice(0, i), ...state.features.slice(i + 1)] });
 }
 
 /* ---------- selección, cortar y unir ---------- */
@@ -1061,10 +1070,15 @@ function extendPatch(selection) {
   return { extendFrom: extendCandidate(selection) };
 }
 
+/*
+ * La selección es la puerta de casi toda la edición —borrar, cortar, unir,
+ * nodos, cambiar el tipo—, así que lo de un dataset con el candado cerrado se
+ * queda fuera aquí, en un solo sitio, y no en cada herramienta.
+ */
 export function toggleSelection(id) {
   const selection = state.selection.includes(id)
     ? state.selection.filter((x) => x !== id)
-    : [...state.selection, id];
+    : sinCerrados([...state.selection, id]);
   set({ selection, ...extendPatch(selection) });
 }
 
@@ -1073,7 +1087,7 @@ export function clearSelection() {
 }
 
 export function setSelection(ids) {
-  const selection = Array.from(new Set(ids));
+  const selection = sinCerrados(Array.from(new Set(ids)));
   set({ selection, ...extendPatch(selection) });
 }
 
@@ -2024,8 +2038,11 @@ export function derivedFeature(source, geometry) {
 }
 
 export function clearFeatures() {
-  if (state.features.length) pushHistory();
-  set({ features: [], draft: null, selection: [] });
+  // Los datasets cerrados son trabajo ajeno: se quitan desde su fila, no
+  // borrando el dibujo.
+  const quedan = state.features.filter((f) => isLockedFeature(f));
+  if (state.features.length !== quedan.length) pushHistory();
+  set({ features: quedan, draft: null, selection: [] });
 }
 
 export const setExtendFrom = (extendFrom) => set({ extendFrom });
@@ -2033,7 +2050,13 @@ export const setExtendFrom = (extendFrom) => set({ extendFrom });
 /** Carga un conjunto de elementos como punto de partida: no se deshace más allá. */
 export function loadFeatures(features) {
   resetHistory();
-  set({ features, selection: [], draft: null, extendFrom: null });
+  set({
+    features,
+    selection: [],
+    draft: null,
+    extendFrom: null,
+    ...straboPatch(state.straboDatasets, features, state.layers),
+  });
 }
 
 /* ---------- proyectos ---------- */
@@ -2112,6 +2135,7 @@ export function loadProject({
   importStyle,
   settings,
   layers,
+  straboDatasets,
 } = {}) {
   resetHistory();
   const patch = {
@@ -2143,6 +2167,15 @@ export function loadProject({
         ? clampScale(Number(settings.scaleLock))
         : null;
   }
+  /*
+   * Los datasets de StraboSpot son del proyecto: abrir otro proyecto, o uno
+   * anterior a que existieran, deja la lista que ese proyecto traiga —o
+   * ninguna—, no la del que se estaba mirando.
+   */
+  Object.assign(
+    patch,
+    straboPatch(Array.isArray(straboDatasets) ? straboDatasets : [], patch.features, state.layers),
+  );
   if (Array.isArray(layers) && layers.length) {
     const saved = new Map(layers.map((l) => [l.id, l]));
     // Un proyecto anterior al reparto del dibujo guarda una sola capa
@@ -2150,7 +2183,7 @@ export function loadProject({
     // es exactamente lo que ese proyecto quería decir.
     const viejo = saved.get('geology');
     if (viejo) for (const l of DRAWING_LAYERS) if (!saved.has(l.id)) saved.set(l.id, viejo);
-    patch.layers = state.layers.map((l) => {
+    patch.layers = patch.layers.map((l) => {
       const s = saved.get(l.id);
       if (!s) return l;
       return {
@@ -2176,70 +2209,454 @@ export function setLayerOpacity(id, opacity) {
 /* ---------- StraboSpot ---------- */
 
 /**
- * Publica un dataset descargado y le añade su entrada en el panel de capas,
- * justo debajo del dibujo propio para no taparlo.
+ * VARIOS DATASETS, CADA UNO CON SU CANDADO Y SU OJO
+ *
+ * Un proyecto de StraboSpot suele tener un dataset por persona o por campaña,
+ * y lo que se quiere al abrirlo aquí es ver el trabajo de todos sin arriesgar
+ * el de nadie. Por eso cada dataset entra **con el candado cerrado**: se ve,
+ * se toca para leer sus atributos, y nada más.
+ *
+ * Abrir el candado de uno es elegirlo para editar: sus elementos pasan al
+ * dibujo (la misma adopción de siempre, con su simbología traducida) y todas
+ * las herramientas trabajan sobre ellos. **Solo uno a la vez**: abrir otro
+ * cierra el anterior, para que nunca haya dos trabajos ajenos abiertos y no se
+ * sepa en cuál se está metiendo la mano.
+ *
+ * Volver a cerrar el candado NO devuelve los elementos a su capa de consulta:
+ * ya son dibujo, quizá editado, y deshacer la traducción perdería ese trabajo.
+ * Lo que hace es congelarlos —no se seleccionan, no se mueven, no los corta
+ * ni los toca la topología— y un toque enseña sus atributos en solo lectura,
+ * igual que antes de abrirlo.
+ *
+ * El ojo es la visibilidad de la fila en el panel de capas, y apaga las dos
+ * cosas: la capa de consulta y los elementos ya adoptados.
  */
-export function setStraboData(data) {
-  const layers = state.layers.filter((l) => l.kind !== 'strabo');
-  if (data) {
-    const at = belowDrawing(layers);
-    layers.splice(at, 0, {
-      id: 'strabo',
-      kind: 'strabo',
-      label: `StraboSpot · ${data.datasetName}`,
-      visible: true,
-      opacity: 1,
-    });
+
+/** Id de la fila del panel de capas de un dataset. */
+export const straboLayerId = (key) => `strabo:${key}`;
+
+const EMPTY_COLLECTION = () => ({ type: 'FeatureCollection', features: [] });
+
+/**
+ * Clave estable y corta. Va en ids de capa de MapLibre y en cada elemento
+ * adoptado, así que **nunca se reutiliza** en la sesión: si la de un dataset
+ * quitado volviera a darse, deshacer la retirada traería de vuelta elementos
+ * con la misma clave que otro dataset distinto.
+ */
+let straboKeyHigh = 0;
+
+function nextStraboKey(list) {
+  for (const d of list) {
+    const n = Number(d.key);
+    if (Number.isFinite(n) && n > straboKeyHigh) straboKeyHigh = n;
   }
-  // Un dataset nuevo (o ninguno) puede no traer los mismos valores
-  // categóricos que el anterior; un filtro heredado dejaría capas en blanco
-  // sin explicación. Se resetea con cada cambio de datos, no solo al limpiar.
-  set({ strabo: data, layers, straboFilters: { structures: null, observations: null, lines: null } });
+  for (const f of state.features) {
+    const n = Number(f.properties && f.properties.straboDataset);
+    if (Number.isFinite(n) && n > straboKeyHigh) straboKeyHigh = n;
+  }
+  straboKeyHigh += 1;
+  return String(straboKeyHigh);
 }
 
-export function clearStraboData() {
-  setStraboData(null);
+/** El primer color de la paleta que ningún dataset está usando. */
+function nextStraboColor(list) {
+  const usados = new Set(list.map((d) => d.color));
+  return STRABO_DATASET_COLORS.find((c) => !usados.has(c)) ||
+    STRABO_DATASET_COLORS[list.length % STRABO_DATASET_COLORS.length];
+}
+
+const countOf = (fc) => (fc && Array.isArray(fc.features) ? fc.features.length : 0);
+
+/** Cuántos elementos tiene todavía en su capa de consulta. */
+export function straboReadOnlyCount(d) {
+  return countOf(d.estructuras) + countOf(d.observacion) + countOf(d.lineas);
+}
+
+function straboLayerEntry(d, prev) {
+  return {
+    id: straboLayerId(d.key),
+    kind: 'strabo',
+    straboKey: d.key,
+    // Va bajo la cabecera «StraboSpot» del panel: repetirlo cortaría el nombre.
+    label: d.datasetName,
+    color: d.color,
+    // Lo que diga el registro —un proyecto o el autoguardado— manda sobre la
+    // fila que ya hubiera; sin nada guardado, la fila se queda como estaba.
+    visible: typeof d.visible === 'boolean' ? d.visible : prev ? prev.visible : true,
+    opacity: Number.isFinite(d.opacity) ? d.opacity : prev ? prev.opacity : 1,
+  };
 }
 
 /**
- * Pasa el dataset de StraboSpot al dibujo, donde sí se puede editar.
+ * Normaliza una lista de datasets —recién bajada, del autoguardado o de un
+ * proyecto— y le añade lo que falte: un dataset cuyo registro se perdió pero
+ * cuyos elementos siguen en el dibujo vuelve como fila **cerrada** con su
+ * nombre, para que esos elementos no queden huérfanos de candado. Un dataset
+ * adoptado sin ningún elemento en el dibujo ni nada en su capa ya no
+ * representa nada y se descarta.
  *
- * Lo adoptado DEJA de estar en la capa de consulta: mantener las dos cosas
- * pintaría cada falla dos veces, una editable y otra no, y al mirar el mapa no
- * habría forma de saber cuál se está tocando. Las observaciones —muestras y
- * anotaciones— se quedan donde estaban: no son geometría cartográfica y el
- * dibujo no tiene dónde ponerlas sin convertirlas en algo que no son.
- *
- * Va al historial en un solo paso, así que deshacer devuelve exactamente el
- * estado anterior, capa de StraboSpot incluida.
- *
- * @returns {{features, units, warnings, stats}|null} null si no hay datos
+ * @returns {{straboDatasets: Array, layers: Array}}
  */
-export function adoptStraboData() {
-  const data = state.strabo;
-  if (!data) return null;
+function straboPatch(list, features, layers) {
+  const enDibujo = new Map();
+  for (const f of features) {
+    const k = f.properties && f.properties.straboDataset;
+    if (!k) continue;
+    if (!enDibujo.has(k)) enDibujo.set(k, f.properties.straboDatasetName || '');
+  }
 
-  const r = adoptStrabo(data, { units: state.units, newId });
-  if (r.features.length === 0) return r;
+  const out = [];
+  const vistos = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    if (!raw || raw.key === undefined || raw.key === null) continue;
+    const key = String(raw.key);
+    if (vistos.has(key)) continue;
+    const d = {
+      key,
+      datasetId: raw.datasetId !== undefined ? String(raw.datasetId) : '',
+      datasetName: String(raw.datasetName || raw.datasetId || 'Dataset'),
+      projectId: raw.projectId !== undefined && raw.projectId !== null ? String(raw.projectId) : '',
+      color: typeof raw.color === 'string' ? raw.color : '',
+      locked: raw.locked !== false,
+      adopted: !!raw.adopted,
+      estructuras: raw.estructuras || EMPTY_COLLECTION(),
+      observacion: raw.observacion || EMPTY_COLLECTION(),
+      lineas: raw.lineas || EMPTY_COLLECTION(),
+      loadedAt: raw.loadedAt || null,
+      baseline: raw.baseline && typeof raw.baseline === 'object' ? raw.baseline : null,
+      syncedAt: raw.syncedAt || raw.loadedAt || null,
+      field: typeof raw.field === 'string' ? raw.field : '',
+      geologist: typeof raw.geologist === 'string' ? raw.geologist : '',
+      visible: raw.visible,
+      opacity: raw.opacity,
+    };
+    if (d.adopted && !enDibujo.has(key) && straboReadOnlyCount(d) === 0) continue;
+    vistos.add(key);
+    out.push(d);
+  }
+  for (const [key, name] of enDibujo) {
+    if (vistos.has(key)) continue;
+    vistos.add(key);
+    out.push({
+      key,
+      datasetId: '',
+      datasetName: name || `Dataset ${key}`,
+      projectId: '',
+      color: '',
+      locked: true,
+      adopted: true,
+      estructuras: EMPTY_COLLECTION(),
+      observacion: EMPTY_COLLECTION(),
+      lineas: EMPTY_COLLECTION(),
+      loadedAt: null,
+      baseline: null,
+      syncedAt: null,
+    });
+  }
+  for (const d of out) if (!d.color) d.color = nextStraboColor(out.filter((x) => x.color));
 
-  pushHistorySnapshot(snapshotOf(['features', 'units', 'strabo', 'layers']));
+  // Nunca más de uno abierto, aunque el archivo diga otra cosa.
+  let abierto = false;
+  for (const d of out) {
+    if (!d.locked && !abierto) abierto = true;
+    else d.locked = true;
+  }
 
-  const vacia = { type: 'FeatureCollection', features: [] };
-  const quedanObs = !!(data.observacion && data.observacion.features.length);
-  const resto = quedanObs
-    ? { ...data, estructuras: vacia, lineas: vacia }
-    : null;
+  const previas = new Map(layers.filter((l) => l.kind === 'strabo').map((l) => [l.straboKey, l]));
+  const sinStrabo = layers.filter((l) => l.kind !== 'strabo');
+  const at = belowDrawing(sinStrabo);
+  const filas = out.map((d) => straboLayerEntry(d, previas.get(d.key)));
+  for (const d of out) {
+    delete d.visible;
+    delete d.opacity;
+  }
+  return {
+    straboDatasets: out,
+    layers: [...sinStrabo.slice(0, at), ...filas, ...sinStrabo.slice(at)],
+  };
+}
 
+/** Claves de los datasets con el candado cerrado. */
+export function lockedStraboKeys() {
+  return new Set(state.straboDatasets.filter((d) => d.locked).map((d) => d.key));
+}
+
+/** Claves de los datasets apagados con el ojo. */
+export function hiddenStraboKeys() {
+  return new Set(
+    state.layers.filter((l) => l.kind === 'strabo' && !l.visible).map((l) => l.straboKey),
+  );
+}
+
+const keyOf = (f) => (f && f.properties && f.properties.straboDataset) || null;
+
+/** ¿Es un elemento de un dataset cerrado? Esos no se tocan. */
+export function isLockedFeature(f, locked = lockedStraboKeys()) {
+  const k = keyOf(f);
+  return !!k && locked.has(k);
+}
+
+/** Lo que las herramientas pueden modificar: todo menos lo que está cerrado. */
+export function unlockedFeatures() {
+  const locked = lockedStraboKeys();
+  if (locked.size === 0) return state.features;
+  return state.features.filter((f) => !isLockedFeature(f, locked));
+}
+
+/** Lo que se ve: todo menos los datasets apagados con el ojo. */
+export function visibleFeatures() {
+  const hidden = hiddenStraboKeys();
+  if (hidden.size === 0) return state.features;
+  return state.features.filter((f) => {
+    const k = keyOf(f);
+    return !k || !hidden.has(k);
+  });
+}
+
+/** Ids de elementos cerrados, para limpiar una selección. */
+function sinCerrados(ids) {
+  const locked = lockedStraboKeys();
+  if (locked.size === 0) return ids;
+  const cerrados = new Set(
+    state.features.filter((f) => isLockedFeature(f, locked)).map((f) => f.properties.id),
+  );
+  return ids.filter((id) => !cerrados.has(id));
+}
+
+/**
+ * Añade un dataset recién bajado, con el candado CERRADO.
+ *
+ * Si ese mismo dataset ya estaba cargado y nunca se abrió, se reemplaza su
+ * capa de consulta: es la forma de traer lo último que haya subido su autor.
+ * Si ya se abrió alguna vez, sus elementos viven en el dibujo —quizá
+ * editados— y volver a bajarlo los duplicaría; eso se rechaza.
+ *
+ * @returns {{key: string, replaced: boolean}}
+ */
+export function addStraboDataset(data) {
+  const list = state.straboDatasets;
+  const previo = list.find(
+    (d) => d.datasetId && String(d.datasetId) === String(data.datasetId),
+  );
+  if (previo && previo.adopted) {
+    throw new Error(
+      `“${previo.datasetName}” is already loaded and was opened for editing; ` +
+        'its features are in the drawing. Use ⟳ on its row to bring in the changes made since.',
+    );
+  }
+  const key = previo ? previo.key : nextStraboKey(list);
+  const record = {
+    key,
+    datasetId: String(data.datasetId),
+    datasetName: data.datasetName || String(data.datasetId),
+    projectId: data.projectId !== undefined && data.projectId !== null ? String(data.projectId) : '',
+    color: previo ? previo.color : nextStraboColor(list),
+    locked: true,
+    adopted: false,
+    estructuras: data.estructuras || EMPTY_COLLECTION(),
+    observacion: data.observacion || EMPTY_COLLECTION(),
+    lineas: data.lineas || EMPTY_COLLECTION(),
+    loadedAt: new Date().toISOString(),
+    // Huellas de cada spot tal como llegó: contra ellas se mide, al
+    // actualizar, qué cambió arriba (ver `strabo/sync.js`).
+    baseline: data.baseline || null,
+    // Campaña y geólogo con que se bajó: actualizar los reutiliza, para que
+    // lo que llegue nuevo no se distinga de lo anterior por esos campos.
+    field: data.field || '',
+    geologist: data.geologist || '',
+  };
+  record.syncedAt = record.loadedAt;
+  const nueva = previo ? list.map((d) => (d.key === key ? record : d)) : [...list, record];
+  const layers = state.layers.slice();
+  if (!previo) layers.splice(belowDrawing(layers), 0, straboLayerEntry(record));
+  else {
+    const i = layers.findIndex((l) => l.id === straboLayerId(key));
+    if (i >= 0) layers[i] = { ...layers[i], label: straboLayerEntry(record).label };
+  }
+  // Un dataset nuevo puede no traer los mismos valores categóricos que los
+  // anteriores; un filtro heredado dejaría capas en blanco sin explicación.
+  set({
+    straboDatasets: nueva,
+    layers,
+    straboFilters: { structures: null, observations: null, lines: null },
+  });
+  return { key, replaced: !!previo };
+}
+
+/**
+ * Quita un dataset: su fila, su capa de consulta y, si se llegó a abrir, sus
+ * elementos del dibujo. Va al historial en un paso, así que deshacer lo
+ * devuelve entero.
+ */
+export function removeStraboDataset(key) {
+  const d = state.straboDatasets.find((x) => x.key === key);
+  if (!d) return 0;
+  const quedan = state.features.filter((f) => keyOf(f) !== key);
+  const quitados = state.features.length - quedan.length;
+  pushHistorySnapshot(snapshotOf(['features', 'straboDatasets', 'layers']));
+  set({
+    features: quedan,
+    straboDatasets: state.straboDatasets.filter((x) => x.key !== key),
+    layers: state.layers.filter((l) => l.id !== straboLayerId(key)),
+    selection: [],
+  });
+  return quitados;
+}
+
+/**
+ * Abre o cierra el candado de un dataset.
+ *
+ * Abrir uno cierra cualquier otro. La primera vez que se abre, sus elementos
+ * pasan de la capa de consulta al dibujo, traduciendo su simbología; eso va
+ * al historial en un solo paso, así que deshacer lo devuelve cerrado y en su
+ * capa. Abrir y cerrar después no va al historial: es elegir en qué se
+ * trabaja, no un cambio del mapa.
+ *
+ * @returns {{features, units, warnings, stats}|null} el resultado de la
+ *   adopción, cuando la hubo
+ */
+export function setStraboLocked(key, locked) {
+  const d = state.straboDatasets.find((x) => x.key === key);
+  if (!d) return null;
+
+  if (locked) {
+    const straboDatasets = state.straboDatasets.map((x) => (x.key === key ? { ...x, locked: true } : x));
+    set({ straboDatasets });
+    // Lo que estaba seleccionado de ese dataset deja de poder editarse.
+    const selection = sinCerrados(state.selection);
+    if (selection.length !== state.selection.length) setSelection(selection);
+    return null;
+  }
+
+  const cerrarOtros = (x) => (x.key === key ? x : { ...x, locked: true });
+  if (d.adopted) {
+    set({
+      straboDatasets: state.straboDatasets.map((x) =>
+        x.key === key ? { ...x, locked: false } : cerrarOtros(x),
+      ),
+    });
+    const selection = sinCerrados(state.selection);
+    if (selection.length !== state.selection.length) setSelection(selection);
+    return null;
+  }
+
+  const r = adoptFromDataset(d, d, state.units);
+
+  pushHistorySnapshot(snapshotOf(['features', 'units', 'straboDatasets', 'layers', 'straboFilters']));
+  const straboDatasets = state.straboDatasets.map((x) =>
+    x.key === key
+      ? {
+          ...x,
+          locked: false,
+          adopted: true,
+          // Ya no hay nada en la capa de consulta: está todo en el dibujo.
+          estructuras: EMPTY_COLLECTION(),
+          observacion: EMPTY_COLLECTION(),
+          lineas: EMPTY_COLLECTION(),
+        }
+      : cerrarOtros(x),
+  );
   set({
     features: [...state.features, ...r.features],
     units: r.units,
-    strabo: resto,
-    layers: resto ? state.layers : state.layers.filter((l) => l.kind !== 'strabo'),
+    straboDatasets,
     // La selección apuntaba al dibujo anterior; dejarla sería señalar cosas
     // que ya no son las que se está mirando.
     selection: [],
   });
   return r;
+}
+
+/**
+ * Adopta lo de un dataset (entero o un subconjunto de sus spots) dejando cada
+ * elemento marcado con el nombre del dataset y con la huella de cómo entró:
+ * es lo que permite saber después si se editó aquí.
+ */
+function adoptFromDataset(d, data, units) {
+  const r = adoptStrabo({ ...data, key: d.key, datasetName: d.datasetName }, { units, newId });
+  for (const f of r.features) {
+    // El nombre del dataset viaja con cada elemento: si el registro se
+    // pierde, la fila se rehace con su nombre y no como «Dataset 3».
+    f.properties.straboDatasetName = d.datasetName;
+    f.properties.straboLocalHash = featureFingerprint(f);
+  }
+  return r;
+}
+
+/**
+ * Aplica una actualización ya revisada (ver `strabo/sync.js`).
+ *
+ * Un dataset sin abrir solo cambia su capa de consulta: no hay nada local que
+ * proteger. Uno abierto cambia el dibujo spot por spot —quita lo que se borró
+ * o se reemplaza, adopta lo nuevo o lo reemplazado— y deja intacto todo lo
+ * demás, editado o no. Va al historial en un solo paso.
+ *
+ * @param {string} key
+ * @param {{data: object, baseline: object, plan: object, choices?: object}} update
+ *   `data` son las tres colecciones recién bajadas; `baseline`, sus huellas.
+ * @returns {{added: number, removed: number, warnings: string[]}}
+ */
+export function applyStraboUpdate(key, { data, baseline, plan, choices = {} }) {
+  const d = state.straboDatasets.find((x) => x.key === key);
+  if (!d) throw new Error('That dataset is no longer loaded.');
+  const syncedAt = new Date().toISOString();
+
+  if (!d.adopted) {
+    set({
+      straboDatasets: state.straboDatasets.map((x) =>
+        x.key === key
+          ? {
+              ...x,
+              estructuras: data.estructuras,
+              observacion: data.observacion,
+              lineas: data.lineas,
+              baseline,
+              syncedAt,
+            }
+          : x,
+      ),
+      straboFilters: { structures: null, observations: null, lines: null },
+    });
+    return {
+      added: plan.added.length,
+      removed: plan.removed.length,
+      replaced: plan.replaced.length,
+      warnings: [],
+    };
+  }
+
+  const { remove, add } = resolvePlan(plan, choices);
+  const quitar = new Set(remove.map(String));
+  const quedan = state.features.filter(
+    (f) => !(keyOf(f) === key && quitar.has(String(f.properties.straboSpotId))),
+  );
+  const quitados = state.features.length - quedan.length;
+  const r = add.length
+    ? adoptFromDataset(d, subsetBySpot(data, add), state.units)
+    : { features: [], units: state.units, warnings: [] };
+
+  pushHistorySnapshot(snapshotOf(['features', 'units', 'straboDatasets']));
+  set({
+    features: [...quedan, ...r.features],
+    units: r.units,
+    straboDatasets: state.straboDatasets.map((x) => (x.key === key ? { ...x, baseline, syncedAt } : x)),
+    selection: [],
+  });
+  return { added: r.features.length, removed: quitados, warnings: r.warnings };
+}
+
+/** Datasets listos para guardar, con su visibilidad y opacidad de capa. */
+export function currentStraboDatasets() {
+  const filas = new Map(state.layers.filter((l) => l.kind === 'strabo').map((l) => [l.straboKey, l]));
+  return state.straboDatasets.map((d) => {
+    const l = filas.get(d.key);
+    return { ...d, visible: l ? l.visible : true, opacity: l ? l.opacity : 1 };
+  });
+}
+
+/** Restaura los datasets guardados (autoguardado del dispositivo). */
+export function loadStraboDatasets(list) {
+  set(straboPatch(list, state.features, state.layers));
 }
 
 /** Fusiona un cambio parcial (deslizador) o un objeto completo (localStorage). */

@@ -256,6 +256,10 @@ export function buildEstructuras(rows, { field = '', geologist = '' } = {}) {
       Geologist: geologist,
     };
     record['Sense of slip'] = senseOfSlip(record);
+    // El id del spot de origen. Va al final y con doble guion bajo —el visor
+    // de atributos no lo enseña—: no es un dato de terreno, es lo que permite
+    // volver al spot de StraboSpot después de editarlo aquí.
+    record.__spot_id__ = raw.__spot_id__;
     out.push(record);
   }
   return out;
@@ -289,6 +293,7 @@ export function buildObservacion(rows, { field = '', geologist = '' } = {}) {
       Process: raw.Process || '',
       Field: field,
       Geologist: geologist,
+      __spot_id__: raw.__spot_id__,
     };
 
     // Un spot con varias mediciones estructurales genera varias filas crudas
@@ -439,6 +444,7 @@ export function buildLineasPoligonos(features, { field = '', geologist = '', spo
           Quality: featureQuality(p),
           Field: field,
           Geologist: geologist,
+          __spot_id__: p.id,
         },
         geometry: f.geometry,
       };

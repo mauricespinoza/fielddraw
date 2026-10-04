@@ -1015,6 +1015,52 @@
           <button class="icon-btn close-x" id="btn-close-strabo" aria-label="Close">✕</button>
         </header>
 
+        <div id="strabo-datasets-block" class="hidden">
+          <h3 class="palette-label">Loaded datasets</h3>
+          <p class="hint footnote">
+            Every dataset comes in <strong>locked</strong> 🔒: you can see it and tap it to read
+            its data, but not change it. Open one lock to edit that dataset — opening another locks
+            the first. The eye 👁 shows or hides it. Its first opening brings the features into the
+            drawing, reading their StraboSpot symbology on the way in; undo puts them back.
+          </p>
+          <!-- Revisión de una actualización pendiente: ver `renderReview` en strabo/panel.js. -->
+          <div id="strabo-review" class="strabo-review hidden"></div>
+          <ul id="strabo-datasets" class="strabo-datasets"></ul>
+          <p class="hint footnote">
+            ⟳ checks a dataset for changes made in StraboSpot since you loaded it (sign-in
+            needed). Nothing changes until you review and apply: new spots come in, spots changed or
+            removed there follow suit if you did not edit them here, and when both sides changed
+            the same spot you choose which version stays.
+          </p>
+        </div>
+
+        <div id="strabo-loaded" class="hidden">
+          <div class="strabo-size">
+            <div class="head">
+              <span class="palette-label">Symbol size</span>
+              <button type="button" id="strabo-size-reset">Reset</button>
+            </div>
+            <label class="field">
+              <span>Structures</span>
+              <span class="tol-row">
+                <input type="range" id="strabo-size-structures" min="0.4" max="3" step="0.1" value="1" />
+                <span class="num" id="strabo-size-structures-num">1.0×</span>
+              </span>
+            </label>
+            <label class="field">
+              <span>Observations</span>
+              <span class="tol-row">
+                <input type="range" id="strabo-size-observations" min="0.4" max="3" step="0.1" value="1" />
+                <span class="num" id="strabo-size-observations-num">1.0×</span>
+              </span>
+            </label>
+          </div>
+
+          <div id="strabo-filters"></div>
+
+          <hr class="sep" />
+        </div>
+
         <div id="strabo-auth">
           <p class="hint">
             Sign in with your StraboSpot account. The password is kept in memory for this session
@@ -1052,44 +1098,6 @@
           </div>
 
           <button class="pill wide" id="strabo-download" disabled>Load spots into the map</button>
-
-          <div id="strabo-loaded" class="hidden">
-            <p class="hint footnote" id="strabo-loaded-text"></p>
-
-            <div class="strabo-size">
-              <div class="head">
-                <span class="palette-label">Symbol size</span>
-                <button type="button" id="strabo-size-reset">Reset</button>
-              </div>
-              <label class="field">
-                <span>Structures</span>
-                <span class="tol-row">
-                  <input type="range" id="strabo-size-structures" min="0.4" max="3" step="0.1" value="1" />
-                  <span class="num" id="strabo-size-structures-num">1.0×</span>
-                </span>
-              </label>
-              <label class="field">
-                <span>Observations</span>
-                <span class="tol-row">
-                  <input type="range" id="strabo-size-observations" min="0.4" max="3" step="0.1" value="1" />
-                  <span class="num" id="strabo-size-observations-num">1.0×</span>
-                </span>
-              </label>
-            </div>
-
-            <div id="strabo-filters"></div>
-
-            <button class="pill wide" id="strabo-adopt">Make these spots editable</button>
-            <p class="hint footnote">
-              Brings the structures, lines and polygons into the drawing, reading their StraboSpot
-              symbology on the way in: a reverse fault arrives as a thrust with its teeth, trace
-              quality becomes the certainty pattern, and geologic-unit tags become map units.
-              Adopted features are drawn in one colour — set it in <strong>Symbols</strong> — so
-              they stay apart from what you mapped here. Samples and notes stay in their layer.
-            </p>
-
-            <button class="pill wide" id="strabo-clear">Remove StraboSpot layers</button>
-          </div>
 
           <hr class="sep" />
 
