@@ -149,6 +149,24 @@ export async function getAllDatasetSpots(datasetId) {
   return { point, line, polygon };
 }
 
+/**
+ * Spots de un dataset en su forma NATIVA, completa: lo que hay que reenviar
+ * intacto al escribir en un dataset existente (ver `push.js`).
+ *
+ * Es el mismo camino que la escritura, con GET, como lo documenta la API. No
+ * se pudo comprobar contra el servidor al escribirlo, así que se valida la
+ * forma de la respuesta y, antes de escribir nada, quien llama compara sus
+ * ids con los de `datasetspotsarc`: si no cuadran, no se escribe.
+ */
+export async function getNativeDatasetSpots(datasetId) {
+  const res = await request('GET', `${DB}/datasetspots/${datasetId}`);
+  if (res === null) return { type: 'FeatureCollection', features: [] };
+  if (!res || !Array.isArray(res.features)) {
+    throw new Error('StraboSpot did not return the dataset spots in the expected form.');
+  }
+  return res;
+}
+
 /* --------------------------------------------------------------- escritura */
 
 export async function createDataset(name) {

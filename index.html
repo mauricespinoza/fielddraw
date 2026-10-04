@@ -1030,7 +1030,8 @@
             ⟳ checks a dataset for changes made in StraboSpot since you loaded it (sign-in
             needed). Nothing changes until you review and apply: new spots come in, spots changed or
             removed there follow suit if you did not edit them here, and when both sides changed
-            the same spot you choose which version stays.
+            the same spot you choose which version stays. ⬆ on the dataset you are editing sends
+            your edits back to it, after a review and a backup.
           </p>
         </div>
 
@@ -1102,10 +1103,11 @@
           <hr class="sep" />
 
           <p class="hint">
-            Upload always creates a <strong>new</strong> dataset in the selected project. StraboSpot
-            replaces every spot in a dataset on upload, so existing ones are never written to.
-            Measurements go up as planar orientations, lines as traces and polygons as surface
-            features, so StraboSpot symbolises them on its own.
+            This button uploads the drawing as a <strong>new</strong> dataset in the selected
+            project. To send your edits back to a dataset you loaded, open its lock and use
+            <strong>⬆</strong> on its row above: only what you edited changes, everything else in
+            it is sent back as it is. Measurements go up as planar orientations, lines as traces
+            and polygons as surface features, so StraboSpot symbolises them on its own.
           </p>
           <label class="field"><span>New dataset</span>
             <input type="text" id="strabo-dataset-name" placeholder="FieldDraw 2026-09-15" />

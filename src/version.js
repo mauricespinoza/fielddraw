@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.43.0';
+export const APP_VERSION = '0.44.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -44,7 +44,7 @@ export const APP_TOOLS = [
   ['Scale', 'Pick a working scale, snap the map to it, calibrate the screen.'],
   ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
   ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
-  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it, ⟳ to bring in what others changed. Upload the drawing as a new dataset.'],
+  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it, ⟳ to bring in what others changed, ⬆ to send your edits back. Or upload the drawing as a new dataset.'],
   ['Project', 'Save/open the project, export the map as an SVG/PNG/PDF sheet.'],
 ];
 
@@ -54,6 +54,18 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.44.0',
+    highlights: [
+      'Send your edits back to the StraboSpot dataset you are editing with ⬆: only what you changed is updated, everything else in it goes back untouched, after a review and a backup.',
+    ],
+    items: [
+      'Botón ⬆ en el dataset abierto: sube las ediciones al MISMO dataset de StraboSpot. Cada spot editado parte de su versión de allá y cambia solo lo editado aquí —tipo de traza, certeza, rumbo y manteo, tipo de plano, calidad, ubicación, notas, nombre y datos de la muestra—; fotos, otras mediciones del spot, muestras y campos que FieldDraw no conoce viajan intactos.',
+      'Antes de subir: si el dataset cambió en StraboSpot desde la última sincronización, se pide ⟳ primero; se lee el dataset completo y sus spots tienen que coincidir; se revisa la lista de lo que cambia; y se descarga un respaldo del dataset tal como está. Después se verifica que arriba quedaron exactamente los spots enviados.',
+      'Lo que no se puede traducir sin adivinar no se sube y se dice por qué: un spot partido o unido aquí, una medida que no se sabe a cuál orientación corresponde, un cambio de unidad (vive en los tags del proyecto) o de estría/lineación. Esos siguen marcados como editados.',
+      'Opcional en la revisión: añadir lo dibujado aquí como spots nuevos del dataset, y borrar allá los spots que se borraron aquí (apagado por omisión).',
+    ],
+  },
   {
     version: '0.43.0',
     highlights: [
