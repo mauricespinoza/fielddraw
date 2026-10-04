@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -1129,7 +1129,7 @@ polígono también cuenta: es donde está el contacto.
 | **SVG** | la figura, editable en Illustrator o Inkscape |
 | **PNG** | rasterizado del mismo SVG al doble del tamaño en pantalla |
 | **SHP 3D** | un ZIP con dos shapefiles para **Structural Modeller** |
-| **Sketcher** | proyecto `.sketcher.json` para **StructuralSketcher** |
+| **Sketcher** | proyecto `.sketch.json` para [**StructuralSketcher**](https://mauricespinoza.github.io/StructuralSketcher/) |
 
 El **shapefile 3D** son dos capas dentro del mismo ZIP, porque el importador de
 secciones del plugin solo lee líneas y los manteos son puntos:

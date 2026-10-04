@@ -58,6 +58,13 @@ export function initStraboPanel({ message, busy }) {
   $('strabo-dataset').addEventListener('change', render);
   $('strabo-download').addEventListener('click', doDownload);
   $('strabo-upload').addEventListener('click', doUpload);
+  $('strabo-add-to-dataset').addEventListener('click', doAddToDataset);
+  $('strabo-create-project').addEventListener('click', doCreateProject);
+  $('strabo-project-name').addEventListener('input', render);
+  $('strabo-project-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doCreateProject();
+  });
+  $('strabo-upload-selected').addEventListener('change', render);
   // Enter en la contraseña inicia sesión, que es lo que uno espera.
   $('strabo-password').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doSignIn();
@@ -72,7 +79,7 @@ export function initStraboPanel({ message, busy }) {
   if (lastEmail) $('strabo-email').value = lastEmail;
 
   store.subscribe(() => {
-    if (store.changed('features') || store.changed('straboDatasets')) render();
+    if (store.changed('features') || store.changed('straboDatasets') || store.changed('selection')) render();
     if (store.changed('straboDatasets') || store.changed('layers')) renderDatasets();
     if (store.changed('straboDatasets')) renderFilters();
     if (store.changed('straboDatasets') && pending) renderReview();
@@ -99,9 +106,20 @@ export function render() {
   const datasetSel = $('strabo-dataset');
   $('strabo-download').disabled = !signedIn || !datasetSel.value;
 
+  // «Solo lo seleccionado» solo se puede marcar con algo seleccionado que sea
+  // subible; sin selección la casilla se apaga y se sube todo el dibujo.
+  const nSel = uploadableCount(selectedUploadable());
+  const soloSel = $('strabo-upload-selected');
+  soloSel.disabled = nSel === 0;
+  if (nSel === 0) soloSel.checked = false;
+  $('strabo-upload-selected-label').textContent =
+    nSel > 0 ? `Only the selected features (${nSel} uploadable)` : 'Only the selected features (none selected)';
+
   const n = uploadableCount(uploadSource());
   $('strabo-upload').disabled = !signedIn || n === 0 || !projectSel.value;
   $('strabo-upload').textContent = n ? `Upload ${n} feature(s) as new dataset` : 'Nothing to upload';
+  $('strabo-add-to-dataset').disabled = !signedIn || n === 0 || !datasetSel.value;
+  $('strabo-create-project').disabled = !signedIn || !$('strabo-project-name').value.trim();
   // El desglose dice qué se va a subir COMO QUÉ, que es lo que importa: una
   // medida no llega igual que una traza, y el recuento total lo esconde.
   $('strabo-upload-summary').textContent = n
@@ -120,7 +138,16 @@ export function render() {
  * StraboSpot; subirlo otra vez como dataset nuevo lo duplicaría.
  */
 function uploadSource() {
-  return store.unlockedFeatures();
+  const libres = store.unlockedFeatures();
+  if (!$('strabo-upload-selected').checked) return libres;
+  const ids = new Set(store.getState().selection);
+  return libres.filter((f) => ids.has(f.properties.id));
+}
+
+/** Lo seleccionado que se podría subir, marque o no la casilla. */
+function selectedUploadable() {
+  const ids = new Set(store.getState().selection);
+  return store.unlockedFeatures().filter((f) => ids.has(f.properties.id));
 }
 
 /* ---------- datasets cargados: ojo, candado, quitar ---------- */
@@ -1283,6 +1310,128 @@ async function doUpload() {
     await onProjectChange.call(null);
   } catch (err) {
     onMessage(`Upload failed: ${err.message}`, 'warn');
+  } finally {
+    onBusy(null);
+    render();
+  }
+}
+
+/**
+ * Crea un proyecto vacío en la cuenta y lo deja elegido en el desplegable.
+ * Un proyecto no se puede borrar desde aquí, así que antes se confirma.
+ */
+async function doCreateProject() {
+  const name = $('strabo-project-name').value.trim();
+  if (!name || !api.isAuthenticated()) return;
+  if (projects.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+    onMessage(`A project called “${name}” already exists in this account.`, 'warn');
+    return;
+  }
+  if (!confirm(`Create the StraboSpot project “${name}” in your account?`)) return;
+  onBusy('Creating project…');
+  try {
+    const proj = await api.createProject(name);
+    projects = await api.listProjects();
+    // Si el listado aún no lo trae, se añade a mano: la escritura ya tuvo éxito.
+    if (!projects.some((p) => String(p.id) === String(proj.id))) {
+      projects.push({ id: proj.id, name: proj.name });
+    }
+    fillSelect($('strabo-project'), projects, 'Select a project…');
+    $('strabo-project').value = String(proj.id);
+    $('strabo-project-name').value = '';
+    await onProjectChange();
+    onMessage(
+      `Project “${name}” created. Upload the drawing to add its first dataset; ` +
+        'refresh StraboSpot to see it there.',
+      'info',
+    );
+  } catch (err) {
+    onMessage(`Could not create the project: ${err.message}`, 'warn');
+  } finally {
+    onBusy(null);
+    render();
+  }
+}
+
+/**
+ * Añade lo subible (todo el dibujo o solo la selección) a un dataset que ya
+ * existe. La API solo sabe REEMPLAZAR el dataset entero, así que se vuelve a
+ * leer, se manda lo que había tal cual más los spots nuevos al final, y se
+ * comprueba el resultado; antes de escribir se guarda una copia.
+ */
+async function doAddToDataset() {
+  const projectId = $('strabo-project').value;
+  const datasetId = $('strabo-dataset').value;
+  if (!datasetId) {
+    onMessage('Pick the dataset to add to.', 'warn');
+    return;
+  }
+  const dataset = datasets.find((d) => String(d.id) === String(datasetId));
+  const datasetName = dataset ? dataset.name : 'dataset';
+  const st = store.getState();
+  const { collection, count, tags, breakdown } = featuresToSpots(uploadSource(), {
+    field: $('strabo-field').value.trim(),
+    geologist: $('strabo-geologist').value.trim(),
+    units: st.units,
+  });
+  if (count === 0) {
+    onMessage('There is nothing to add.', 'warn');
+    return;
+  }
+  if (!confirm(
+    `Add ${describe(breakdown)} to “${datasetName}” in StraboSpot?\n\n` +
+      'What is already in it stays; a backup file is downloaded first.',
+  )) return;
+
+  let respaldo = null;
+  onBusy(`Reading “${datasetName}”…`);
+  try {
+    const arc = await api.getAllDatasetSpots(datasetId);
+    const esperados = Object.keys(baselineOf(arc));
+    const native = await api.getNativeDatasetSpots(datasetId);
+    const leidos = spotIdsOf(native);
+    if (leidos.size !== esperados.length || !esperados.every((id) => leidos.has(id))) {
+      throw new Error(
+        `Could not read the whole of “${datasetName}” from StraboSpot (${leidos.size} of ` +
+          `${esperados.length} spots). Nothing was written.`,
+      );
+    }
+    const final = assembleCollection(native, { spots: new Map(), added: collection.features });
+    const quedan = spotIdsOf(final);
+
+    respaldo = backupName({ datasetName });
+    downloadBlob(new Blob([JSON.stringify(native)], { type: 'application/json' }), respaldo);
+
+    onBusy(`Uploading ${count} spot(s) to “${datasetName}”…`);
+    await api.uploadSpots(datasetId, final);
+
+    onBusy('Verifying…');
+    const despues = spotIdsOf(await api.getNativeDatasetSpots(datasetId));
+    if (despues.size !== quedan.size || ![...quedan].every((id) => despues.has(id))) {
+      throw new Error(
+        `StraboSpot now shows ${despues.size} spot(s) where ${quedan.size} were sent. ` +
+          `The dataset as it was before is in the backup file ${respaldo}.`,
+      );
+    }
+
+    let notaTags = '';
+    if ($('strabo-upload-tags').checked && tags.length > 0 && projectId) {
+      try {
+        await writeUnitTags(projectId, tags);
+      } catch (err) {
+        notaTags = ` The spots are up, but the geologic-unit tags could not be written (${err.message}).`;
+      }
+    }
+    onMessage(
+      `Added ${describe(breakdown)} to “${datasetName}”. Backup saved as ${respaldo}.${notaTags}`,
+      'info',
+    );
+  } catch (err) {
+    onMessage(
+      `Add stopped: ${err.message}` +
+        (respaldo && !/backup file/.test(err.message) ? ` A backup was saved as ${respaldo}.` : ''),
+      'warn',
+    );
   } finally {
     onBusy(null);
     render();

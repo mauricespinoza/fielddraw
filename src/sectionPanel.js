@@ -352,7 +352,7 @@ function exportSketcher() {
   });
   downloadBlob(
     new Blob([JSON.stringify(doc)], { type: 'application/json' }),
-    `${baseName(s)}.sketcher.json`,
+    `${baseName(s)}.sketch.json`,
   );
   onMessage('Written as a StructuralSketcher project: open it there to interpret the section.', 'info');
 }

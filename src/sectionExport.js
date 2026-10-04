@@ -241,7 +241,8 @@ export function sketcherDocument(section, { name = 'FieldDraw section', exaggera
       locked: false,
       unit_id: null,
       origin: 'imported',
-      style: { color: [230, 237, 243], width: 2, dash: false },
+      // Oscura: el lienzo del Sketcher es claro, y un gris casi blanco no se ve.
+      style: { color: [150, 95, 30], width: 2, dash: false },
       fault_style: { sense: 'none', flip: false },
     });
   }

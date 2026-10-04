@@ -1398,6 +1398,7 @@ export function createMeasurement({
   unitId,
   line,
   rating,
+  removeIds = [],
 }) {
   const id = newId();
   const rumbo = norm360(strike);
@@ -1480,8 +1481,11 @@ export function createMeasurement({
    * `selection` queda en la medida nueva, así que Elegir la muestra ya
    * seleccionada.
    */
+  // `removeIds`: los datos que esta medida sustituye (el promedio de varios
+  // planos), en el mismo paso de historial que su creación.
+  const quitar = new Set(removeIds);
   set({
-    features: [...state.features, feature],
+    features: [...state.features.filter((f) => !quitar.has(f.properties.id)), feature],
     draft: null,
     selection: [id],
     pendingPlane: null,
