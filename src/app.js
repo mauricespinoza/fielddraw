@@ -12,13 +12,14 @@ import {
   wireLocate,
   wireMapView,
 } from './ui.js';
-import { openStraboAttrs } from './strabo/panel.js';
+import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedControlPointStyle,
   loadSavedFeatures,
   loadSavedImportStyle,
   loadSavedOpenTopoKey,
   loadSavedOrnaments,
+  loadSavedStraboDatasets,
   loadSavedStraboStyle,
   loadSavedStructureStyle,
   loadSavedUnits,
@@ -26,6 +27,7 @@ import {
   saveFeatures,
   saveImportStyle,
   saveOrnaments,
+  saveStraboDatasets,
   saveStraboStyle,
   saveStructureStyle,
   saveUnits,
@@ -45,6 +47,7 @@ const view = createMapView({
   // Cualquier toque sobre el mapa cierra lo que estuviera abierto encima.
   onMapTap: closeOverlays,
   onStraboFeatureTap: openStraboAttrs,
+  onLockedFeatureTap: openLockedAttrs,
   onImportedFeatureTap: openImportedAttrs,
   onScale: renderScale,
   onDigitizePreview: renderDigitizePreview,
@@ -75,6 +78,10 @@ const savedOpenTopoKey = loadSavedOpenTopoKey();
 if (savedOpenTopoKey) store.setOpenTopoKey(savedOpenTopoKey);
 const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
+// Después del dibujo y no antes: un dataset ya abierto se reconoce por sus
+// elementos en el dibujo, y sin ellos cargados se daría por vacío.
+const savedStraboDatasets = loadSavedStraboDatasets();
+if (savedStraboDatasets) store.loadStraboDatasets(savedStraboDatasets);
 
 /*
  * Los mapas offline y el modelo de elevación de la sesión anterior.
@@ -89,6 +96,7 @@ restoreImportedFiles();
 
 // Autosave con debounce: dibujar genera muchos cambios seguidos.
 let saveTimer = null;
+let straboSaveTimer = null;
 store.subscribe(() => {
   if (store.changed('units')) saveUnits(store.getState().units);
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
@@ -96,6 +104,10 @@ store.subscribe(() => {
   if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
+  if (store.changed('straboDatasets') || store.changed('layers')) {
+    clearTimeout(straboSaveTimer);
+    straboSaveTimer = setTimeout(() => saveStraboDatasets(store.currentStraboDatasets()), 500);
+  }
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);

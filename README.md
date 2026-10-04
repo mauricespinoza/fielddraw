@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -2629,6 +2629,60 @@ polígono inválido, igual que dibujarlo a mano con la herramienta Polígono.
 El botón **StraboSpot** abre un panel con sesión, proyecto, dataset, descarga
 de spots y subida del dibujo como dataset nuevo (`src/strabo/`).
 
+### Varios datasets: candado y ojo
+
+Un proyecto de StraboSpot suele tener un dataset por persona o por campaña, y
+lo que se quiere al abrirlo aquí es ver el trabajo de todos sin arriesgar el de
+nadie. Bajar un dataset ya **no reemplaza** al anterior: se suma a la lista, y
+entra siempre con el **candado cerrado** 🔒.
+
+- **Cerrado**: se ve y se toca para leer sus atributos —con el nombre del
+  dataset arriba—, pero no entra en la selección, así que no se mueve, no se
+  borra, no se corta y la topología no toca sus vértices.
+- **Abierto** 🔓: es el dataset que se edita. **Solo uno a la vez**: abrir otro
+  cierra el anterior, para que nunca haya dos trabajos ajenos abiertos y no se
+  sepa en cuál se está metiendo la mano.
+- **Ojo** 👁: enciende y apaga el dataset entero, también lo que ya pasó al
+  dibujo.
+
+Cada dataset tiene su **color** —en la capa de consulta y en la lista— y una
+fila propia tanto en **Capas** (ojo, candado, quitar, orden y opacidad) como en
+el panel StraboSpot, que también funciona sin sesión iniciada.
+
+**Abrir el candado la primera vez es adoptar.** Los elementos pasan de la capa
+de consulta al dibujo con su simbología traducida (ver *Editar lo bajado*, más
+abajo), en un solo paso del historial: deshacer devuelve el dataset cerrado y en
+su capa. Volver a cerrarlo **no** los devuelve a la capa de consulta —ya son
+dibujo, quizá editado, y deshacer la traducción perdería ese trabajo—: los
+congela. Tocarlos enseña sus atributos traducidos (tipo, certeza, rumbo y
+manteo, unidad, notas) en solo lectura.
+
+Por dentro, cada elemento adoptado lleva `straboDataset` (la clave de su fila),
+`straboDatasetName` y `straboSpotId`, el id del spot de origen, que ya baja con
+la capa de consulta como `__spot_id__` (oculto en el visor). Ese id es lo que
+permitirá, más adelante, devolver un cambio al mismo spot de StraboSpot.
+
+Dónde se hace cumplir el candado, para no repetirlo en cada herramienta:
+
+| Puerta | Qué hace con lo cerrado |
+| --- | --- |
+| `setSelection` / `toggleSelection` | lo deja fuera: casi toda la edición pasa por la selección |
+| Cortar, Hueco, Topología sin selección | trabajan sobre `unlockedFeatures()`, no sobre todo el dibujo |
+| Nodos | sin manijas sobre lo cerrado (ni sobre lo apagado) |
+| Borrar el último · Vaciar el dibujo | se saltan lo cerrado |
+| Toque y pulsación sostenida | abren los atributos en solo lectura en vez de seleccionar |
+| Subir como dataset nuevo | no incluye lo cerrado: ya está en StraboSpot, subirlo lo duplicaría |
+
+Los datasets, con su candado, su ojo y su opacidad, **viajan en el proyecto**
+(`straboDatasets`) y se autoguardan en el dispositivo: sin señal no habría cómo
+volver a bajarlos. Si el registro de un dataset se pierde pero sus elementos
+siguen en el dibujo, la fila se rehace sola, cerrada y con su nombre; y aunque
+un archivo diga que hay dos abiertos, al cargarlo queda abierto solo el primero.
+
+Volver a bajar un dataset que nunca se abrió reemplaza su capa de consulta
+—es la forma de traer lo último que subió su autor—. Uno que ya se abrió se
+rechaza: sus elementos están en el dibujo y se duplicarían.
+
 **Sesión.** HTTP Basic con el correo como usuario. Las credenciales viven
 **solo en memoria**, nunca en localStorage: dejarlas escritas en el disco de
 una tablet que va a terreno no compensa el ahorro de volver a escribirlas.
@@ -2700,11 +2754,10 @@ las dos columnas salían vacías siempre.
 
 ### Editar lo bajado: adoptar el dataset
 
-Al terminar la descarga el panel **pregunta si se quiere editar** lo que acaba
-de llegar, y hay un botón (*Make these spots editable*) para hacerlo más tarde.
-La pregunta va ahí y no escondida en un menú porque quien acaba de bajar un
-dataset sabe en ese momento si viene a mirarlo o a seguir trabajando sobre él;
-diez minutos después ya no se acuerda de que se podía.
+Se adopta **abriendo el candado** del dataset (ver *Varios datasets*). Antes
+el panel lo preguntaba al terminar la descarga; con varios datasets a la vista
+la pregunta dejó de tener sentido —lo normal es bajar los de todo el equipo para
+mirarlos y abrir solo el propio—, y el candado dice lo mismo sin interrumpir.
 
 Adoptar es lo mismo que hacer *Editar una capa importada* con un GeoPackage:
 los spots dejan de ser una capa de consulta y pasan a ser elementos del dibujo,
@@ -2715,9 +2768,8 @@ editable y otra no, y al mirar el mapa no habría forma de saber cuál se está
 tocando. Va al historial en un solo paso, así que **deshacer** devuelve el
 dataset a su capa.
 
-Las **observaciones** —muestras y anotaciones— no se adoptan y se quedan en su
-capa: no son geometría cartográfica, y el dibujo no tiene dónde ponerlas sin
-convertirlas en medidas que nadie tomó.
+Las **observaciones** —muestras y anotaciones— entran como **puntos de
+control**, con su código, descripción, propósito y fecha de toma.
 
 **La simbología ajena se interpreta** (`src/strabo/adopt.js`). No se copia un
 nombre de tipo: se leen las mismas columnas con las que el plugin de QGIS
@@ -2789,6 +2841,10 @@ importado sigue teniendo sus dientes, y una traza inferida sigue segmentada. Lo
 Siempre a un dataset **nuevo** del proyecto elegido: `POST /db/datasetspots/{id}`
 reemplaza todos los spots del dataset de destino, así que escribir en uno
 existente lo destruiría.
+
+Se sube el dibujo **menos lo de los datasets con el candado cerrado**: es
+trabajo de otra persona del mismo proyecto que ya está en StraboSpot, y subirlo
+otra vez lo duplicaría con otro nombre.
 
 Lo que decide si un dato *se entiende* al otro lado no son sus atributos
 sueltos, sino los tres objetos del modelo nativo por los que StraboSpot

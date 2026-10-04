@@ -124,7 +124,7 @@ import {
   APP_VERSION,
   CHANGELOG,
 } from './version.js';
-import { initStraboPanel } from './strabo/panel.js';
+import { initStraboPanel, removeStraboDatasetAsk, toggleStraboLock } from './strabo/panel.js';
 import {
   SHORTCUTS,
   SHORTCUT_GROUPS,
@@ -1268,6 +1268,51 @@ function layerRow(layer) {
 
   const move = document.createElement('div');
   move.className = 'layer-move';
+  let sync = null;
+  if (layer.kind === 'strabo') {
+    /*
+     * Un dataset de StraboSpot: el ojo enciende y apaga —también lo que ya
+     * pasó al dibujo—, el candado elige el dataset que se edita (uno a la
+     * vez) y la ✕ lo quita. El color es el de su capa, para reconocer de un
+     * vistazo de quién es cada traza.
+     */
+    toggle.classList.add('strabo-row');
+    const sw = document.createElement('span');
+    sw.className = 'layer-swatch';
+    sw.style.background = layer.color || '#7E57C2';
+    toggle.insertBefore(sw, name);
+    const eye = document.createElement('button');
+    eye.className = 'icon-btn strabo-btn';
+    eye.addEventListener('click', () => {
+      const actual = store.getState().layers.find((l) => l.id === layer.id);
+      store.setLayerVisible(layer.id, !(actual && actual.visible));
+    });
+    const lock = document.createElement('button');
+    lock.className = 'icon-btn strabo-btn';
+    lock.addEventListener('click', () => toggleStraboLock(layer.straboKey));
+    const del = document.createElement('button');
+    del.className = 'icon-btn';
+    del.textContent = '✕';
+    del.title = 'Remove this dataset from the map';
+    del.setAttribute('aria-label', `Remove ${layer.label}`);
+    del.addEventListener('click', () => removeStraboDatasetAsk(layer.straboKey));
+    move.append(eye, lock, del);
+    sync = (l) => {
+      const d = store.getState().straboDatasets.find((x) => x.key === l.straboKey);
+      const locked = !d || d.locked;
+      eye.textContent = l.visible ? '👁' : '◌';
+      eye.title = l.visible ? 'Hide this dataset' : 'Show this dataset';
+      eye.setAttribute('aria-label', `${l.visible ? 'Hide' : 'Show'} ${l.label}`);
+      eye.classList.toggle('active', l.visible);
+      lock.textContent = locked ? '🔒' : '🔓';
+      lock.title = locked
+        ? 'Locked: view only. Tap to edit this dataset (locks any other)'
+        : 'Open for editing. Tap to lock it again';
+      lock.setAttribute('aria-label', `${locked ? 'Unlock' : 'Lock'} ${l.label}`);
+      lock.classList.toggle('active', !locked);
+      name.textContent = locked ? l.label : `${l.label} · editing`;
+    };
+  }
   if (layer.kind === 'imported') {
     /*
      * Adoptar la capa. Va aquí y no en el menú de propiedades porque es una
@@ -1342,7 +1387,7 @@ function layerRow(layer) {
   opacity.append(range, pct);
 
   li.append(head, opacity);
-  return { li, cb, range, pct, up, down };
+  return { li, cb, range, pct, up, down, sync };
 }
 
 /**
@@ -1437,6 +1482,7 @@ function renderLayers() {
       row.range.value = String(l.opacity);
       row.pct.textContent = `${Math.round(l.opacity * 100)}%`;
     }
+    if (row.sync) row.sync(l);
     // El dibujo no lleva flechas; el resto se queda sin la que no puede usar.
     const i = layers.indexOf(l);
     if (row.up) row.up.disabled = i === 0;
@@ -6395,7 +6441,7 @@ export function initUI() {
     if (store.changed('units') || store.changed('unitLabels')) renderUnits();
     if (store.changed('ornaments')) renderSymbology();
     if (store.changed('importStyle')) syncImportControls();
-    if (store.changed('layers')) renderLayers();
+    if (store.changed('layers') || store.changed('straboDatasets')) renderLayers();
     // Abrir un proyecto reescribe los ajustes: los controles tienen que
     // reflejarlo, o mostrarían valores que ya no son los que rigen.
     if (

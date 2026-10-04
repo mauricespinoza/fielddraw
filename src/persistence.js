@@ -4,6 +4,7 @@ const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
 const STRUCTURE_STYLE_KEY = 'fielddraw.structure-style.v1';
 const CONTROL_POINT_STYLE_KEY = 'fielddraw.control-point-style.v1';
 const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
+const STRABO_DATASETS_KEY = 'fielddraw.strabo-datasets.v1';
 const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
 
 /**
@@ -106,6 +107,33 @@ export function loadSavedControlPointStyle() {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Datasets de StraboSpot cargados, con su candado y su ojo.
+ *
+ * Se guardan para que el trabajo de los demás siga a la vista al volver a
+ * abrir la app en terreno, sin señal para bajarlo otra vez. Si no caben —un
+ * proyecto enorme con la cuota llena— se pierde solo la capa de consulta: los
+ * elementos ya abiertos viven en el dibujo y su fila se rehace sola, cerrada.
+ */
+export function saveStraboDatasets(list) {
+  try {
+    localStorage.setItem(STRABO_DATASETS_KEY, JSON.stringify(list));
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedStraboDatasets() {
+  try {
+    const raw = localStorage.getItem(STRABO_DATASETS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }

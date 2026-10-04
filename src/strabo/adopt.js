@@ -283,6 +283,20 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
   };
   const datasetName = (data && data.datasetName) || '';
 
+  /*
+   * De qué dataset y de qué spot viene cada elemento. La clave del dataset es
+   * lo que ata el elemento a su candado y a su ojo en el panel de capas; el id
+   * del spot, lo que permitirá devolver el cambio al mismo spot de StraboSpot.
+   * Sin clave —una adopción antigua— el elemento queda como dibujo propio.
+   */
+  const datasetKey = data && data.key !== undefined && data.key !== null ? String(data.key) : null;
+  const origen = (p) => ({
+    ...(datasetKey ? { straboDataset: datasetKey } : {}),
+    ...(p.__spot_id__ !== undefined && p.__spot_id__ !== null && p.__spot_id__ !== ''
+      ? { straboSpotId: String(p.__spot_id__) }
+      : {}),
+  });
+
   /**
    * Unidad del proyecto que corresponde a un nombre de tag, creándola si hace
    * falta. Es la misma regla que ya usaban los polígonos —el tag `geologic_unit`
@@ -347,6 +361,7 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
       id,
       properties: {
         ...extras(p, STRUCTURE_KEEP),
+        ...origen(p),
         id,
         kind: 'point',
         geomKind: 'measurement',
@@ -381,6 +396,7 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
     const id = genId();
     const comun = {
       ...extras(p, LINE_KEEP),
+      ...origen(p),
       id,
       source: STRABO_SOURCE,
       createdAt: Date.now(),
@@ -456,6 +472,7 @@ export function adoptStrabo(data, { units = [], newId } = {}) {
       type: 'Feature',
       id,
       properties: {
+        ...origen(p),
         id,
         kind: 'point',
         geomKind: CONTROL_POINT_KIND,

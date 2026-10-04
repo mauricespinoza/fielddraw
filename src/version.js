@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.41.0';
+export const APP_VERSION = '0.42.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -44,7 +44,7 @@ export const APP_TOOLS = [
   ['Scale', 'Pick a working scale, snap the map to it, calibrate the screen.'],
   ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
   ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
-  ['StraboSpot', "Download a dataset's spots, or upload the drawing as a new one."],
+  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it. Upload the drawing as a new dataset.'],
   ['Project', 'Save/open the project, export the map as an SVG/PNG/PDF sheet.'],
 ];
 
@@ -54,6 +54,19 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.42.0',
+    highlights: [
+      'Load several StraboSpot datasets at once — say, one per person in the project. Each comes in locked 🔒 with its own colour and eye 👁; unlock one to edit it.',
+    ],
+    items: [
+      'Varios datasets de StraboSpot a la vez: bajar uno ya no reemplaza al anterior, se suma a la lista. Cada uno entra con el candado cerrado: se ve y se toca para leer sus datos, pero no se puede seleccionar, mover, cortar ni tocar con la topología.',
+      'El candado elige qué dataset se edita, y solo uno a la vez: abrir otro cierra el anterior. La primera apertura trae sus elementos al dibujo traduciendo su simbología (lo que antes era «Make these spots editable»); deshacer lo devuelve cerrado a su capa. Volver a cerrarlo congela lo editado sin perderlo.',
+      'El ojo apaga el dataset entero, también lo que ya pasó al dibujo. Cada dataset tiene su color en el mapa y en la lista, y una fila propia en Capas (ojo, candado, quitar, orden y opacidad) y en el panel StraboSpot.',
+      'Tocar un elemento cerrado abre sus atributos en solo lectura, con el nombre del dataset. Los datasets, sus candados y sus ojos se guardan en el proyecto y en el dispositivo, así que siguen a la vista sin señal.',
+      'Cada elemento conserva el id de su spot en StraboSpot, para poder devolverle los cambios más adelante. La subida como dataset nuevo ya no incluye lo de los datasets cerrados: es trabajo de otra persona que ya está en StraboSpot.',
+    ],
+  },
   {
     version: '0.41.0',
     highlights: [

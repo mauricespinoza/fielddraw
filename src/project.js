@@ -34,6 +34,10 @@ export function serializeProject(name = '') {
     importStyle: st.importStyle,
     settings: store.currentSettings(),
     layers: store.currentLayerState(),
+    // Los datasets de StraboSpot sí viajan, a diferencia de las capas
+    // importadas: son el trabajo del resto del proyecto, pesan lo que una
+    // libreta y sin señal no hay cómo volver a bajarlos.
+    straboDatasets: store.currentStraboDatasets(),
   };
 }
 
@@ -101,6 +105,7 @@ export function parseProject(text) {
       importStyle: raw.importStyle || null,
       settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
       layers: Array.isArray(raw.layers) ? raw.layers : null,
+      straboDatasets: Array.isArray(raw.straboDatasets) ? raw.straboDatasets : null,
     },
     warnings,
   };

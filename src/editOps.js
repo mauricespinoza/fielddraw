@@ -39,7 +39,8 @@ export async function applyCut(cut) {
     cutter = { type: 'LineString', coordinates: cut.coords };
   }
 
-  const base = st.selection.length ? store.selectedFeatures() : st.features;
+  // Sin selección, todo lo editable: un dataset de StraboSpot cerrado no se toca.
+  const base = st.selection.length ? store.selectedFeatures() : store.unlockedFeatures();
   // El cortador nunca se corta a sí mismo.
   const targets = base.filter((f) => f.properties.id !== cutterId);
 
@@ -88,7 +89,8 @@ export async function applyHole(hole) {
   }
   const cutter = { type: 'Polygon', coordinates: [ring] };
 
-  const base = st.selection.length ? store.selectedFeatures() : st.features;
+  // Sin selección, todo lo editable: un dataset de StraboSpot cerrado no se toca.
+  const base = st.selection.length ? store.selectedFeatures() : store.unlockedFeatures();
   let targets = base.filter((f) => f.geometry && f.geometry.type === 'Polygon');
 
   if (!st.selection.length) {
@@ -193,7 +195,8 @@ export function applyReshape(linea) {
  */
 export function applyTopology() {
   const st = store.getState();
-  const targets = st.selection.length ? store.selectedFeatures() : st.features;
+  // Lo de un dataset cerrado no entra: la topología movería sus vértices.
+  const targets = st.selection.length ? store.selectedFeatures() : store.unlockedFeatures();
   if (targets.length < 2) {
     throw new Error('The topology check needs at least two features.');
   }
