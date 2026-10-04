@@ -93,8 +93,10 @@ export function averageMeasurements(features) {
   const media = meanPole(poles);
   if (!media) return null;
 
-  const strike = norm360(media.strike);
-  const dip = media.dip;
+  // Sin decimales: un rumbo/manteo medio no tiene la precisión de una cifra
+  // decimal, y así tampoco arrastra ruido de coma flotante.
+  const strike = Math.round(norm360(media.strike)) % 360;
+  const dip = Math.round(media.dip);
   const lng = src.reduce((s, f) => s + f.geometry.coordinates[0], 0) / src.length;
   const lat = src.reduce((s, f) => s + f.geometry.coordinates[1], 0) / src.length;
 
@@ -129,21 +131,21 @@ export function averageMeasurements(features) {
     `Average of n=${src.length} planes. ` +
     `Source data (RHR strike/dip): ${list}. ` +
     `Mean (RHR): ${rhr(strike, dip)}. ` +
-    `SD: strike ±${round(strikeSd, 1)}°, dip ±${round(dipSd, 1)}°, ` +
-    `poles ±${round(poleSd, 1)}°.`;
+    `SD: strike ±${round(strikeSd)}°, dip ±${round(dipSd)}°, ` +
+    `poles ±${round(poleSd)}°.`;
 
   return {
     lngLat: [lng, lat],
-    strike: round(strike, 1),
-    dip: round(dip, 1),
+    strike,
+    dip,
     type,
     unitId: unit,
     overturned,
     faultSense,
     n: src.length,
-    strikeSd: round(strikeSd, 1),
-    dipSd: round(dipSd, 1),
-    poleSd: round(poleSd, 1),
+    strikeSd: round(strikeSd),
+    dipSd: round(dipSd),
+    poleSd: round(poleSd),
     sourceIds: src.map((f) => f.properties.id),
     notes,
   };
