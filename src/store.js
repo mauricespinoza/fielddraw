@@ -26,6 +26,7 @@ import {
 } from './symbology.js';
 import { defaultStraboStyle, sanitizeStraboStyle } from './strabo/style.js';
 import { STRABO_DATASET_COLORS } from './strabo/layers.js';
+import { featureFingerprint, resolvePlan, subsetBySpot } from './strabo/sync.js';
 import {
   CONTROL_POINT_KIND,
   CONTROL_POINT_TOOL,
@@ -2322,6 +2323,10 @@ function straboPatch(list, features, layers) {
       observacion: raw.observacion || EMPTY_COLLECTION(),
       lineas: raw.lineas || EMPTY_COLLECTION(),
       loadedAt: raw.loadedAt || null,
+      baseline: raw.baseline && typeof raw.baseline === 'object' ? raw.baseline : null,
+      syncedAt: raw.syncedAt || raw.loadedAt || null,
+      field: typeof raw.field === 'string' ? raw.field : '',
+      geologist: typeof raw.geologist === 'string' ? raw.geologist : '',
       visible: raw.visible,
       opacity: raw.opacity,
     };
@@ -2344,6 +2349,8 @@ function straboPatch(list, features, layers) {
       observacion: EMPTY_COLLECTION(),
       lineas: EMPTY_COLLECTION(),
       loadedAt: null,
+      baseline: null,
+      syncedAt: null,
     });
   }
   for (const d of out) if (!d.color) d.color = nextStraboColor(out.filter((x) => x.color));
@@ -2434,7 +2441,7 @@ export function addStraboDataset(data) {
   if (previo && previo.adopted) {
     throw new Error(
       `“${previo.datasetName}” is already loaded and was opened for editing; ` +
-        'its features are in the drawing. Remove it from the list first to load it again.',
+        'its features are in the drawing. Use ⟳ on its row to bring in the changes made since.',
     );
   }
   const key = previo ? previo.key : nextStraboKey(list);
@@ -2450,7 +2457,15 @@ export function addStraboDataset(data) {
     observacion: data.observacion || EMPTY_COLLECTION(),
     lineas: data.lineas || EMPTY_COLLECTION(),
     loadedAt: new Date().toISOString(),
+    // Huellas de cada spot tal como llegó: contra ellas se mide, al
+    // actualizar, qué cambió arriba (ver `strabo/sync.js`).
+    baseline: data.baseline || null,
+    // Campaña y geólogo con que se bajó: actualizar los reutiliza, para que
+    // lo que llegue nuevo no se distinga de lo anterior por esos campos.
+    field: data.field || '',
+    geologist: data.geologist || '',
   };
+  record.syncedAt = record.loadedAt;
   const nueva = previo ? list.map((d) => (d.key === key ? record : d)) : [...list, record];
   const layers = state.layers.slice();
   if (!previo) layers.splice(belowDrawing(layers), 0, straboLayerEntry(record));
@@ -2525,10 +2540,7 @@ export function setStraboLocked(key, locked) {
     return null;
   }
 
-  const r = adoptStrabo(d, { units: state.units, newId });
-  // El nombre del dataset viaja con cada elemento: si el registro se pierde,
-  // la fila se rehace con su nombre y no como «Dataset 3».
-  for (const f of r.features) f.properties.straboDatasetName = d.datasetName;
+  const r = adoptFromDataset(d, d, state.units);
 
   pushHistorySnapshot(snapshotOf(['features', 'units', 'straboDatasets', 'layers', 'straboFilters']));
   const straboDatasets = state.straboDatasets.map((x) =>
@@ -2553,6 +2565,84 @@ export function setStraboLocked(key, locked) {
     selection: [],
   });
   return r;
+}
+
+/**
+ * Adopta lo de un dataset (entero o un subconjunto de sus spots) dejando cada
+ * elemento marcado con el nombre del dataset y con la huella de cómo entró:
+ * es lo que permite saber después si se editó aquí.
+ */
+function adoptFromDataset(d, data, units) {
+  const r = adoptStrabo({ ...data, key: d.key, datasetName: d.datasetName }, { units, newId });
+  for (const f of r.features) {
+    // El nombre del dataset viaja con cada elemento: si el registro se
+    // pierde, la fila se rehace con su nombre y no como «Dataset 3».
+    f.properties.straboDatasetName = d.datasetName;
+    f.properties.straboLocalHash = featureFingerprint(f);
+  }
+  return r;
+}
+
+/**
+ * Aplica una actualización ya revisada (ver `strabo/sync.js`).
+ *
+ * Un dataset sin abrir solo cambia su capa de consulta: no hay nada local que
+ * proteger. Uno abierto cambia el dibujo spot por spot —quita lo que se borró
+ * o se reemplaza, adopta lo nuevo o lo reemplazado— y deja intacto todo lo
+ * demás, editado o no. Va al historial en un solo paso.
+ *
+ * @param {string} key
+ * @param {{data: object, baseline: object, plan: object, choices?: object}} update
+ *   `data` son las tres colecciones recién bajadas; `baseline`, sus huellas.
+ * @returns {{added: number, removed: number, warnings: string[]}}
+ */
+export function applyStraboUpdate(key, { data, baseline, plan, choices = {} }) {
+  const d = state.straboDatasets.find((x) => x.key === key);
+  if (!d) throw new Error('That dataset is no longer loaded.');
+  const syncedAt = new Date().toISOString();
+
+  if (!d.adopted) {
+    set({
+      straboDatasets: state.straboDatasets.map((x) =>
+        x.key === key
+          ? {
+              ...x,
+              estructuras: data.estructuras,
+              observacion: data.observacion,
+              lineas: data.lineas,
+              baseline,
+              syncedAt,
+            }
+          : x,
+      ),
+      straboFilters: { structures: null, observations: null, lines: null },
+    });
+    return {
+      added: plan.added.length,
+      removed: plan.removed.length,
+      replaced: plan.replaced.length,
+      warnings: [],
+    };
+  }
+
+  const { remove, add } = resolvePlan(plan, choices);
+  const quitar = new Set(remove.map(String));
+  const quedan = state.features.filter(
+    (f) => !(keyOf(f) === key && quitar.has(String(f.properties.straboSpotId))),
+  );
+  const quitados = state.features.length - quedan.length;
+  const r = add.length
+    ? adoptFromDataset(d, subsetBySpot(data, add), state.units)
+    : { features: [], units: state.units, warnings: [] };
+
+  pushHistorySnapshot(snapshotOf(['features', 'units', 'straboDatasets']));
+  set({
+    features: [...quedan, ...r.features],
+    units: r.units,
+    straboDatasets: state.straboDatasets.map((x) => (x.key === key ? { ...x, baseline, syncedAt } : x)),
+    selection: [],
+  });
+  return { added: r.features.length, removed: quitados, warnings: r.warnings };
 }
 
 /** Datasets listos para guardar, con su visibilidad y opacidad de capa. */

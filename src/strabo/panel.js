@@ -19,6 +19,7 @@ import {
 } from './spots.js';
 import { mergeGeologicUnitTags } from './mapping.js';
 import { featuresToSpots, uploadBreakdown, uploadableCount } from './upload.js';
+import { baselineOf, planIsEmpty, planUpdate } from './sync.js';
 
 /**
  * Panel de StraboSpot: sesión, elegir proyecto y dataset, bajar spots y subir
@@ -72,6 +73,7 @@ export function initStraboPanel({ message, busy }) {
     if (store.changed('features') || store.changed('straboDatasets')) render();
     if (store.changed('straboDatasets') || store.changed('layers')) renderDatasets();
     if (store.changed('straboDatasets')) renderFilters();
+    if (store.changed('straboDatasets') && pending) renderReview();
     if (store.changed('straboStyle')) syncSizeSliders();
   });
 
@@ -86,6 +88,8 @@ export function render() {
   const signedIn = api.isAuthenticated();
 
   $('strabo-auth').classList.toggle('hidden', signedIn);
+  // El botón de actualizar depende de la sesión.
+  renderDatasets();
   $('strabo-session').classList.toggle('hidden', !signedIn);
   $('strabo-user').textContent = api.currentUser() || '';
 
@@ -175,6 +179,13 @@ export function removeStraboDatasetAsk(key) {
   onMessage(`“${d.datasetName}” removed from the map.`, 'info');
 }
 
+/** «4 Oct 14:05»: cuándo se comparó por última vez con StraboSpot. */
+function shortDate(iso) {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return '';
+  return t.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
 function iconButton(text, title, onClick) {
   const b = document.createElement('button');
   b.type = 'button';
@@ -211,7 +222,9 @@ function renderDatasets() {
     main.textContent = d.datasetName;
     const sub = document.createElement('span');
     sub.className = 'sp-sub';
-    sub.textContent = `${d.locked ? 'Locked' : 'Editing'} · ${datasetSummary(d)}`;
+    sub.textContent = `${d.locked ? 'Locked' : 'Editing'} · ${datasetSummary(d)}${
+      d.syncedAt ? ` · synced ${shortDate(d.syncedAt)}` : ''
+    }`;
     txt.append(main, sub);
 
     const eye = iconButton(
@@ -229,7 +242,15 @@ function renderDatasets() {
     const del = iconButton('✕', `Remove ${d.datasetName} from the map`, () =>
       removeStraboDatasetAsk(d.key),
     );
-    li.append(sw, txt, eye, lock, del);
+    const upd = iconButton(
+      '⟳',
+      api.isAuthenticated()
+        ? `Check ${d.datasetName} for changes made in StraboSpot`
+        : 'Sign in to StraboSpot to check for changes',
+      () => checkStraboUpdate(d.key),
+    );
+    upd.disabled = !api.isAuthenticated() || !d.datasetId;
+    li.append(sw, txt, upd, eye, lock, del);
     list.appendChild(li);
   }
 }
@@ -578,24 +599,11 @@ async function doDownload() {
 
   onBusy('Downloading spots…');
   try {
-    const spots = await api.getAllDatasetSpots(datasetId);
-
-    // Los tags del proyecto son de donde sale la columna Unit, igual que en
-    // el plugin de QGIS.
-    let spotTags = {};
-    try {
-      spotTags = await getProjectTags($('strabo-project').value);
-    } catch {
-      /* sin tags se sigue igual: Unit queda vacío */
-    }
-
-    const rows = flattenPointFeatures(spots.point, spotTags);
-    const estructuras = rowsToGeoJSON(buildEstructuras(rows, { field, geologist }));
-    const observacion = rowsToGeoJSON(buildObservacion(rows, { field, geologist }));
-    const lineas = {
-      type: 'FeatureCollection',
-      features: buildLineasPoligonos([...spots.line, ...spots.polygon], { field, geologist, spotTags }),
-    };
+    const { estructuras, observacion, lineas, baseline } = await fetchDataset(
+      datasetId,
+      $('strabo-project').value,
+      { field, geologist },
+    );
 
     const datasetName = dataset ? dataset.name : String(datasetId);
     /*
@@ -610,6 +618,9 @@ async function doDownload() {
       estructuras,
       observacion,
       lineas,
+      baseline,
+      field,
+      geologist,
     });
 
     const total =
@@ -630,6 +641,261 @@ async function doDownload() {
     onBusy(null);
     render();
   }
+}
+
+/**
+ * Baja un dataset y lo aplana a las tres colecciones de consulta, junto con
+ * las huellas de cada spot tal como llegó (ver `sync.js`).
+ */
+async function fetchDataset(datasetId, projectId, { field = '', geologist = '' } = {}) {
+  const spots = await api.getAllDatasetSpots(datasetId);
+
+  // Los tags del proyecto son de donde sale la columna Unit, igual que en
+  // el plugin de QGIS.
+  let spotTags = {};
+  try {
+    spotTags = await getProjectTags(projectId);
+  } catch {
+    /* sin tags se sigue igual: Unit queda vacío */
+  }
+
+  const rows = flattenPointFeatures(spots.point, spotTags);
+  return {
+    estructuras: rowsToGeoJSON(buildEstructuras(rows, { field, geologist })),
+    observacion: rowsToGeoJSON(buildObservacion(rows, { field, geologist })),
+    lineas: {
+      type: 'FeatureCollection',
+      features: buildLineasPoligonos([...spots.line, ...spots.polygon], { field, geologist, spotTags }),
+    },
+    baseline: baselineOf(spots),
+  };
+}
+
+/* ---------- actualizar: ver lo que cambiaron los demás ---------- */
+
+/**
+ * La actualización pendiente de revisar: lo bajado, sus huellas y el plan.
+ * Nada se aplica hasta que se confirma, y mientras tanto el dibujo puede
+ * seguir cambiando, así que al confirmar el plan se vuelve a calcular.
+ */
+let pending = null;
+
+const featuresOf = (key) =>
+  store.getState().features.filter((f) => f.properties.straboDataset === key);
+
+function makePlan(d, remote) {
+  return planUpdate({
+    baseline: d.baseline,
+    remote: remote.baseline,
+    data: remote,
+    adopted: d.adopted,
+    features: featuresOf(d.key),
+  });
+}
+
+/** Firma de los conflictos, para saber si cambiaron entre revisar y aplicar. */
+const conflictKey = (plan) => plan.conflicts.map((c) => `${c.kind}:${c.spotId}`).sort().join('|');
+
+export async function checkStraboUpdate(key) {
+  const d = store.getState().straboDatasets.find((x) => x.key === key);
+  if (!d) return;
+  if (!api.isAuthenticated()) {
+    onMessage('Sign in to StraboSpot to check for updates.', 'warn');
+    return;
+  }
+  if (!d.datasetId) {
+    onMessage(`“${d.datasetName}” no longer knows which StraboSpot dataset it came from.`, 'warn');
+    return;
+  }
+  onBusy(`Checking “${d.datasetName}” for changes…`);
+  try {
+    const remote = await fetchDataset(d.datasetId, d.projectId, { field: d.field, geologist: d.geologist });
+    const plan = makePlan(d, remote);
+    if (planIsEmpty(plan)) {
+      // Nada que cambiar, pero las huellas sí se renuevan: si el dataset se
+      // bajó antes de que existieran, desde ahora ya se pueden comparar.
+      store.applyStraboUpdate(key, { data: remote, baseline: remote.baseline, plan });
+      onMessage(`“${d.datasetName}” is up to date.`, 'info');
+      pending = null;
+    } else {
+      pending = { key, remote, plan, choices: {} };
+    }
+  } catch (err) {
+    onMessage(`Could not check for updates: ${err.message}`, 'warn');
+  } finally {
+    onBusy(null);
+    renderReview();
+  }
+}
+
+/** «3 new, 1 changed, 2 removed», saltándose lo que no hay. */
+function planSummary(plan, adopted) {
+  const partes = [
+    [plan.added.length, 'new'],
+    [plan.replaced.length, adopted ? 'changed (not edited here)' : 'changed'],
+    [plan.removed.length, adopted ? 'removed (not edited here)' : 'removed'],
+  ]
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} ${label}`);
+  return partes.join(', ');
+}
+
+const CONFLICT_TEXT = {
+  changed: 'Changed in StraboSpot and edited here',
+  removed: 'Removed in StraboSpot, edited here',
+  'deleted-here': 'Changed in StraboSpot, deleted here',
+};
+
+function renderReview() {
+  const box = $('strabo-review');
+  box.replaceChildren();
+  const d = pending && store.getState().straboDatasets.find((x) => x.key === pending.key);
+  if (!d) {
+    pending = null;
+    box.classList.add('hidden');
+    return;
+  }
+  box.classList.remove('hidden');
+  const { plan } = pending;
+
+  const h = document.createElement('h3');
+  h.className = 'palette-label';
+  h.textContent = `Update “${d.datasetName}”`;
+  box.appendChild(h);
+
+  const resumen = planSummary(plan, d.adopted);
+  if (resumen) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = `Spots: ${resumen}.${plan.unchanged ? ` ${plan.unchanged} unchanged.` : ''}`;
+    box.appendChild(p);
+  }
+  if (plan.noBaseline) {
+    const p = document.createElement('p');
+    p.className = 'hint footnote';
+    p.textContent = d.adopted
+      ? 'This dataset was loaded before changes were tracked: only spots that are not in your ' +
+        'drawing can be added this time. From now on, changes will show up here.'
+      : 'This dataset was loaded before changes were tracked: its layer is simply reloaded.';
+    box.appendChild(p);
+  }
+
+  if (plan.conflicts.length) {
+    const p = document.createElement('p');
+    p.className = 'hint footnote';
+    p.textContent =
+      `${plan.conflicts.length} spot(s) changed on both sides. Choose for each one; ` +
+      'what you keep here is never lost unless you pick “Theirs”.';
+    box.appendChild(p);
+
+    const todos = document.createElement('div');
+    todos.className = 'strabo-review-all';
+    for (const [label, value] of [['Keep all mine', 'mine'], ['Take all theirs', 'theirs']]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        for (const c of plan.conflicts) pending.choices[c.spotId] = value;
+        renderReview();
+      });
+      todos.appendChild(b);
+    }
+    box.appendChild(todos);
+
+    const ul = document.createElement('ul');
+    ul.className = 'strabo-conflicts';
+    for (const c of plan.conflicts) {
+      const li = document.createElement('li');
+      const txt = document.createElement('span');
+      txt.className = 'sp-text';
+      const main = document.createElement('span');
+      main.className = 'sp-main';
+      main.textContent = c.name || `Spot ${c.spotId}`;
+      const sub = document.createElement('span');
+      sub.className = 'sp-sub';
+      sub.textContent = CONFLICT_TEXT[c.kind];
+      txt.append(main, sub);
+      const choice = document.createElement('span');
+      choice.className = 'seg';
+      const actual = pending.choices[c.spotId] === 'theirs' ? 'theirs' : 'mine';
+      for (const [label, value] of [['Mine', 'mine'], ['Theirs', 'theirs']]) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.classList.toggle('active', actual === value);
+        b.setAttribute('aria-pressed', String(actual === value));
+        b.addEventListener('click', () => {
+          pending.choices[c.spotId] = value;
+          renderReview();
+        });
+        choice.appendChild(b);
+      }
+      li.append(txt, choice);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+
+  const acciones = document.createElement('div');
+  acciones.className = 'field-row';
+  const aplicar = document.createElement('button');
+  aplicar.className = 'pill accent';
+  aplicar.textContent = 'Apply update';
+  aplicar.addEventListener('click', applyPending);
+  const cancelar = document.createElement('button');
+  cancelar.className = 'pill';
+  cancelar.textContent = 'Cancel';
+  cancelar.addEventListener('click', () => {
+    pending = null;
+    renderReview();
+  });
+  acciones.append(aplicar, cancelar);
+  box.appendChild(acciones);
+}
+
+function applyPending() {
+  if (!pending) return;
+  const d = store.getState().straboDatasets.find((x) => x.key === pending.key);
+  if (!d) {
+    pending = null;
+    renderReview();
+    return;
+  }
+  /*
+   * Entre revisar y aplicar se pudo seguir editando. El plan se rehace con el
+   * dibujo de ahora; si los conflictos ya no son los mismos, se vuelve a
+   * enseñar en vez de aplicar decisiones tomadas sobre otra situación.
+   */
+  const plan = makePlan(d, pending.remote);
+  if (conflictKey(plan) !== conflictKey(pending.plan)) {
+    pending.plan = plan;
+    onMessage('The drawing changed while reviewing: check the list again before applying.', 'warn');
+    renderReview();
+    return;
+  }
+  const r = store.applyStraboUpdate(d.key, {
+    data: pending.remote,
+    baseline: pending.remote.baseline,
+    plan,
+    choices: pending.choices,
+  });
+  const partes = [];
+  if (d.adopted) {
+    if (r.added) partes.push(`${r.added} feature(s) brought in`);
+    if (r.removed) partes.push(`${r.removed} removed`);
+    const mias = plan.conflicts.filter((c) => pending.choices[c.spotId] !== 'theirs').length;
+    if (mias) partes.push(`${mias} conflict(s) kept as yours`);
+  } else {
+    const s2 = planSummary(plan, false);
+    if (s2) partes.push(s2);
+  }
+  onMessage(
+    `“${d.datasetName}” updated${partes.length ? `: ${partes.join(', ')}` : ''}. Undo reverts it.` +
+      (r.warnings && r.warnings.length ? ` ${r.warnings.join(' ')}` : ''),
+    'info',
+  );
+  pending = null;
+  renderReview();
 }
 
 /** `/db/project/{id}` trae los tags con la lista de spots de cada uno. */

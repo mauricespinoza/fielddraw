@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync reshape dem structure shortcuts scale hole attrs split adopt thickness section planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -2679,9 +2679,50 @@ volver a bajarlos. Si el registro de un dataset se pierde pero sus elementos
 siguen en el dibujo, la fila se rehace sola, cerrada y con su nombre; y aunque
 un archivo diga que hay dos abiertos, al cargarlo queda abierto solo el primero.
 
-Volver a bajar un dataset que nunca se abrió reemplaza su capa de consulta
-—es la forma de traer lo último que subió su autor—. Uno que ya se abrió se
-rechaza: sus elementos están en el dibujo y se duplicarían.
+Volver a bajar desde el desplegable un dataset que nunca se abrió reemplaza su
+capa de consulta. Uno que ya se abrió se rechaza: sus elementos están en el
+dibujo y se duplicarían. Para eso está **actualizar**.
+
+### Actualizar: ver lo que cambiaron los demás
+
+El botón **⟳** de cada dataset (en el panel StraboSpot, con sesión iniciada)
+vuelve a bajarlo y lo compara **spot por spot** con lo que había la última vez
+(`src/strabo/sync.js`). Nada se aplica sin revisar: primero se enseña cuántos
+spots son nuevos, cuántos cambiaron y cuántos se borraron allá.
+
+Hay dos lados que pueden haberse movido, y cada uno se mide con una huella:
+
+- **Arriba.** Al bajar un dataset se guarda una huella de cada spot tal como
+  venía (`baseline`, `{spotId: hash}`), calculada sobre el JSON del spot con
+  las claves ordenadas. Una huella distinta es un spot modificado; uno que falta
+  se borró; uno que no estaba es nuevo.
+- **Aquí.** Al adoptar, cada elemento guarda la huella de cómo entró
+  (`straboLocalHash`). Si ya no coincide, se editó. El id y la fecha de
+  creación no cuentan —cambian al cortar un elemento sin que cambie el dato—;
+  la geometría y los atributos sí.
+
+| Arriba \ Aquí | sin tocar | editado o borrado aquí |
+| --- | --- | --- |
+| nuevo | se añade | — |
+| modificado | se reemplaza | **conflicto** |
+| borrado | se quita | **conflicto** |
+| igual | nada | nada: manda lo de aquí |
+
+Un conflicto **nunca se resuelve solo**: la revisión lo lista con el nombre del
+spot y se elige *Mine* o *Theirs* (o todos de una vez). Por omisión gana lo de
+aquí, que es lo único que no se puede volver a bajar. Si mientras se revisa se
+sigue editando y los conflictos cambian, al aplicar se vuelve a enseñar la
+lista en vez de aplicar decisiones tomadas sobre otra situación.
+
+La actualización va al historial en **un solo paso**: deshacer devuelve el
+dibujo y las huellas de antes. Un dataset que nunca se abrió no tiene nada
+local que proteger: simplemente recarga su capa.
+
+Los datasets bajados antes de que existieran las huellas no tienen con qué
+comparar: la primera actualización solo **añade** los spots que no están en el
+dibujo —sin tocar los que están, porque no hay forma de saber si cambiaron— y
+desde ahí ya compara. Por la misma razón, un elemento sin huella propia se
+trata como editado: ante la duda, se pregunta.
 
 **Sesión.** HTTP Basic con el correo como usuario. Las credenciales viven
 **solo en memoria**, nunca en localStorage: dejarlas escritas en el disco de

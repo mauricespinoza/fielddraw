@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.42.0';
+export const APP_VERSION = '0.43.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -44,7 +44,7 @@ export const APP_TOOLS = [
   ['Scale', 'Pick a working scale, snap the map to it, calibrate the screen.'],
   ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
   ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
-  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it. Upload the drawing as a new dataset.'],
+  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it, ⟳ to bring in what others changed. Upload the drawing as a new dataset.'],
   ['Project', 'Save/open the project, export the map as an SVG/PNG/PDF sheet.'],
 ];
 
@@ -54,6 +54,18 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.43.0',
+    highlights: [
+      'Update a StraboSpot dataset with ⟳ to see what its author changed since you loaded it. You review first; when a spot changed on both sides, you choose which version stays.',
+    ],
+    items: [
+      'Botón ⟳ en cada dataset del panel StraboSpot: vuelve a bajarlo y lo compara spot por spot con lo que había al bajarlo (cada spot guarda una huella). Muestra cuántos son nuevos, cuántos cambiaron y cuántos se borraron allá, y no aplica nada hasta confirmar.',
+      'En un dataset ya abierto, lo nuevo entra, y lo cambiado o borrado allá se actualiza solo si aquí no se tocó. Si se editó en los dos lados —o se borró aquí y se cambió allá— es un conflicto: se elige «Mine» o «Theirs» para cada uno, y por omisión se queda lo de aquí.',
+      'Cada elemento adoptado guarda la huella de cómo entró; cortarlo no cuenta como editarlo, mover un vértice o cambiarle el tipo sí. La actualización va al historial en un paso: deshacer la revierte.',
+      'Un dataset sin abrir simplemente recarga su capa. Los bajados antes de esta versión no tienen huellas: la primera actualización solo añade lo que falta y desde ahí ya compara.',
+    ],
+  },
   {
     version: '0.42.0',
     highlights: [
