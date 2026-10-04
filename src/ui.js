@@ -12,6 +12,8 @@ import {
 import { closeAttrs, importedEntries, importedTitle, openAttrs } from './attrs.js';
 import { COMPASS_DIP_SIGMA_DEG, COMPASS_STRIKE_SIGMA_DEG, measureThickness } from './thickness.js';
 import { initSectionPanel, renderSectionPanel, runSection } from './sectionPanel.js';
+import { buildSection } from './section.js';
+import { sketcherDocument } from './sectionExport.js';
 import {
   CERTAINTIES,
   CERTAINTY_BY_ID,
@@ -3773,6 +3775,26 @@ function downloadProfileCSV() {
   downloadText(profileCSV(result), `${profileBaseName()}.csv`, 'text/csv;charset=utf-8');
 }
 
+/**
+ * El perfil topográfico como proyecto de StructuralSketcher (solo la
+ * topografía: los manteos y cruces se agregan desde «Structural section»).
+ */
+function downloadProfileSketcher() {
+  const st = store.getState();
+  const result = st.profile;
+  if (!result || !result.coords || result.coords.length < 2) return;
+  const section = buildSection({ coords: result.coords, profile: result });
+  const doc = sketcherDocument(section, {
+    name: `FieldDraw profile ${Math.round(section.azimuth)}°`,
+    exaggeration: 1,
+  });
+  downloadText(
+    JSON.stringify(doc),
+    `${profileBaseName()}.sketch.json`,
+    'application/json',
+  );
+}
+
 /** Nombre de archivo de las salidas del perfil: la fecha basta para ordenarlas. */
 function profileBaseName() {
   return `profile-${new Date().toISOString().slice(0, 10)}`;
@@ -6349,6 +6371,7 @@ export function initUI() {
   });
   $('pickdips-cancel').addEventListener('click', () => store.cancelPickDips());
   $('btn-profile-csv').addEventListener('click', downloadProfileCSV);
+  $('btn-profile-sketcher').addEventListener('click', downloadProfileSketcher);
   $('btn-profile-png').addEventListener('click', downloadProfilePNG);
   $('btn-profile-svg').addEventListener('click', downloadProfileSVG);
   wireProfilePointer();

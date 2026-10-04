@@ -18,6 +18,7 @@ import {
   startHeadingCapture,
 } from './deviceOrientation.js';
 import { downloadBlob } from './persistence.js';
+import { averageMeasurements } from './average.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -58,6 +59,7 @@ export function initStereogramPanel({ message } = {}) {
     onMessage(`${highlighted.size} measurement(s) selected on the map.`, 'info');
   });
   $('btn-stereo-clear-lasso').addEventListener('click', clearHighlight);
+  $('btn-stereo-average').addEventListener('click', createAverage);
 
   $('stereo-show-poles').addEventListener('change', (e) => {
     showPoles = e.target.checked;
@@ -224,8 +226,57 @@ function renderPlot() {
   }
   $('stereo-legend-count').textContent = `${data.points.length}`;
 
+  $('btn-stereo-average').disabled = (usandoLazo ? statSource.length : data.points.length) < 2;
   $('btn-stereo-select-map').disabled = highlighted.size === 0;
   $('btn-stereo-clear-lasso').disabled = highlighted.size === 0;
+}
+
+/**
+ * Crea el plano promedio de lo que se está mirando —lo lassado si hay algo,
+ * si no lo graficado— y pregunta si los datos originales se quitan. Todo en
+ * un solo paso de historial: deshacer devuelve los originales y quita el
+ * promedio juntos.
+ */
+function createAverage() {
+  const st = store.getState();
+  const data = stereogramData(st.features, st.selection);
+  const ids = new Set(
+    highlighted.size > 0 ? [...highlighted] : data.points.map((p) => p.id),
+  );
+  const fuente = st.features.filter((f) => ids.has(f.properties.id));
+  const avg = averageMeasurements(fuente);
+  if (!avg || avg.n < 2) {
+    onMessage(
+      avg ? 'Select at least two planes to average.' : 'The poles are too scattered to average.',
+      'warn',
+    );
+    return;
+  }
+  const quitar = confirm(
+    `Average of ${avg.n} planes: ${formatStrikeDip(avg.strike, avg.dip)}` +
+      ` (SD strike ±${avg.strikeSd}°, dip ±${avg.dipSd}°).\n\n` +
+      'Delete the original measurements?\n\nOK = replace them with the average · Cancel = keep them and add the average.',
+  );
+  const f = store.createMeasurement({
+    lngLat: avg.lngLat,
+    strike: avg.strike,
+    dip: avg.dip,
+    type: avg.type,
+    overturned: avg.overturned,
+    faultSense: avg.faultSense,
+    unitId: avg.unitId,
+    line: null,
+    method: 'average',
+    note: avg.notes,
+    quality: { avgN: avg.n, avgStrikeSd: avg.strikeSd, avgDipSd: avg.dipSd },
+    removeIds: quitar ? avg.sourceIds : [],
+  });
+  highlighted = new Set();
+  onMessage(
+    `Average plane ${formatStrikeDip(f.properties.strike, f.properties.dip)} created from ${avg.n} measurements` +
+      `${quitar ? ' (originals deleted — undo restores them)' : ''}.`,
+    'info',
+  );
 }
 
 function clearHighlight() {

@@ -1089,6 +1089,12 @@
           <label class="field"><span>Project</span>
             <select id="strabo-project"><option value="">Select a project…</option></select>
           </label>
+          <div class="field-row strabo-new-project">
+            <label class="field"><span>New project</span>
+              <input type="text" id="strabo-project-name" placeholder="Project name" />
+            </label>
+            <button class="pill" id="strabo-create-project" disabled title="Create an empty project in your StraboSpot account">Create</button>
+          </div>
           <label class="field"><span>Dataset</span>
             <select id="strabo-dataset"><option value="">Select a dataset…</option></select>
           </label>
@@ -1109,6 +1115,10 @@
             it is sent back as it is. Measurements go up as planar orientations, lines as traces
             and polygons as surface features, so StraboSpot symbolises them on its own.
           </p>
+          <label class="check">
+            <input type="checkbox" id="strabo-upload-selected" />
+            <span id="strabo-upload-selected-label">Only the selected features</span>
+          </label>
           <label class="field"><span>New dataset</span>
             <input type="text" id="strabo-dataset-name" placeholder="FieldDraw 2026-09-15" />
           </label>
@@ -1123,6 +1133,15 @@
           </p>
           <p class="hint footnote" id="strabo-upload-summary"></p>
           <button class="pill wide" id="strabo-upload" disabled>Nothing to upload</button>
+          <button class="pill wide" id="strabo-add-to-dataset" disabled
+            title="Append these features to the dataset chosen above, keeping everything already in it">
+            Add to the selected dataset
+          </button>
+          <p class="hint footnote">
+            “Add to the selected dataset” appends to the dataset chosen above instead of creating a
+            new one. StraboSpot can only replace a whole dataset, so FieldDraw re-reads it, sends it
+            back with the new spots at the end, saves a backup file and checks the result.
+          </p>
         </div>
       </aside>
 
@@ -1391,6 +1410,8 @@
             title="Project the structural data onto this profile with apparent dip"
           >Structural section</button>
           <button class="pill" id="btn-profile-csv" title="The sampled elevations as a table">CSV</button>
+          <button class="pill" id="btn-profile-sketcher" title="Topography as a StructuralSketcher project (.sketch.json)">Sketcher</button>
+          <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
           <button class="pill" id="btn-profile-png" title="Save the profile as a picture, laid out for a report">PNG</button>
           <button class="pill" id="btn-profile-svg" title="Save the profile as vector art, editable in Illustrator or Inkscape">SVG</button>
           <button class="icon-btn close-x" id="btn-close-profile" aria-label="Close profile">✕</button>
@@ -1427,6 +1448,7 @@
           <button class="pill" id="btn-section-svg">SVG</button>
           <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
           <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
+          <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
           <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
         </header>
         <div class="sv-body">
@@ -1511,6 +1533,10 @@
             <div class="sv-list" id="stereo-legend"></div>
             <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>
             <button class="pill wide" id="btn-stereo-clear-lasso" disabled>Clear lasso</button>
+            <button class="pill wide accent" id="btn-stereo-average" disabled
+              title="Create one plane with the mean strike/dip of the plotted (or lassoed) planes, placed at their centroid">
+              Create average plane
+            </button>
             <p class="hint footnote">
               Drag on the net to lasso a subset of poles — with something lassoed, Mean vector and
               Beta axis are computed from just those poles.

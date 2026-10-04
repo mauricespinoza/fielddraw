@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.44.0';
+export const APP_VERSION = '0.45.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,19 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.45.0',
+    highlights: [
+      'Zoom-to-all-data button next to the map zoom; average plane from the stereogram; create StraboSpot projects and add just the selected features to a dataset; profiles open in StructuralSketcher.',
+    ],
+    items: [
+      'Botón «Zoom to all data» junto al zoom del mapa: encuadra el dibujo, las capas importadas y los spots de StraboSpot.',
+      'Stereogram · «Create average plane»: crea un plano con el rumbo/manteo medio (vector medio de los polos) de lo graficado o lassado, en el centroide de sus posiciones, con el tipo y la unidad de la mayoría. Pregunta si se borran los originales (un solo paso de deshacer). La nota guarda n, cada dato fuente en RHR (rumbo/manteo) y la desviación estándar.',
+      'StraboSpot: crear un proyecto nuevo desde FieldDraw; subir solo lo seleccionado; y añadir lo subible a un dataset existente (se relee, se descarga un respaldo, se envía lo que había más lo nuevo y se verifica).',
+      'Los desplegables ya no salen con letra blanca sobre fondo blanco: la lista emergente usa los colores del panel.',
+      'StructuralSketcher: el proyecto exportado se abre sin cambios en la webapp (comprobado contra la app real), se llama .sketch.json como los que guarda ella, y la topografía sale con un color que se ve sobre su lienzo claro. El perfil topográfico exporta también su propio proyecto, y ambas vistas enlazan a la webapp.',
+    ],
+  },
   {
     version: '0.44.0',
     highlights: [

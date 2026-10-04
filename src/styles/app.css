@@ -3659,3 +3659,39 @@ input[type='radio'] {
     padding: 6px 12px;
   }
 }
+
+/* ---------- desplegables nativos ---------- */
+/*
+ * Los `<select>` toman el texto claro del panel pero su lista emergente la
+ * pinta el navegador: sin un fondo propio salía blanca con letra blanca. Se
+ * declara el esquema oscuro —para que el sistema pinte la lista y la flecha
+ * en oscuro— y además cada opción con su par de colores explícito, que es lo
+ * que respetan los navegadores que ignoran `color-scheme`.
+ */
+select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: var(--panel-solid);
+  color: var(--text);
+}
+
+select option:checked {
+  background-color: #1f6f66;
+  color: #fff;
+}
+
+select option:disabled {
+  color: var(--muted);
+}
+
+/* Enlace con aspecto de botón: `a.pill` lleva el subrayado y el color de enlace. */
+a.link-pill {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--accent);
+  white-space: nowrap;
+}

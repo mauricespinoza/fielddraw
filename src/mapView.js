@@ -412,6 +412,7 @@ export function createMapView({
   map.boxZoom.disable();
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
+  map.addControl(fitAllControl(), 'bottom-right');
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
   /*
    * Control de GPS de MapLibre. Se conserva tal cual —trae el marcador, el
@@ -1737,6 +1738,54 @@ export function createMapView({
       }
     }
     return any ? bounds : null;
+  }
+
+  /**
+   * Encuadra TODO lo que hay: el dibujo, las capas importadas y los spots de
+   * StraboSpot aún sin abrir. Devuelve false si no hay nada que encuadrar.
+   */
+  function fitToAllData() {
+    const st = store.getState();
+    const features = [...st.features];
+    for (const l of st.imported) {
+      if (l.geojson && l.geojson.features) features.push(...l.geojson.features);
+    }
+    for (const d of st.straboDatasets) {
+      for (const k of ['estructuras', 'observacion', 'lineas']) {
+        if (d[k] && d[k].features) features.push(...d[k].features);
+      }
+    }
+    const con = features.filter((f) => f.geometry && f.geometry.coordinates);
+    if (con.length === 0) return false;
+    fitToGeoJSON({ features: con }, 60);
+    return true;
+  }
+
+  /** Botón de MapLibre, junto al zoom: ajusta la vista a lo abarcado por los datos. */
+  function fitAllControl() {
+    let container;
+    return {
+      onAdd() {
+        container = document.createElement('div');
+        container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.id = 'btn-fit-all';
+        b.className = 'ctrl-fit-all';
+        b.title = 'Zoom to all data';
+        b.setAttribute('aria-label', 'Zoom to all data');
+        b.innerHTML =
+          '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="display:block;margin:auto">' +
+          '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '<rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="currentColor" opacity=".35"/></svg>';
+        b.addEventListener('click', () => fitToAllData());
+        container.appendChild(b);
+        return container;
+      },
+      onRemove() {
+        container.remove();
+      },
+    };
   }
 
   function fitToGeoJSON(fc, padding = 60, duration = 700) {
