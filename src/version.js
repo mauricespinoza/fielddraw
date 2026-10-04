@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.45.0';
+export const APP_VERSION = '0.46.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,20 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.46.0',
+    highlights: [
+      'A tap now picks points first, then lines, then polygons; stacked points open the multi-select list. Logo top-left with the tool column below it. Imported line layers read their type fields and have a uniform colour and width.',
+    ],
+    items: [
+      'Selección con un toque: prioridad puntos, luego líneas y por último polígonos. Si hay dos o más puntos en el mismo lugar quedan todos seleccionados y aparece la lista de selección múltiple, igual que con el lazo.',
+      'Plano promedio: el cuadro ahora ofrece «Accept and Replace», «Accept and Add» y «Cancel» (cancela la operación). Rumbo, manteo y desviaciones salen en grados enteros.',
+      'Se quitó el botón Locate de la barra: el control de ubicación del mapa, junto al zoom, hace lo mismo. El atajo G sigue funcionando.',
+      'GeoPackage de líneas sin estilo QML: se lee el campo de tipo (y el de certeza, si existe) como con StraboSpot, y cada trazo se pinta con el color del tipo y su patrón de certeza. Cada capa importada tiene además un color y un grosor de línea uniformes en el panel de capas (↺ vuelve al estilo de la capa).',
+      'StraboSpot: un spot que es solo una medición ya no vuelve al bajarlo como medida Y como punto de control. Los spots con muestra siguen entrando en las dos tablas.',
+      'PC y tablet: el logo va arriba a la izquierda y la columna de herramientas queda justo debajo.',
+    ],
+  },
   {
     version: '0.45.0',
     highlights: [

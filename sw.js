@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v51';
+const VERSION = 'v52';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -82,6 +82,7 @@ const SHELL = [
   './src/geometryOps.js',
   './src/idb.js',
   './src/importedFiles.js',
+  './src/importedInfer.js',
   './src/importedStyle.js',
   './src/mapExport.js',
   './src/mapFrame.js',

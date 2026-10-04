@@ -155,7 +155,18 @@ console.log('== deduplicado de observación ==');
   });
   const rows = flattenPointFeatures([s]);
   ok('dos filas crudas', rows.length === 2);
-  ok('una sola observación', buildObservacion(rows).length === 1);
+  // Sin muestra, es solo una medición: no se repite como observación.
+  ok('un spot solo-medición no es observación aparte', buildObservacion(rows).length === 0);
+  // Con muestra sí son dos registros, y las dos filas crudas dan UNA observación.
+  const conMuestra = spot({
+    id: 'd2', name: 'D-2', notes: 'afloramiento',
+    samples: [{ id: 's1', sample_id_name: 'MUE-1' }],
+    orientation_data: [
+      { type: 'planar_orientation', feature_type: 'bedding', strike: 10, dip: 20 },
+      { type: 'planar_orientation', feature_type: 'bedding', strike: 20, dip: 30 },
+    ],
+  });
+  ok('con muestra: una sola observación', buildObservacion(flattenPointFeatures([conMuestra])).length === 1);
   ok('pero dos estructuras', buildEstructuras(rows).length === 2);
 }
 
@@ -733,6 +744,21 @@ console.log('== fallas de StraboSpot <-> falla indiferenciada ==');
   ok('y la indiferenciada sube como falla sin sentido',
      trace.trace_type === 'geologic_struc' && trace.geologic_structure_type === 'fault' && !trace.shear_sense,
      JSON.stringify(trace));
+}
+
+console.log('== lo que FieldDraw sube como medida no vuelve como punto de control ==');
+{
+  const f = {
+    type: 'Feature', id: 'm1',
+    properties: { id: 'm1', geomKind: 'measurement', type: 'bedding', strike: 100, dip: 30, unit: 'Fm. X', unitId: 'u1', note: 'dato' },
+    geometry: { type: 'Point', coordinates: [-70, -33] },
+  };
+  const { collection } = featuresToSpots([f], { units: [{ id: 'u1', name: 'Fm. X', code: 'X', color: '#ff0000' }] });
+  const spots = collection.features;
+  const tags = { [spots[0].properties.id]: ['Fm. X'] };
+  const rows = flattenPointFeatures(spots, tags);
+  ok('vuelve como estructura', buildEstructuras(rows).length === 1);
+  ok('y no como observación', buildObservacion(rows).length === 0);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

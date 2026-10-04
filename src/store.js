@@ -1,3 +1,4 @@
+import { inferLineStyle } from './importedInfer.js';
 import { BASEMAPS } from './basemaps.js';
 import {
   LINE_KIND_BY_STRUCTURE,
@@ -2727,7 +2728,12 @@ export function setStraboFilter(category, values) {
 export function addImportedLayers(list) {
   if (!list.length) return;
   const stamp = Date.now().toString(36);
-  const added = list.map((l, i) => ({ ...l, id: `gpkg-${stamp}-${i}` }));
+  // Una capa de líneas sin estilo propio se pinta según lo que digan sus
+  // campos (tipo, certeza), como los spots de StraboSpot; ver `importedInfer.js`.
+  const added = list.map((l, i) => {
+    const inferred = !l.style && l.kind === 'line' ? inferLineStyle(l.geojson.features) : null;
+    return { ...l, ...(inferred ? { style: inferred } : {}), id: `gpkg-${stamp}-${i}` };
+  });
   // Entran justo debajo del dibujo propio, para no taparlo.
   const entries = added.map((l) => ({
     id: l.id,
@@ -2772,6 +2778,22 @@ export function adoptImported(id) {
     selection: [],
   });
   return r;
+}
+
+/**
+ * Color y grosor UNIFORMES de una capa importada, por encima de cualquier
+ * estilo que traiga. `null` en un campo lo devuelve al de la capa. No va al
+ * historial: es una vista, no un dato.
+ */
+export function setImportedOverride(id, patch) {
+  set({
+    imported: state.imported.map((l) => {
+      if (l.id !== id) return l;
+      const cur = l.override || { color: null, width: null };
+      const next = { ...cur, ...patch };
+      return { ...l, override: next.color === null && next.width === null ? null : next };
+    }),
+  });
 }
 
 export function removeImported(id) {

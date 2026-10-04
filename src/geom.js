@@ -101,12 +101,26 @@ export function pointInPolygon(p, rings) {
 }
 
 /**
- * Elemento bajo el dedo. Prioriza el más cercano al borde; un polígono tocado
- * en su interior cuenta como distancia cero, para que se pueda seleccionar sin
- * tener que apuntar justo al contorno.
+ * Dos puntos que caen a menos de esto uno del otro en pantalla cuentan como
+ * «el mismo lugar»: un toque no puede decir cuál de los dos se quería.
  */
-export function pickFeature(features, screen, project, tolerance) {
-  let best = null;
+const SAME_PLACE_PX = 8;
+
+/**
+ * Elementos bajo el dedo, con una prioridad de selección fija: primero los
+ * PUNTOS, después las LÍNEAS y por último los POLÍGONOS. Si hay un punto al
+ * alcance se elige entre puntos aunque haya una línea o un polígono más
+ * cerca; solo cuando no hay ninguno se pasa a las líneas, y de ahí a los
+ * polígonos. Un polígono tocado en su interior cuenta como distancia cero.
+ *
+ * Devuelve UNA lista: el elemento de la clase ganadora más cercano al toque
+ * o, si son puntos que caen en el mismo lugar, todos ellos —quien llama los
+ * deja seleccionados y la interfaz de selección múltiple deja elegir—.
+ */
+export function pickFeatures(features, screen, project, tolerance) {
+  const puntos = [];
+  let linea = null;
+  let poligono = null;
   for (const f of features) {
     if (!f.geometry) continue;
 
@@ -117,7 +131,7 @@ export function pickFeature(features, screen, project, tolerance) {
     if (f.geometry.type === 'Point') {
       const q = project(f.geometry.coordinates);
       const dist = Math.hypot(screen[0] - q.x, screen[1] - q.y);
-      if (dist <= tolerance + 6 && (!best || dist < best.dist)) best = { feature: f, dist };
+      if (dist <= tolerance + 6) puntos.push({ feature: f, dist, x: q.x, y: q.y });
       continue;
     }
 
@@ -135,12 +149,31 @@ export function pickFeature(features, screen, project, tolerance) {
       const near = nearestOnPolyline(screen, r.pts, r.closed);
       if (near) dist = Math.min(dist, Math.sqrt(near.distSq));
     }
-    if (f.geometry.type === 'Polygon' && pointInPolygon(screen, rings.map((r) => r.pts))) {
-      dist = 0;
+    const esPoligono = f.geometry.type === 'Polygon';
+    if (esPoligono && pointInPolygon(screen, rings.map((r) => r.pts))) dist = 0;
+    if (dist > tolerance) continue;
+    if (esPoligono) {
+      if (!poligono || dist < poligono.dist) poligono = { feature: f, dist };
+    } else if (!linea || dist < linea.dist) {
+      linea = { feature: f, dist };
     }
-    if (dist <= tolerance && (!best || dist < best.dist)) best = { feature: f, dist };
   }
-  return best ? best.feature : null;
+
+  if (puntos.length > 0) {
+    puntos.sort((a, b) => a.dist - b.dist);
+    const [primero] = puntos;
+    return puntos
+      .filter((p) => Math.hypot(p.x - primero.x, p.y - primero.y) <= SAME_PLACE_PX)
+      .map((p) => p.feature);
+  }
+  if (linea) return [linea.feature];
+  if (poligono) return [poligono.feature];
+  return [];
+}
+
+/** El elemento que gana un toque (el primero de `pickFeatures`), o null. */
+export function pickFeature(features, screen, project, tolerance) {
+  return pickFeatures(features, screen, project, tolerance)[0] || null;
 }
 
 /**

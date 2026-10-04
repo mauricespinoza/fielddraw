@@ -232,12 +232,58 @@ function renderPlot() {
 }
 
 /**
+ * Cuadro con varias salidas con nombre propio: `confirm()` solo sabe decir
+ * «Aceptar» y «Cancelar», y aquí hay tres caminos distintos. Resuelve con el
+ * id de la opción, o null si se cierra con Escape.
+ */
+function askChoice({ title, text, options }) {
+  return new Promise((resolve) => {
+    const veil = document.createElement('div');
+    veil.className = 'choice-veil';
+    const box = document.createElement('div');
+    box.className = 'choice-dialog';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    const h = document.createElement('h3');
+    h.textContent = title;
+    const p = document.createElement('p');
+    p.textContent = text;
+    const row = document.createElement('div');
+    row.className = 'choice-row';
+    const done = (v) => {
+      document.removeEventListener('keydown', onKey, true);
+      veil.remove();
+      resolve(v);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        done(null);
+      }
+    };
+    for (const o of options) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `pill${o.primary ? ' accent' : ''}`;
+      b.textContent = o.label;
+      b.addEventListener('click', () => done(o.id));
+      row.appendChild(b);
+    }
+    box.append(h, p, row);
+    veil.appendChild(box);
+    document.body.appendChild(veil);
+    document.addEventListener('keydown', onKey, true);
+    row.querySelector('button').focus();
+  });
+}
+
+/**
  * Crea el plano promedio de lo que se está mirando —lo lassado si hay algo,
  * si no lo graficado— y pregunta si los datos originales se quitan. Todo en
  * un solo paso de historial: deshacer devuelve los originales y quita el
  * promedio juntos.
  */
-function createAverage() {
+async function createAverage() {
   const st = store.getState();
   const data = stereogramData(st.features, st.selection);
   const ids = new Set(
@@ -252,11 +298,17 @@ function createAverage() {
     );
     return;
   }
-  const quitar = confirm(
-    `Average of ${avg.n} planes: ${formatStrikeDip(avg.strike, avg.dip)}` +
-      ` (SD strike ±${avg.strikeSd}°, dip ±${avg.dipSd}°).\n\n` +
-      'Delete the original measurements?\n\nOK = replace them with the average · Cancel = keep them and add the average.',
-  );
+  const eleccion = await askChoice({
+    title: `Average of ${avg.n} planes: ${formatStrikeDip(avg.strike, avg.dip)}`,
+    text: `SD strike ±${avg.strikeSd}°, dip ±${avg.dipSd}°. What happens to the original measurements?`,
+    options: [
+      { id: 'replace', label: 'Accept and Replace', primary: true },
+      { id: 'add', label: 'Accept and Add' },
+      { id: 'cancel', label: 'Cancel' },
+    ],
+  });
+  if (eleccion === 'cancel' || eleccion === null) return;
+  const quitar = eleccion === 'replace';
   const f = store.createMeasurement({
     lngLat: avg.lngLat,
     strike: avg.strike,

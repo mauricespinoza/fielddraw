@@ -3695,3 +3695,91 @@ a.link-pill {
   color: var(--accent);
   white-space: nowrap;
 }
+
+/* ---------- cuadro de elección con varias salidas ---------- */
+.choice-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.choice-dialog {
+  width: min(420px, 100%);
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+}
+
+.choice-dialog h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.choice-dialog p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ---------- PC y tablet: la marca arriba a la izquierda, la barra debajo ---------- */
+/*
+ * En pantallas con sitio (no el teléfono) el logo ocupa la esquina superior
+ * izquierda y la columna de herramientas, que estaba ahí, baja debajo de él.
+ * La marca pasa a ser solo el logo —así mide lo mismo que la columna de
+ * abajo y no invade la paleta, que empieza a la derecha de la barra— y deja
+ * de esconderse por falta de ancho: ya no compite con la fila de arriba a la
+ * derecha. En el teléfono, todo queda como estaba.
+ */
+@media (min-width: 681px) and (min-height: 521px) {
+  :root {
+    --brand-h: 56px;
+  }
+
+  .brand,
+  .brand.compact,
+  .brand.crowded,
+  .palette:not(.hidden) ~ .brand {
+    display: flex !important;
+    left: calc(var(--safe-l) + 12px);
+    top: calc(var(--safe-t) + 12px);
+    gap: 0;
+    padding: 7px;
+  }
+
+  .brand .brand-name {
+    display: none;
+  }
+
+  .toolbar {
+    top: calc(var(--safe-t) + 12px + var(--brand-h) + 8px);
+    max-height: calc(100vh - var(--safe-t) - var(--safe-b) - 60px - var(--brand-h) - 8px);
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 60px - var(--brand-h) - 8px);
+  }
+}
+
+/* Color y grosor uniformes de una capa importada. */
+.layer-uniform {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.layer-uniform input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}

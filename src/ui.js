@@ -1389,6 +1389,57 @@ function layerRow(layer) {
   opacity.append(range, pct);
 
   li.append(head, opacity);
+
+  // Capa importada: color y grosor de línea uniformes, siempre a mano. Por
+  // omisión no cambian nada (el campo vacío deja el estilo de la capa); al
+  // tocarlos, toda la capa se pinta igual.
+  if (layer.kind === 'imported') {
+    const capa = store.getState().imported.find((l) => l.id === layer.id);
+    if (capa && capa.kind !== 'polygon') {
+      const ov = capa.override || {};
+      const row = document.createElement('div');
+      row.className = 'layer-uniform';
+      const color = document.createElement('input');
+      color.type = 'color';
+      color.className = 'swatch swatch-input';
+      color.value = ov.color || '#4b5563';
+      color.title = 'One colour for the whole layer';
+      color.setAttribute('aria-label', `Uniform colour of ${layer.label}`);
+      const wLabel = document.createElement('span');
+      wLabel.className = 'opacity-value';
+      const width = document.createElement('input');
+      width.type = 'range';
+      width.min = '0.5';
+      width.max = '8';
+      width.step = '0.5';
+      width.value = String(ov.width || 1.5);
+      width.title = 'Line width for the whole layer';
+      width.setAttribute('aria-label', `Uniform line width of ${layer.label}`);
+      const showW = () => {
+        wLabel.textContent = `${Number(width.value).toFixed(1)} px`;
+      };
+      showW();
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'icon-btn';
+      reset.textContent = '↺';
+      reset.title = 'Back to the layer’s own style';
+      reset.setAttribute('aria-label', `Reset the style of ${layer.label}`);
+      color.addEventListener('input', () => store.setImportedOverride(layer.id, { color: color.value }));
+      width.addEventListener('input', () => {
+        showW();
+        store.setImportedOverride(layer.id, { width: Number(width.value) });
+      });
+      reset.addEventListener('click', () => {
+        store.setImportedOverride(layer.id, { color: null, width: null });
+        color.value = '#4b5563';
+        width.value = '1.5';
+        showW();
+      });
+      row.append(color, width, wLabel, reset);
+      li.appendChild(row);
+    }
+  }
   return { li, cb, range, pct, up, down, sync };
 }
 
@@ -2039,8 +2090,9 @@ function positionPropsMenu(menu, screen) {
  * Cablea el botón de GPS. Va aparte del resto de la barra porque su manejador
  * lo provee mapView, que se construye después de `initUI()`.
  */
+let locateHandler = () => {};
 export function wireLocate(handler) {
-  $('t-locate').addEventListener('click', handler);
+  locateHandler = handler;
 }
 
 export function closePropsMenu() {
@@ -3265,7 +3317,7 @@ function shortcutActions() {
     'toggle-trace': () => store.setTraceEnabled(!store.getState().traceEnabled),
     'toggle-terrain': () => $('t-3d').click(),
     'cycle-certainty': cycleCertainty,
-    locate: () => $('t-locate').click(),
+    locate: () => locateHandler(),
 
     finish: () => store.finishDraft(),
     'undo-vertex': () => store.undoVertex(),
@@ -3498,7 +3550,6 @@ function annotateToolbarShortcuts() {
     't-snap': 'toggle-snap',
     't-trace': 'toggle-trace',
     't-3d': 'toggle-terrain',
-    't-locate': 'locate',
     't-merge': 'merge',
     't-topo': 'topology',
     'btn-layers': 'panel-layers',

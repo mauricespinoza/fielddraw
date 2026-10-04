@@ -278,6 +278,15 @@ export function buildObservacion(rows, { field = '', geologist = '' } = {}) {
     const unit = extractUnit(raw);
     const notes = raw.Notes || '';
     if (isMissing(notes) && isMissing(code) && isMissing(unit)) continue;
+    /*
+     * Un spot que es SOLO una medición —sin muestra— no es una observación
+     * aparte: su unidad y sus notas ya viajan con la estructura. Sin este
+     * corte, todo lo que FieldDraw sube como medida (que siempre lleva notas y
+     * unidad) volvía al bajarlo como medida Y como punto de control, el mismo
+     * punto dos veces. Un spot con medición Y muestra sí entra en las dos
+     * tablas: son registros distintos.
+     */
+    if (isEstructuraRow(raw) && isMissing(code) && isMissing(raw['Sample Sample Description'])) continue;
 
     const record = {
       Name: raw.Name,

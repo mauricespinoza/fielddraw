@@ -17,6 +17,7 @@ import {
   featuresInRegion,
   nearestOnPolyline,
   pickFeature,
+  pickFeatures,
   ringsOf,
 } from './geom.js';
 import { baseOpacityOf, buildImportedLayers } from './importedStyle.js';
@@ -1669,7 +1670,37 @@ export function createMapView({
     }
 
     applyLayerStack(map, store.getState().layers);
+    applyImportedOverrides();
     if (added) fitToGeoJSON(added.geojson);
+  }
+
+  /**
+   * Color y grosor uniformes de las capas importadas (ver
+   * `store.setImportedOverride`). Sin override se restaura lo que dictaba el
+   * estilo de la capa, reconstruyéndolo: así quitarlo no deja residuos.
+   */
+  function applyImportedOverrides() {
+    for (const l of store.getState().imported) {
+      if (!importedLayerIds.has(l.id)) continue;
+      const { layers } = buildImportedLayers({
+        id: l.id,
+        sourceId: `src-${l.id}`,
+        kind: l.kind,
+        style: l.style,
+      });
+      const o = l.override || {};
+      for (const spec of layers) {
+        if (!map.getLayer(spec.id)) continue;
+        if (spec.type === 'line') {
+          map.setPaintProperty(spec.id, 'line-color', o.color || spec.paint['line-color']);
+          map.setPaintProperty(spec.id, 'line-width', o.width || spec.paint['line-width']);
+        } else if (spec.type === 'circle' && o.color) {
+          map.setPaintProperty(spec.id, 'circle-color', o.color);
+        } else if (spec.type === 'circle') {
+          map.setPaintProperty(spec.id, 'circle-color', spec.paint['circle-color']);
+        }
+      }
+    }
   }
 
   /**
@@ -2556,6 +2587,11 @@ export function createMapView({
     return pickFeature(store.visibleFeatures(), screen, projectLngLat, tolerance);
   }
 
+  /** Lo que gana el toque, con la prioridad punto > línea > polígono; ver `pickFeatures`. */
+  function pickAllAt(screen, tolerance = 16) {
+    return pickFeatures(store.visibleFeatures(), screen, projectLngLat, tolerance);
+  }
+
   /**
    * Toque sobre algo de un dataset cerrado: no se selecciona —la selección
    * es la puerta de la edición—, se enseñan sus atributos en solo lectura.
@@ -2693,12 +2729,15 @@ export function createMapView({
    * @returns {boolean} si el toque cayó sobre algo
    */
   function selectAt(screen, { tolerance = 12, additive = false } = {}) {
-    const hit = pickAt(screen, tolerance);
+    const hits = pickAllAt(screen, tolerance);
+    const hit = hits[0] || null;
     if (lockedTap(hit, screen)) return true;
     if (hit) {
-      const id = hit.properties.id;
-      if (additive) store.toggleSelection(id);
-      else store.setSelection([id]);
+      // Varios puntos en el mismo lugar quedan todos seleccionados: la
+      // interfaz de selección múltiple deja elegir cuál.
+      const ids = hits.map((h) => h.properties.id);
+      if (additive) for (const id of ids) store.toggleSelection(id);
+      else store.setSelection(ids);
       return true;
     }
 
