@@ -295,6 +295,17 @@ export function projectMeasurements(
   return out.sort((a, b) => a.s - b.s);
 }
 
+/** Nombre propio de un elemento del dibujo, si lo tiene ('' si no). */
+const NAME_KEYS = ['name', 'nombre', 'label', 'etiqueta', 'unit', 'unidad'];
+export function featureName(props) {
+  if (!props) return '';
+  for (const k of NAME_KEYS) {
+    const v = props[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
 /**
  * Dónde corta el perfil a cada línea del mapa.
  *
@@ -341,6 +352,7 @@ export function intersections(trace, features) {
             kind: (f.properties && f.properties.kind) || 'line',
             certainty: (f.properties && f.properties.certainty) || 'observed',
             unit: (f.properties && f.properties.unit) || '',
+            name: featureName(f.properties),
             s,
             lngLat: trace.lngLatAt(s),
             /* Marcadas por omisión: quien hace el perfil quiere verlas, y

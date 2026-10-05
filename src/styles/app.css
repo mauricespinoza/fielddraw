@@ -2809,14 +2809,111 @@ input[type='radio'] {
  */
 .section-view {
   position: absolute;
-  inset: 0;
   z-index: 34;
   display: flex;
   flex-direction: column;
+  /* Flotante: posición y ancho los pone `sectionPanel.js`; el alto es el del
+     contenido (la escala 1:1 manda), con tope para no tapar el mapa entero. */
+  left: 12px;
+  top: calc(var(--safe-t) + 76px);
+  width: min(960px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - 90px);
   background: var(--panel-solid);
-  padding: calc(var(--safe-t) + 10px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 10px)
-    calc(var(--safe-l) + 12px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  padding: 8px 10px 12px;
+  gap: 6px;
+}
+
+#section-drag {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.sv-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.sv-tools .pill {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.sv-grip {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 55%, var(--muted) 55%, var(--muted) 62%, transparent 62%,
+    transparent 72%, var(--muted) 72%, var(--muted) 79%, transparent 79%);
+  opacity: 0.7;
+  border-bottom-right-radius: 14px;
+}
+
+.walk-pill.active {
+  background: linear-gradient(135deg, #22c55e, #f59e0b);
+  color: #111;
+  border-color: transparent;
+}
+
+.sv-walkbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sv-walk-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sv-levels {
+  display: flex;
+  gap: 4px;
+}
+
+.sv-level {
+  min-height: 30px;
+  padding: 3px 12px;
+  border: 1.5px solid var(--lv);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lv);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sv-level[data-level='amateur'] { --lv: #22c55e; }
+.sv-level[data-level='normal'] { --lv: #f59e0b; }
+.sv-level[data-level='expert'] { --lv: #a855f7; }
+
+.sv-level.active {
+  background: var(--lv);
+  color: #111;
+}
+
+.sv-walk-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sv-chart.walking {
+  touch-action: none;
+  cursor: crosshair;
 }
 
 .sv-head {
@@ -3521,11 +3618,11 @@ input[type='radio'] {
     right: calc(var(--safe-r) + var(--edge));
     top: calc(var(--safe-t) + 58px);
     width: auto;
-    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 90px);
   }
 
   .shortcuts {
-    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 70px);
+    max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--status-h) - 90px);
   }
 
   /*
