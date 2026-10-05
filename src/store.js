@@ -213,7 +213,12 @@ let state = {
    */
   pendingSection: null,
   section: null,
-  sectionOpts: { exaggeration: 1, showIntersections: true, showLabels: true },
+  sectionOpts: {
+    exaggeration: 1,
+    showIntersections: true,
+    showLabels: true,
+    showCrossLabels: true,
+  },
   /**
    * Cómo se desliza un manteo hasta el corte: perpendicular (`'orthogonal'`,
    * de fábrica) o a lo largo de una tendencia/inclinación conocida

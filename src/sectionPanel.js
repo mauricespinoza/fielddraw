@@ -15,7 +15,8 @@
 
 import * as store from './store.js';
 import { buildSection } from './section.js';
-import { renderSection, sectionPNG, sectionSVG } from './sectionView.js';
+import { MARGIN, renderSection, sectionPNG, sectionSVG } from './sectionView.js';
+import { LEVELS, formatDuration, walkingTime } from './hiking.js';
 import { sketcherDocument, structuralModellerZip } from './sectionExport.js';
 import { LINE_TYPE_BY_ID, STRUCTURE_TYPE_BY_ID } from './symbology.js';
 import { downloadBlob } from './persistence.js';
@@ -43,6 +44,17 @@ export function initSectionPanel({ message, busy, sampler }) {
   $('section-show-labels').addEventListener('change', (e) =>
     store.setSectionOpts({ showLabels: e.target.checked }),
   );
+  $('section-show-cross-labels').addEventListener('change', (e) =>
+    store.setSectionOpts({ showCrossLabels: e.target.checked }),
+  );
+  $('btn-section-lists').addEventListener('click', () => {
+    $('section-side').classList.toggle('hidden');
+    $('btn-section-lists').classList.toggle('active');
+    renderSectionPanel();
+  });
+  $('btn-section-info').addEventListener('click', () => $('section-note').classList.toggle('hidden'));
+  initFloating();
+  initWalk();
   $('section-x-all').addEventListener('click', () => store.setAllIntersections(true));
   $('section-x-none').addEventListener('click', () => store.setAllIntersections(false));
 
@@ -169,21 +181,26 @@ export function renderSectionPanel() {
     `${(s.length / 1000).toFixed(2)} km · azimuth ${Math.round(s.azimuth)}° · ` +
     `${Math.round(s.zMin)}–${Math.round(s.zMax)} m`;
 
-  const wrap = $('section-chart').parentElement;
-  const width = Math.max(560, Math.round(wrap.clientWidth) - 2);
-  const height = Math.max(340, Math.round(wrap.clientHeight) - 2);
-  renderSection($('section-chart'), s, {
+  applyFloatingPosition();
+  const wrap = $('section-chart-wrap');
+  // Solo el ancho viene de la ventana: el alto lo da la escala 1:1 del corte.
+  const width = Math.max(320, Math.round(wrap.clientWidth) - 2);
+  lastWidth = width;
+  const { scales } = renderSection($('section-chart'), s, {
     width,
-    height,
     exaggeration: o.exaggeration,
     showIntersections: o.showIntersections,
     showLabels: o.showLabels,
+    showCrossLabels: o.showCrossLabels,
     // Papel blanco: se interpreta a la luz del día, junto al afloramiento —el
     // mismo motivo por el que la brújula en vivo (`compassWidget.js`) también
     // se dibuja clara y no oscura— y es lo que sale impreso o pegado en un
     // informe, donde un fondo negro gasta tinta y desentona con el resto.
     theme: 'light',
   });
+
+  lastScales = scales;
+  drawWalk();
 
   renderDipList(s);
   renderCrossingList(s);
@@ -193,6 +210,217 @@ export function renderSectionPanel() {
   if (document.activeElement !== ex) ex.value = String(o.exaggeration);
   $('section-show-intersections').checked = o.showIntersections;
   $('section-show-labels').checked = o.showLabels;
+  $('section-show-cross-labels').checked = o.showCrossLabels;
+  $('section-show-cross-labels').disabled = !o.showIntersections;
+}
+
+/* ==================================================== ventana flotante === */
+
+const win = { left: null, top: null, width: null };
+let lastWidth = 0;
+let lastScales = null;
+
+function applyFloatingPosition() {
+  const p = $('section-view');
+  if (win.width) p.style.width = `${win.width}px`;
+  if (win.left !== null) {
+    p.style.left = `${win.left}px`;
+    p.style.top = `${win.top}px`;
+  }
+}
+
+/** Arrastre por la cabecera y redimensión por la esquina. */
+function initFloating() {
+  const p = $('section-view');
+  const clampWin = () => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    win.width = Math.min(Math.max(win.width || p.offsetWidth, 340), vw - 8);
+    win.left = Math.min(Math.max(win.left, 4 - win.width + 120), vw - 120);
+    win.top = Math.min(Math.max(win.top, 0), vh - 48);
+  };
+  const drag = (handle, onMove) => {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button, a, input, label')) return;
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      const r = p.getBoundingClientRect();
+      const start = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, width: r.width };
+      const move = (ev) => {
+        onMove(start, ev.clientX - start.x, ev.clientY - start.y);
+        clampWin();
+        applyFloatingPosition();
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    });
+  };
+  drag($('section-drag'), (st, dx, dy) => {
+    win.left = st.left + dx;
+    win.top = st.top + dy;
+    win.width = st.width;
+  });
+  drag($('section-grip'), (st, dx) => {
+    win.left = st.left;
+    win.top = st.top;
+    win.width = st.width + dx;
+  });
+  // Un cambio de ancho por otra vía (rotar el equipo) también re-escala el corte.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => {
+      const w = Math.max(320, Math.round($('section-chart-wrap').clientWidth) - 2);
+      if (store.getState().section && Math.abs(w - lastWidth) > 2) renderSectionPanel();
+    }).observe($('section-chart-wrap'));
+  }
+}
+
+/* ================================================== tiempo de marcha === */
+
+const walk = { active: false, level: 'normal', anchor: null, current: null, dragging: false };
+
+function initWalk() {
+  const svg = $('section-chart');
+  $('btn-section-walk').addEventListener('click', () => {
+    walk.active = !walk.active;
+    walk.anchor = walk.current = null;
+    walk.dragging = false;
+    $('btn-section-walk').classList.toggle('active', walk.active);
+    $('section-walkbar').classList.toggle('hidden', !walk.active);
+    svg.classList.toggle('walking', walk.active);
+    updateLevelButtons();
+    drawWalk();
+  });
+  for (const b of document.querySelectorAll('#section-levels .sv-level')) {
+    b.addEventListener('click', () => {
+      walk.level = b.dataset.level;
+      updateLevelButtons();
+      drawWalk();
+    });
+  }
+  const sAt = (e) => {
+    const sc = lastScales;
+    if (!sc) return null;
+    const x = e.clientX - svg.getBoundingClientRect().left;
+    return Math.min(sc.total, Math.max(0, ((x - MARGIN.left) / sc.w) * sc.total));
+  };
+  svg.addEventListener('pointerdown', (e) => {
+    if (!walk.active) return;
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    walk.dragging = true;
+    walk.anchor = walk.current = sAt(e);
+    drawWalk();
+  });
+  svg.addEventListener('pointermove', (e) => {
+    if (!walk.active || !walk.dragging) return;
+    walk.current = sAt(e);
+    drawWalk();
+  });
+  const end = () => {
+    walk.dragging = false;
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+}
+
+function updateLevelButtons() {
+  for (const b of document.querySelectorAll('#section-levels .sv-level')) {
+    b.classList.toggle('active', b.dataset.level === walk.level);
+  }
+}
+
+const SVGNS = 'http://www.w3.org/2000/svg';
+const mk = (name, attrs = {}) => {
+  const n = document.createElementNS(SVGNS, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+  return n;
+};
+
+/**
+ * Pinta sobre el corte el tramo caminado, de la ancla (donde se pinchó) al
+ * punto activo (donde está el dedo o el lápiz), con su tiempo. La burbuja se
+ * pone ARRIBA del punto activo para que la mano no la tape.
+ */
+function drawWalk() {
+  const svg = $('section-chart');
+  const old = svg.querySelector('#walk-overlay');
+  if (old) old.remove();
+  const sec = store.getState().section;
+  const hint = $('section-walk-hint');
+  if (!walk.active || !sec || !lastScales) return;
+  if (walk.anchor === null || walk.current === null || walk.anchor > sec.length + 1) {
+    hint.textContent = 'Press a point on the profile, then drag.';
+    return;
+  }
+
+  const L = LEVELS[walk.level];
+  const sc = lastScales;
+  const ida = walkingTime(sec.samples, walk.anchor, walk.current, walk.level);
+  const vuelta = walkingTime(sec.samples, walk.current, walk.anchor, walk.level);
+  const g = mk('g', { id: 'walk-overlay', 'pointer-events': 'none' });
+
+  const lo = Math.min(walk.anchor, walk.current);
+  const hi = Math.max(walk.anchor, walk.current);
+  let d = '';
+  const pts = sec.samples.filter((m) => m.distance > lo && m.distance < hi && Number.isFinite(m.elevation));
+  const z = (s) => {
+    const m = sec.samples.reduce((b, q) => (Math.abs(q.distance - s) < Math.abs(b.distance - s) ? q : b));
+    return m.elevation;
+  };
+  const trazo = [{ distance: lo, elevation: z(lo) }, ...pts, { distance: hi, elevation: z(hi) }];
+  for (const m of trazo) {
+    if (!Number.isFinite(m.elevation)) continue;
+    d += `${d ? ' L' : 'M'}${sc.x(m.distance).toFixed(1)} ${sc.y(m.elevation).toFixed(1)}`;
+  }
+  if (d) {
+    g.appendChild(mk('path', { d, fill: 'none', stroke: '#fff', 'stroke-width': 7, 'stroke-linecap': 'round', opacity: 0.9 }));
+    g.appendChild(mk('path', { d, fill: 'none', stroke: L.color, 'stroke-width': 4.5, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+  }
+  const marca = (s, fill, r) => {
+    const zz = z(s);
+    if (!Number.isFinite(zz)) return null;
+    const c = mk('circle', { cx: sc.x(s), cy: sc.y(zz), r, fill, stroke: '#fff', 'stroke-width': 2 });
+    g.appendChild(c);
+    return { x: sc.x(s), y: sc.y(zz) };
+  };
+  marca(walk.anchor, '#374151', 5);
+  const punta = marca(walk.current, L.color, 7);
+
+  if (!ida) {
+    hint.textContent = 'Part of that stretch has no elevation data.';
+  } else if (punta) {
+    const tiempo = formatDuration(ida.minutes);
+    const l1 = `⏱ ${tiempo}`;
+    const l2 = `${(ida.distance / 1000).toFixed(2)} km · ↑${Math.round(ida.ascent)} m ↓${Math.round(ida.descent)} m`;
+    const l3 = vuelta ? `back ${formatDuration(vuelta.minutes)}` : '';
+    const ancho = Math.max(l2.length * 6.2, 90) + 16;
+    const alto = l3 ? 52 : 38;
+    const W = Number($('section-chart').getAttribute('width')) || 0;
+    const bx = Math.min(Math.max(punta.x - ancho / 2, 4), Math.max(4, W - ancho - 4));
+    let by = punta.y - alto - 16;
+    if (by < 4) by = punta.y + 16;
+    g.appendChild(mk('rect', { x: bx, y: by, width: ancho, height: alto, rx: 8, fill: '#111827', stroke: L.color, 'stroke-width': 2, opacity: 0.95 }));
+    const t = (txt, y, size, weight, fill) => {
+      const n = mk('text', { x: bx + 8, y: by + y, 'font-size': size, 'font-weight': weight, fill });
+      n.textContent = txt;
+      g.appendChild(n);
+    };
+    t(l1, 17, 14, 700, L.color);
+    t(l2, 32, 10.5, 400, '#e5e7eb');
+    if (l3) t(l3, 46, 10.5, 400, '#9ca3af');
+    const sube = ida.ascent > ida.descent;
+    hint.textContent =
+      `${L.label}: ${tiempo} · ${(ida.distance / 1000).toFixed(2)} km, ` +
+      `${sube ? 'net climb' : 'net descent'} ${Math.round(Math.abs(ida.ascent - ida.descent))} m` +
+      (vuelta ? ` · return ${formatDuration(vuelta.minutes)}` : '');
+  }
+  svg.appendChild(g);
 }
 
 function row(parent, { color, what, num, className }) {
@@ -280,7 +508,7 @@ function sectionNote(section) {
   const achatados = section.dips.filter((d) => d.foreshortening < 0.35).length;
   const lejos = section.dips.filter((d) => d.offset > 1000).length;
   const partes = [
-    'Ticks show the APPARENT dip on this section, drawn at the angle you see — vertical exaggeration deforms the geometry, and a tick at the true angle would sit at odds with the beds beside it. The labels carry the true value.',
+    `Scale is true 1:1 at V.E. 1. Ticks show the APPARENT dip on this section, drawn at the angle you see; labels carry the apparent value. Walking times: Naismith for climbing, Langmuir for descents (gentle slopes are faster, steep ones slower), so the way back differs.`,
   ];
   if (achatados) {
     partes.push(

@@ -1423,16 +1423,22 @@
         <p class="hint footnote" id="profile-note"></p>
       </div>
 
-      <!-- Perfil estructural. Ocupa la pantalla entera y no una hoja al pie
-           como el topográfico: aquí se interpreta, y para eso hace falta ver el
-           corte completo y no una franja. Se cierra con su botón o con Esc. -->
+      <!-- Perfil estructural. Ventana flotante: se arrastra por la cabecera y
+           se redimensiona desde la esquina, para poder verla junto al mapa. El
+           alto lo da la escala 1:1 del corte, no la ventana. Se cierra con su
+           botón o con Esc. -->
       <div class="section-view hidden" id="section-view">
-        <header class="sv-head">
+        <header class="sv-head" id="section-drag">
           <h2>Structural section</h2>
           <span class="sv-meta" id="section-meta"></span>
           <span class="sv-spacer"></span>
+          <button class="pill walk-pill" id="btn-section-walk" title="Walking time: press a point and drag along the profile">🥾 Walk</button>
+          <button class="icon-btn" id="btn-section-info" aria-label="About this section" title="How to read this section">ⓘ</button>
+          <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
+        </header>
+        <div class="sv-tools">
           <button class="pill accent" id="btn-project-dips" title="Choose which dip measurements to project onto this section, and how">Project dips</button>
-          <label class="sv-field">
+          <label class="sv-field" title="Vertical exaggeration — 1 is true 1:1">
             <span>V.E.</span>
             <input type="number" id="section-exag" min="0.2" max="20" step="0.1" value="1" />
           </label>
@@ -1441,21 +1447,35 @@
             Intersections
           </label>
           <label class="sv-check">
-            <input type="checkbox" id="section-show-labels" checked />
-            Labels
+            <input type="checkbox" id="section-show-cross-labels" checked />
+            Names
           </label>
+          <label class="sv-check">
+            <input type="checkbox" id="section-show-labels" checked />
+            Dips
+          </label>
+          <button class="pill" id="btn-section-lists">Lists</button>
+          <span class="sv-spacer"></span>
           <button class="pill" id="btn-section-png">PNG</button>
           <button class="pill" id="btn-section-svg">SVG</button>
           <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
           <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
           <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
-          <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
-        </header>
+        </div>
+        <div class="sv-walkbar hidden" id="section-walkbar">
+          <span class="sv-walk-title">Walking pace</span>
+          <div class="sv-levels" id="section-levels" role="group" aria-label="Walking level">
+            <button class="sv-level" data-level="amateur">Amateur</button>
+            <button class="sv-level" data-level="normal">Normal</button>
+            <button class="sv-level" data-level="expert">Expert</button>
+          </div>
+          <span class="sv-walk-hint" id="section-walk-hint">Press a point on the profile, then drag.</span>
+        </div>
         <div class="sv-body">
-          <div class="sv-chart-wrap">
+          <div class="sv-chart-wrap" id="section-chart-wrap">
             <svg id="section-chart" class="sv-chart" aria-label="Structural cross-section"></svg>
           </div>
-          <aside class="sv-side">
+          <aside class="sv-side hidden" id="section-side">
             <h3>Projected dips <span class="sv-count" id="section-dip-count"></span></h3>
             <div class="sv-list" id="section-dip-list"></div>
             <h3>
@@ -1466,7 +1486,8 @@
             <div class="sv-list" id="section-x-list"></div>
           </aside>
         </div>
-        <p class="hint footnote" id="section-note"></p>
+        <p class="hint footnote hidden" id="section-note"></p>
+        <div class="sv-grip" id="section-grip" aria-label="Resize"></div>
       </div>
 
       <!-- Red estereográfica. Misma idea que el corte estructural: pantalla

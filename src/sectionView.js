@@ -24,32 +24,39 @@ const TADPOLE_PX = 26;
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** Escalas del corte. `s` a lo ancho, cota a lo alto, con exageración. */
+/**
+ * Escalas del corte. `s` a lo ancho, cota a lo alto.
+ *
+ * Con `exaggeration` = 1 la escala es de verdad 1:1: los píxeles por metro son
+ * los mismos en los dos ejes. El ancho manda (el corte cabe en `width`) y el
+ * alto SALE de la cota, no al revés; ajustar el rango vertical al alto
+ * disponible, como se hacía antes, era exagerar sin decirlo.
+ */
 export function sectionScales(section, width, height, exaggeration = 1) {
   const w = Math.max(1, width - MARGIN.left - MARGIN.right);
-  const h = Math.max(1, height - MARGIN.top - MARGIN.bottom);
   const total = Math.max(1, section.length);
   const zMin = section.zMin;
   const zMax = Math.max(section.zMax, zMin + 1);
-
-  /*
-   * La exageración estira el eje vertical alrededor del techo del rango, no
-   * alrededor del centro: lo que interesa mantener a la vista es la topografía
-   * y lo que cuelga de ella, no el fondo vacío del corte.
-   */
-  const zSpan = (zMax - zMin) / Math.max(0.01, exaggeration);
-  const zBase = zMax - zSpan;
+  const ve = Math.max(0.01, exaggeration);
+  const pxPerM = w / total;
+  const h = (zMax - zMin) * pxPerM * ve;
 
   return {
     x: (s) => MARGIN.left + (s / total) * w,
-    y: (z) => MARGIN.top + (1 - (z - zBase) / Math.max(1e-9, zSpan)) * h,
+    y: (z) => MARGIN.top + (zMax - z) * pxPerM * ve,
     w,
     h,
     total,
-    zBase,
+    zBase: zMin,
     zTop: zMax,
     exaggeration,
   };
+}
+
+/** Alto del SVG que pide la escala 1:V.E. para este ancho. */
+export function sectionHeight(section, width, exaggeration = 1, minHeight = 110) {
+  const h = sectionScales(section, width, 0, exaggeration).h;
+  return Math.max(minHeight, Math.ceil(h + MARGIN.top + MARGIN.bottom));
 }
 
 const el = (name, attrs = {}) => {
@@ -85,10 +92,10 @@ function topoPath(samples, s) {
 export function renderSection(svg, section, opts = {}) {
   const {
     width = 1200,
-    height = 620,
     exaggeration = 1,
     showIntersections = true,
     showLabels = true,
+    showCrossLabels = true,
     theme = 'dark',
   } = opts;
 
@@ -97,6 +104,7 @@ export function renderSection(svg, section, opts = {}) {
       ? { fg: '#111827', muted: '#6b7280', grid: '#e5e7eb', ground: '#f3f4f6', bg: '#ffffff' }
       : { fg: '#e6edf3', muted: '#93a1b0', grid: '#243044', ground: '#161c27', bg: '#0d1117' };
 
+  const height = opts.height || sectionHeight(section, width, exaggeration);
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('width', width);
   svg.setAttribute('height', height);
@@ -151,27 +159,61 @@ export function renderSection(svg, section, opts = {}) {
   }
 
   /* --- intersecciones con el dibujo --- */
+  /*
+   * Solo un punto sobre la topografía y, si se pide, el nombre del elemento
+   * cortado. Los rótulos se escalonan en altura cuando se pisarían, con un hilo
+   * fino hasta su punto, para que en un corte con muchos cruces sigan leyéndose.
+   */
   if (showIntersections) {
     const gi = el('g');
+    const items = [];
     for (const x of section.intersections) {
       if (x.enabled === false) continue;
       const tipo = LINE_TYPE_BY_ID.get(x.type);
-      const color = tipo ? tipo.color : c.muted;
-      const px = s.x(x.s);
       const zTopo = elevationAt(section.samples, x.s);
-      const y0 = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
-      gi.appendChild(el('line', {
-        x1: px, y1: y0 - 10, x2: px, y2: height - MARGIN.bottom,
-        stroke: color, 'stroke-width': 1.6, 'stroke-dasharray': '4 3', opacity: 0.75,
-      }));
-      gi.appendChild(el('circle', { cx: px, cy: y0, r: 3.2, fill: color }));
-      if (showLabels && tipo) {
+      items.push({
+        px: s.x(x.s),
+        y0: Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top,
+        color: tipo ? tipo.color : c.muted,
+        text: x.name || (tipo ? tipo.label : x.type) || 'line',
+      });
+    }
+    items.sort((a, b) => a.px - b.px);
+    const puestos = [];
+    for (const it of items) {
+      const ancho = it.text.length * 5.8 + 6;
+      let ty = it.y0 - 10;
+      // Sube de renglón mientras pise a un rótulo ya puesto.
+      for (let n = 0; n < 12; n++) {
+        const pisa = puestos.some(
+          (q) => Math.abs(q.px - it.px) < (q.ancho + ancho) / 2 && Math.abs(q.ty - ty) < 12,
+        );
+        if (!pisa) break;
+        ty -= 13;
+      }
+      ty = Math.max(11, ty);
+      puestos.push({ px: it.px, ancho, ty });
+      it.ty = ty;
+    }
+    for (const it of items) {
+      const ty = it.ty;
+      if (showCrossLabels) {
+        if (ty < it.y0 - 14) {
+          gi.appendChild(el('line', {
+            x1: it.px, y1: it.y0, x2: it.px, y2: ty + 2,
+            stroke: it.color, 'stroke-width': 0.8, opacity: 0.6,
+          }));
+        }
         const t = el('text', {
-          x: px, y: y0 - 15, fill: color, 'font-size': 10, 'text-anchor': 'middle',
+          x: it.px, y: ty, fill: it.color, 'font-size': 10, 'font-weight': 600,
+          'text-anchor': 'middle', stroke: c.bg, 'stroke-width': 3, 'paint-order': 'stroke',
         });
-        t.textContent = tipo.short;
+        t.textContent = it.text;
         gi.appendChild(t);
       }
+      gi.appendChild(el('circle', {
+        cx: it.px, cy: it.y0, r: 4, fill: it.color, stroke: c.bg, 'stroke-width': 1.4,
+      }));
     }
     svg.appendChild(gi);
   }
