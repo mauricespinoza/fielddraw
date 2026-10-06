@@ -116,3 +116,30 @@ export function formatDuration(minutes) {
   const m = total % 60;
   return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
 }
+
+/** Punto lng/lat de la posición `s` del perfil, interpolando entre muestras. */
+export function lngLatInterp(samples, s) {
+  if (!samples || samples.length === 0) return null;
+  if (s <= samples[0].distance) return samples[0].lngLat;
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    if (s <= b.distance) {
+      const span = b.distance - a.distance;
+      const u = span > 0 ? (s - a.distance) / span : 0;
+      return [a.lngLat[0] + u * (b.lngLat[0] - a.lngLat[0]), a.lngLat[1] + u * (b.lngLat[1] - a.lngLat[1])];
+    }
+  }
+  return samples[samples.length - 1].lngLat;
+}
+
+/** Camino lng/lat entre dos posiciones del perfil, en el sentido de la marcha. */
+export function walkPathLngLat(samples, from, to) {
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  const pts = [lngLatInterp(samples, lo)];
+  for (const m of samples) if (m.distance > lo && m.distance < hi) pts.push(m.lngLat);
+  pts.push(lngLatInterp(samples, hi));
+  const out = pts.filter(Boolean);
+  return to >= from ? out : out.reverse();
+}

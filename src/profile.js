@@ -86,6 +86,18 @@ export function profileScales(result, width, height) {
 }
 
 /**
+ * Alto del SVG para que el perfil salga a una exageración vertical dada
+ * (1 = escala 1:1 real). El ancho fija los metros por píxel y el alto sale del
+ * rango de cotas, igual que en el corte estructural.
+ */
+export function profileHeightFor(result, width, exaggeration = 1) {
+  const s = profileScales(result, width, 100);
+  if (!(s.total > 0)) return 110;
+  const plotH = ((s.yMax - s.yMin) * s.plotW * exaggeration) / s.total;
+  return Math.max(60, Math.ceil(plotH + MARGIN.top + MARGIN.bottom));
+}
+
+/**
  * Camino de la curva. Un tramo sin dato **corta** el camino en vez de saltarlo
  * con una recta: unir los dos extremos de un hueco dibujaría una ladera que
  * nadie midió.

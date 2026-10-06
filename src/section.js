@@ -408,14 +408,14 @@ export function elevationAt(samples, s) {
  * interpretar debajo de la topografía, así que empezar el eje justo en la cota
  * mínima no deja sitio donde poner nada.
  */
-export function verticalRange(samples, { below = 0.5, above = 0.15 } = {}) {
+export function verticalRange(samples, { below = 0.5, above = 0.15, minDepth = 0 } = {}) {
   const cotas = samples.map((m) => m.elevation).filter((v) => Number.isFinite(v));
   if (cotas.length === 0) return { zMin: 0, zMax: 1000 };
   const min = Math.min(...cotas);
   const max = Math.max(...cotas);
   const rango = Math.max(1, max - min);
   return {
-    zMin: Math.floor((min - rango * below) / 100) * 100,
+    zMin: Math.floor((min - Math.max(rango * below, minDepth)) / 100) * 100,
     zMax: Math.ceil((max + rango * above) / 100) * 100,
   };
 }
@@ -435,7 +435,11 @@ export function buildSection({ coords, profile, measurements = [], features = []
   const trace = new SectionTrace(coords);
   const dips = projectMeasurements(measurements, trace, { maxOffset, ...projection });
   const cruces = intersections(trace, features);
-  const { zMin, zMax } = verticalRange(profile ? profile.samples : []);
+  const { zMin, zMax } = verticalRange(profile ? profile.samples : [], {
+    // Al menos media longitud del perfil de profundidad bajo la cota mínima:
+    // es el espacio donde se interpreta la estructura.
+    minDepth: trace.length / 2,
+  });
   return {
     trace,
     coords,

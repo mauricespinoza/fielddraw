@@ -355,6 +355,8 @@ let state = {
   profile: null,
   /** Índice de la muestra señalada en el gráfico, para marcarla en el mapa. */
   profileCursor: null,
+  /** Tramo de marcha en el perfil: `{from, to, level}` (metros a lo largo) o null. */
+  profileWalk: null,
   /** Unidades geológicas definidas por el usuario. */
   units: defaultUnits(),
   /**
@@ -1744,15 +1746,19 @@ export function clearPendingProfile() {
 
 /** Publica el perfil ya calculado. El cursor arranca sin señalar nada. */
 export function setProfile(profile) {
-  set({ profile, profileCursor: null, pendingProfile: null });
+  set({ profile, profileCursor: null, profileWalk: null, pendingProfile: null });
 }
 
 export function clearProfile() {
-  set({ profile: null, profileCursor: null, pendingProfile: null });
+  set({ profile: null, profileCursor: null, profileWalk: null, pendingProfile: null });
 }
 
 export function setProfileCursor(profileCursor) {
   set({ profileCursor });
+}
+
+export function setProfileWalk(profileWalk) {
+  set({ profileWalk });
 }
 
 /**

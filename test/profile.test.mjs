@@ -64,5 +64,16 @@ const cuadrado = P.verticalExaggeration({ total: 1000, yMin: 0, yMax: 1000, plot
 ok('a escala 1:1 el factor es 1', Math.abs(cuadrado - 1) < 1e-9, String(cuadrado));
 ok('sin recorrido no hay factor', Number.isNaN(P.verticalExaggeration({ total: 0, yMin: 0, yMax: 1, plotW: 1, plotH: 1 })));
 
+{
+  const samples = [0, 1000, 2000, 3000, 4000].map((d, i) => ({ distance: d, elevation: 1000 + i * 100 }));
+  const r = { samples, stats: { min: 1000, max: 1400 } };
+  for (const ve of [1, 3]) {
+    const w = 800;
+    const h = P.profileHeightFor(r, w, ve);
+    const got = P.verticalExaggeration(P.profileScales(r, w, h));
+    ok(`profileHeightFor da V.E. ${ve}`, Math.abs(got - ve) < 0.05, String(got));
+  }
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

@@ -80,10 +80,13 @@ import {
   formatElevation,
   indexAtDistance,
   profileCSV,
+  profileHeightFor,
   profilePNG,
   profileSVG,
   renderProfileChart,
+  verticalExaggeration,
 } from './profile.js';
+import { drawWalkOverlay, initProfileWalk, isWalkActive } from './profileWalk.js';
 import {
   downloadBlob,
   downloadGeoJSON,
@@ -3569,6 +3572,8 @@ export function wireMapView(view) {
 
 /** Handle del gráfico dibujado, para mover el cursor sin repintar todo. */
 let chart = null;
+/** Exageración vertical del perfil: null = ajustar a la hoja, número = fija. */
+let profileVE = null;
 let profileBusy = false;
 
 /**
@@ -3714,10 +3719,29 @@ function renderProfilePanel() {
   sheet.classList.remove('hidden');
   $('profile-source-label').textContent = result.label;
 
-  const wrap = $('profile-chart').parentElement;
+  const wrap = $('profile-chart-wrap');
+  const svg = $('profile-chart');
   const width = Math.max(240, Math.round(wrap.clientWidth));
-  const height = Math.max(110, Math.round(wrap.clientHeight));
-  chart = renderProfileChart($('profile-chart'), result, { width, height });
+  let height;
+  if (profileVE === null) {
+    // «Fit»: la curva se estira al alto de la hoja.
+    wrap.classList.remove('pf-scroll');
+    wrap.style.height = '';
+    svg.style.height = '';
+    height = Math.max(110, Math.round(wrap.clientHeight));
+  } else {
+    // Exageración fija: el alto sale de la cota y la hoja desplaza si no cabe.
+    height = profileHeightFor(result, width, profileVE);
+    wrap.classList.add('pf-scroll');
+    wrap.style.height = `${Math.min(height, Math.round(window.innerHeight * 0.5))}px`;
+    svg.style.height = `${height}px`;
+  }
+  chart = renderProfileChart(svg, result, { width, height });
+  const ve = verticalExaggeration(chart.scales);
+  $('profile-ve-label').textContent = profileVE === null
+    ? `Fit ≈×${Number.isFinite(ve) ? (ve < 10 ? ve.toFixed(1) : Math.round(ve)) : '—'}`
+    : `×${profileVE}`;
+  drawWalkOverlay();
 
   renderProfileStats(result, null);
   $('profile-note').textContent = profileNote(result);
@@ -3732,6 +3756,7 @@ function wireProfilePointer() {
   const svg = $('profile-chart');
 
   const señalar = (e) => {
+    if (isWalkActive()) return;
     const result = store.getState().profile;
     if (!result || !chart) return;
     const rect = svg.getBoundingClientRect();
@@ -3756,6 +3781,7 @@ function wireProfilePointer() {
     señalar(e);
   });
   svg.addEventListener('pointerleave', () => {
+    if (isWalkActive()) return;
     const result = store.getState().profile;
     if (!result || !chart) return;
     chart.setCursor(-1);
@@ -6375,6 +6401,15 @@ export function initUI() {
   $('btn-profile-png').addEventListener('click', downloadProfilePNG);
   $('btn-profile-svg').addEventListener('click', downloadProfileSVG);
   wireProfilePointer();
+  initProfileWalk({ chart: () => chart });
+  $('profile-ve').addEventListener('input', (e) => {
+    profileVE = Number(e.target.value);
+    renderProfilePanel();
+  });
+  $('btn-profile-ve-fit').addEventListener('click', () => {
+    profileVE = null;
+    renderProfilePanel();
+  });
   wireStructureControls();
   syncStructureControls();
   wireControlPointStyleControls();

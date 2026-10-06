@@ -255,5 +255,12 @@ console.log('== el shapefile por dentro ==');
      new TextDecoder().decode(X.unzipEntries(z)[0].data) === 'hola');
 }
 
+{
+  const samples = [0, 5000, 10000].map((d) => ({ distance: d, elevation: 1000, lngLat: [0, 0] }));
+  const r = S.verticalRange(samples, { minDepth: 5000 });
+  ok('profundidad mínima bajo la cota mínima', r.zMin <= 1000 - 5000, String(r.zMin));
+  ok('sin minDepth no cambia', S.verticalRange(samples).zMin > 0);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

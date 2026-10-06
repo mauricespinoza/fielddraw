@@ -1,4 +1,5 @@
 import maplibregl from 'maplibre-gl';
+import { LEVELS, walkPathLngLat } from './hiking.js';
 import mlcontour from 'maplibre-contour';
 
 import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
@@ -105,7 +106,16 @@ const HILLSHADE_LAYER_IDS = ['hillshade'];
 
 /** Traza del perfil topográfico y la muestra que señala el gráfico. */
 const PROFILE_SOURCE = 'profile-src';
-const PROFILE_LAYER_IDS = ['profile-casing', 'profile-line', 'profile-nodes', 'profile-cursor'];
+const PROFILE_LAYER_IDS = [
+  'profile-casing',
+  'profile-line',
+  'profile-nodes',
+  'profile-cursor',
+  'profile-walk-casing',
+  'profile-walk-line',
+  'profile-walk-anchor',
+  'profile-walk-end',
+];
 
 /** Traza de afloramiento proyectada desde una medida; ver planeTrace.js. */
 const PLANE_TRACE_SOURCE = 'plane-trace-src';
@@ -878,7 +888,7 @@ export function createMapView({
       id: 'profile-casing',
       type: 'line',
       source: PROFILE_SOURCE,
-      filter: ['==', ['geometry-type'], 'LineString'],
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'kind'], 'walk']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#1a1200', 'line-width': 7, 'line-opacity': 0.55 },
     });
@@ -886,7 +896,7 @@ export function createMapView({
       id: 'profile-line',
       type: 'line',
       source: PROFILE_SOURCE,
-      filter: ['==', ['geometry-type'], 'LineString'],
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['!=', ['get', 'kind'], 'walk']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': '#ffb300', 'line-width': 2.8 },
     });
@@ -911,6 +921,49 @@ export function createMapView({
         'circle-radius': 7,
         'circle-color': '#ffffff',
         'circle-stroke-color': '#ffb300',
+        'circle-stroke-width': 3,
+      },
+    });
+
+    /* Tramo de marcha: sobre la traza, en el color del nivel que se está usando
+       (`walkColor`), con el punto de partida y el de llegada marcados. */
+    map.addLayer({
+      id: 'profile-walk-casing',
+      type: 'line',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'walk'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.85 },
+    });
+    map.addLayer({
+      id: 'profile-walk-line',
+      type: 'line',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'walk'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 5.5 },
+    });
+    map.addLayer({
+      id: 'profile-walk-anchor',
+      type: 'circle',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'walk-anchor'],
+      paint: {
+        'circle-radius': 8,
+        'circle-color': '#374151',
+        'circle-stroke-color': '#ffffff',
+        'circle-stroke-width': 3,
+      },
+    });
+    map.addLayer({
+      id: 'profile-walk-end',
+      type: 'circle',
+      source: PROFILE_SOURCE,
+      filter: ['==', ['get', 'kind'], 'walk-end'],
+      paint: {
+        'circle-radius': 8,
+        'circle-color': ['get', 'color'],
+        'circle-stroke-color': '#ffffff',
         'circle-stroke-width': 3,
       },
     });
@@ -1477,7 +1530,7 @@ export function createMapView({
     if (!ready) return;
     const src = map.getSource(PROFILE_SOURCE);
     if (!src) return;
-    const { profile, profileCursor } = store.getState();
+    const { profile, profileCursor, profileWalk } = store.getState();
     if (!profile || !profile.coords) {
       src.setData(EMPTY_FC);
       return;
@@ -1499,6 +1552,21 @@ export function createMapView({
         properties: { kind: 'cursor' },
         geometry: { type: 'Point', coordinates: m.lngLat },
       });
+    }
+    if (profileWalk) {
+      const path = walkPathLngLat(profile.samples, profileWalk.from, profileWalk.to);
+      const color = (LEVELS[profileWalk.level] || LEVELS.normal).color;
+      if (path.length >= 2) {
+        out.push({
+          type: 'Feature',
+          properties: { kind: 'walk', color },
+          geometry: { type: 'LineString', coordinates: path },
+        });
+      }
+      const ini = path[0];
+      const fin = path[path.length - 1];
+      if (ini) out.push({ type: 'Feature', properties: { kind: 'walk-anchor' }, geometry: { type: 'Point', coordinates: ini } });
+      if (fin) out.push({ type: 'Feature', properties: { kind: 'walk-end', color }, geometry: { type: 'Point', coordinates: fin } });
     }
     src.setData({ type: 'FeatureCollection', features: out });
   }
@@ -3470,7 +3538,7 @@ export function createMapView({
       if (store.getState().scaleLock) goToScale(store.getState().scaleLock);
       publishScale(true);
     }
-    if (store.changed('profile') || store.changed('profileCursor')) syncProfile();
+    if (store.changed('profile') || store.changed('profileCursor') || store.changed('profileWalk')) syncProfile();
     if (store.changed('planeTrace')) syncPlaneTrace();
     if (store.changed('thickness') || store.changed('thicknessFrom')) syncThickness();
     if (store.changed('units')) {
