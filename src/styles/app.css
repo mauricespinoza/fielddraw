@@ -2017,6 +2017,15 @@ input[type='radio'] {
   flex: none;
 }
 
+/* Centro del mapa en grados decimales: ancho fijo en tabulares para que el
+   texto de estado no baile con cada fotograma del paneo. */
+.statusbar .center-coord {
+  flex: none;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /*
  * Escala de trabajo. Vive en la barra de estado —que por lo demás no recibe
  * toques— así que recupera los eventos solo para sí.
@@ -3464,6 +3473,20 @@ input[type='radio'] {
   .statusbar #status-text,
   .statusbar .count {
     display: none;
+  }
+
+  /* La coordenada central sí se queda en un teléfono: flota sobre la tira de
+     herramientas, centrada, sin tomar toques. */
+  .statusbar .center-coord {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(var(--safe-b) + var(--status-h) + var(--bar-h) + 4px);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--panel);
+    font-size: 11px;
+    z-index: 7;
   }
 
   .statusbar {

@@ -7,6 +7,7 @@ import {
   openPropsMenu,
   renderDigitizePreview,
   renderScale,
+  renderCenter,
   restoreImportedFiles,
   showBanner,
   wireLocate,
@@ -52,6 +53,7 @@ const view = createMapView({
   onLockedFeatureTap: openLockedAttrs,
   onImportedFeatureTap: openImportedAttrs,
   onScale: renderScale,
+  onCenter: renderCenter,
   onDigitizePreview: renderDigitizePreview,
 });
 

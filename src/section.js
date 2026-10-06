@@ -379,6 +379,49 @@ export function isContactFeature(f) {
   return !!tipo && tipo.group === 'Contacts';
 }
 
+/** Máximo de puntos de un tramo proyectado: de sobra para una línea de pantalla. */
+const MAX_PATH_POINTS = 150;
+
+/** Submuestrea un tramo a puntos `{s, offset, lngLat}`, conservando los extremos. */
+function pathOf(tramo, toLngLat) {
+  const n = tramo.length;
+  const paso = Math.max(1, Math.ceil(n / MAX_PATH_POINTS));
+  const out = [];
+  for (let i = 0; i < n; i += paso) out.push(tramo[i]);
+  if ((n - 1) % paso !== 0) out.push(tramo[n - 1]);
+  return out.map((q) => ({ s: q.s, offset: q.offset, lngLat: toLngLat(...q.xy) }));
+}
+
+/**
+ * Añade la cota a cada punto de las líneas proyectadas.
+ *
+ * Cada punto del contacto se lleva al perfil por la perpendicular —conserva su
+ * distancia `s`— y a la cota que el terreno tiene EN ese punto, no en la
+ * traza: así la línea dibujada es el contacto visto de lado, con su relieve.
+ *
+ * @param {Array} contacts   lo que devuelve `projectContacts`
+ * @param {(lng:number, lat:number) => Promise<number>|number} elevationAt
+ */
+export async function withContactElevations(contacts, elevationAt) {
+  return Promise.all(
+    contacts.map(async (k) => {
+      if (!k.path) return k;
+      const path = await Promise.all(
+        k.path.map(async (q) => {
+          let z = NaN;
+          try {
+            z = await elevationAt(q.lngLat[0], q.lngLat[1]);
+          } catch {
+            /* sin cota en este punto: se queda NaN y la línea se corta ahí */
+          }
+          return { ...q, z: Number.isFinite(z) ? z : NaN };
+        }),
+      );
+      return { ...k, path };
+    }),
+  );
+}
+
 /**
  * Proyecta los contactos del mapa sobre el perfil.
  *
@@ -436,6 +479,10 @@ export function projectContacts(trace, features, bandwidth) {
               offset: mejor.offset,
               side: mejor.side,
               lngLat: toLngLat(...mejor.xy),
+              /* El tramo entero, no solo su punto más cercano: es lo que se
+               * dibuja como línea sobre el perfil. `z` la rellena quien tenga
+               * el modelo de elevación (ver `withContactElevations`). */
+              path: pathOf(tramo, toLngLat),
               enabled: true,
             });
           }

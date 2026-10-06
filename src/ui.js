@@ -2620,6 +2620,14 @@ function renderPickDipsBar() {
  */
 let escalaActual = NaN;
 
+/** Centro del mapa en grados decimales; barato porque llega en cada fotograma. */
+export function renderCenter(lng, lat) {
+  const el = $('status-center');
+  if (!el || !Number.isFinite(lng) || !Number.isFinite(lat)) return;
+  const L = ((((lng + 180) % 360) + 360) % 360) - 180;
+  el.textContent = `${lat.toFixed(5)}°, ${L.toFixed(5)}°`;
+}
+
 /**
  * Lectura de la escala. La manda el mapa cada vez que se mueve, así que este
  * camino tiene que ser barato: se escriben dos nodos de texto y una clase.

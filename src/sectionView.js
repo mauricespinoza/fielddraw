@@ -240,6 +240,24 @@ export function renderSection(svg, section, opts = {}) {
       const zTopo = elevationAt(section.samples, k.s);
       const y0 = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
       const texto = `${k.name || (tipo ? tipo.label : k.type || 'contact')} (${Math.round(k.offset)} m)`;
+      /* La línea del contacto proyectada: cada punto a su `s` y a su cota,
+       * discontinua porque es dato estirado desde `offset` metros. Un punto
+       * sin cota corta la línea en vez de inventar un tramo. */
+      if (k.path && k.path.length > 1) {
+        let d = '';
+        let pen = false;
+        for (const q of k.path) {
+          if (!Number.isFinite(q.z)) { pen = false; continue; }
+          d += `${pen ? 'L' : 'M'}${s.x(q.s).toFixed(1)} ${s.y(q.z).toFixed(1)}`;
+          pen = true;
+        }
+        if (d) {
+          gc.appendChild(el('path', {
+            d, fill: 'none', stroke: color, 'stroke-width': 1.8, 'stroke-dasharray': '6 3',
+            'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: 0.9,
+          }));
+        }
+      }
       if (showCrossLabels) {
         const ancho = texto.length * 5.6 + 6;
         let ty = y0 + 16;

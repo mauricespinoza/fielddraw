@@ -372,6 +372,8 @@ export function createMapView({
   onLockedFeatureTap,
   onImportedFeatureTap,
   onScale,
+  // Centro del mapa (lng, lat) en cada movimiento, para la barra de estado.
+  onCenter = () => {},
   // Rumbo/manteo en vivo mientras dura el arrastre de Digitize; `null` al
   // soltar o al cancelar. Sin callback, no pasa nada: la traza se sigue
   // viendo en el mapa, solo no hay número en la barra de estado.
@@ -1955,7 +1957,9 @@ export function createMapView({
           '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="display:block;margin:auto">' +
           '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
           '<rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="currentColor" opacity=".35"/></svg>';
-        b.addEventListener('click', () => fitToAllData());
+        b.addEventListener('click', () => {
+          if (!fitToAllData()) onEditMessage('Nothing to zoom to yet — draw or import something first.');
+        });
         container.appendChild(b);
         return container;
       },
@@ -1963,6 +1967,46 @@ export function createMapView({
         container.remove();
       },
     };
+  }
+
+  /**
+   * Encuadra una caja de forma que no falle en un teléfono.
+   *
+   * `fitBounds` se rinde en silencio —solo avisa por consola— cuando el
+   * relleno no deja sitio en el lienzo, y en un teléfono apaisado o con un
+   * panel abierto 60 px por lado se come casi todo. Aquí el relleno se acota
+   * a un tercio de cada eje, se cancela cualquier animación en curso (un
+   * gesto a medias la dejaba ganando al encuadre), se recalcula el tamaño del
+   * lienzo por si la barra del navegador móvil lo cambió, y si la caja es un
+   * punto o `fitBounds` no la acepta se cae a `easeTo` sobre su centro.
+   */
+  function fitBoundsSafe(bounds, padding = 60, duration = 700) {
+    map.stop();
+    map.resize();
+    const caja = map.getContainer();
+    const w = caja.clientWidth;
+    const h = caja.clientHeight;
+    if (!(w > 0 && h > 0)) return false;
+    const pad = typeof padding === 'number' ? { top: padding, bottom: padding, left: padding, right: padding } : { top: 0, bottom: 0, left: 0, right: 0, ...padding };
+    const tope = (v, eje) => Math.max(0, Math.min(v, Math.floor(eje / 3)));
+    const p = {
+      top: tope(pad.top, h),
+      bottom: tope(pad.bottom, h),
+      left: tope(pad.left, w),
+      right: tope(pad.right, w),
+    };
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const punto = Math.abs(ne.lng - sw.lng) < 1e-9 && Math.abs(ne.lat - sw.lat) < 1e-9;
+    if (!punto) {
+      const cam = map.cameraForBounds(bounds, { padding: p, maxZoom: 16 });
+      if (cam) {
+        map.easeTo({ ...cam, duration });
+        return true;
+      }
+    }
+    map.easeTo({ center: bounds.getCenter(), zoom: punto ? 16 : map.getZoom(), duration });
+    return true;
   }
 
   function fitToGeoJSON(fc, padding = 60, duration = 700) {
@@ -1977,7 +2021,7 @@ export function createMapView({
       } else for (const x of c) visit(x);
     };
     for (const f of fc.features) if (f.geometry) visit(f.geometry.coordinates);
-    if (any) map.fitBounds(bounds, { padding, maxZoom: 16, duration });
+    if (any) fitBoundsSafe(bounds, padding, duration);
   }
 
   /*
@@ -2544,6 +2588,14 @@ export function createMapView({
   }
 
   map.on('move', () => publishScale());
+
+  const publishCenter = () => {
+    if (!ready) return;
+    const c = map.getCenter();
+    onCenter(c.lng, c.lat);
+  };
+  map.on('move', publishCenter);
+  map.on('load', publishCenter);
 
   /*
    * Candado contra la reentrada.

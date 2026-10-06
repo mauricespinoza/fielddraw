@@ -278,5 +278,18 @@ console.log('== contactos proyectados ==');
   ok('solo contactos', S.projectContacts(t, [{ geometry: { type: 'LineString', coordinates: [[0.03, 0.002], [0.05, 0.003]] }, properties: { id: 'f', type: 'normal-fault' } }], 500).length === 0);
 }
 
+console.log('== la línea proyectada ==');
+{
+  const t = new S.SectionTrace([[0, 0], [0.1, 0]]);
+  const l = { geometry: { type: 'LineString', coordinates: [[0.03, 0.002], [0.05, 0.003]] }, properties: { id: 'c', type: 'stratigraphic-contact' } };
+  const [k] = S.projectContacts(t, [l], 500);
+  ok('lleva el tramo entero', k.path.length > 2, String(k.path && k.path.length));
+  ok('en orden de s creciente', k.path[0].s < k.path[k.path.length - 1].s);
+  const [e] = await S.withContactElevations([k], (lng) => 1000 + lng * 1000);
+  ok('cada punto con su cota', e.path.every((q) => Number.isFinite(q.z)));
+  const [n] = await S.withContactElevations([k], () => { throw new Error('x'); });
+  ok('sin cota queda NaN, no rompe', n.path.every((q) => Number.isNaN(q.z)));
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

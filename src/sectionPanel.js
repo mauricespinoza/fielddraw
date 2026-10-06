@@ -14,7 +14,7 @@
  */
 
 import * as store from './store.js';
-import { buildSection, projectContacts } from './section.js';
+import { buildSection, projectContacts, withContactElevations } from './section.js';
 import { initSectionInk } from './sectionInk.js';
 import { openInSketcher, sketcherMessage } from './sketcherLink.js';
 import { makeFloating } from './floating.js';
@@ -399,12 +399,24 @@ function renderBandBar(st) {
     `Band ±${w} m around the profile (${w * 2} m wide): contacts inside it are projected onto the section.`;
 }
 
-function confirmBand() {
+async function confirmBand() {
   const st = store.getState();
   if (!st.pickBand || !st.section) return;
   const width = st.pickBand.width;
   const lineas = st.features.filter((f) => f.geometry && f.geometry.type !== 'Point');
-  const contactos = projectContacts(st.section.trace, lineas, width);
+  let contactos = projectContacts(st.section.trace, lineas, width);
+  if (contactos.length) {
+    onBusy('Reading elevations of the projected contacts…');
+    try {
+      const sampler = samplerFor(st);
+      if (sampler.loadGrid) await sampler.loadGrid(contactos.flatMap((k) => k.path.map((q) => q.lngLat)));
+      contactos = await withContactElevations(contactos, (lng, lat) => sampler.elevationAt(lng, lat));
+    } catch (err) {
+      onMessage(`Contacts projected without relief: ${err.message}`);
+    } finally {
+      onBusy(null);
+    }
+  }
   store.setSectionContacts(contactos, width);
   onMessage(
     contactos.length
