@@ -262,5 +262,21 @@ console.log('== el shapefile por dentro ==');
   ok('sin minDepth no cambia', S.verticalRange(samples).zMin > 0);
 }
 
+console.log('== contactos proyectados ==');
+{
+  const t = new S.SectionTrace([[0, 0], [0.1, 0]]);
+  const c = (id, coords) => ({ geometry: { type: 'LineString', coordinates: coords }, properties: { id, type: 'stratigraphic-contact', name: id } });
+  const r = S.projectContacts(t, [
+    c('cerca', [[0.03, 0.002], [0.05, 0.003]]),
+    c('cruza', [[0.06, -0.01], [0.06, 0.01]]),
+    c('lejos', [[0.07, 0.05], [0.08, 0.05]]),
+  ], 500);
+  ok('proyecta el que pasa dentro de la franja', r.length === 1 && r[0].id === 'cerca', JSON.stringify(r.map((x) => x.id)));
+  ok('con su offset real', r[0] && r[0].offset > 200 && r[0].offset < 330, String(r[0] && r[0].offset));
+  ok('el que cruza ya es un cruce: no se repite', !r.some((x) => x.id === 'cruza'));
+  ok('franja nula no proyecta nada', S.projectContacts(t, [c('cerca', [[0.03, 0.002], [0.05, 0.003]])], 0).length === 0);
+  ok('solo contactos', S.projectContacts(t, [{ geometry: { type: 'LineString', coordinates: [[0.03, 0.002], [0.05, 0.003]] }, properties: { id: 'f', type: 'normal-fault' } }], 500).length === 0);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

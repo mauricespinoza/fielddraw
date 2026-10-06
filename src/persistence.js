@@ -5,6 +5,7 @@ const STRUCTURE_STYLE_KEY = 'fielddraw.structure-style.v1';
 const CONTROL_POINT_STYLE_KEY = 'fielddraw.control-point-style.v1';
 const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
 const STRABO_DATASETS_KEY = 'fielddraw.strabo-datasets.v1';
+const SECTIONS_KEY = 'fielddraw.sections.v1';
 const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
 
 /**
@@ -218,4 +219,24 @@ export function downloadBlob(blob, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Perfiles estructurales guardados (con sus dibujos). */
+export function saveSections(list) {
+  try {
+    localStorage.setItem(SECTIONS_KEY, JSON.stringify(list));
+  } catch {
+    /* cuota llena: no vale la pena romper nada por esto */
+  }
+}
+
+export function loadSavedSections() {
+  try {
+    const raw = localStorage.getItem(SECTIONS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }

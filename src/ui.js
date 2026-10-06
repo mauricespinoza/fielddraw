@@ -87,6 +87,8 @@ import {
   verticalExaggeration,
 } from './profile.js';
 import { drawWalkOverlay, initProfileWalk, isWalkActive } from './profileWalk.js';
+import { makeFloating } from './floating.js';
+import { openInSketcher, sketcherMessage } from './sketcherLink.js';
 import {
   downloadBlob,
   downloadGeoJSON,
@@ -1427,6 +1429,46 @@ function groupHeader(title) {
   li.className = 'layer-group';
   li.textContent = title;
   return li;
+}
+
+/** Perfiles estructurales guardados: abrir, renombrar, borrar y ver en el mapa. */
+function renderSavedSections() {
+  const list = $('saved-sections-list');
+  const { savedSections, showSavedSections } = store.getState();
+  $('saved-sections').classList.toggle('hidden', savedSections.length === 0);
+  $('saved-sections-show').checked = showSavedSections;
+  list.replaceChildren();
+  for (const e of savedSections) {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'ss-name';
+    name.textContent = e.name;
+    name.title = 'Open this profile';
+    name.addEventListener('click', () => {
+      store.openSavedSection(e.id);
+      if (mapBridge) mapBridge.fitToCoords(e.data.coords);
+    });
+    const sub = document.createElement('span');
+    sub.className = 'ss-sub';
+    sub.textContent = `${(e.data.length / 1000).toFixed(1)} km${(e.data.ink || []).length ? ' · ✏️' : ''}`;
+    const ren = document.createElement('button');
+    ren.className = 'icon-btn';
+    ren.textContent = '✎';
+    ren.title = 'Rename';
+    ren.addEventListener('click', () => {
+      const n = window.prompt('Rename profile:', e.name);
+      if (n && n.trim()) store.renameSavedSection(e.id, n.trim());
+    });
+    const del = document.createElement('button');
+    del.className = 'icon-btn';
+    del.textContent = '✕';
+    del.title = 'Delete this saved profile';
+    del.addEventListener('click', () => {
+      if (window.confirm(`Delete "${e.name}"?`)) store.deleteSavedSection(e.id);
+    });
+    li.append(name, sub, ren, del);
+    list.appendChild(li);
+  }
 }
 
 function renderLayers() {
@@ -3574,6 +3616,9 @@ export function wireMapView(view) {
 let chart = null;
 /** Exageración vertical del perfil: null = ajustar a la hoja, número = fija. */
 let profileVE = null;
+/** Alto del gráfico en «Fit» (px); lo cambia la esquina de la hoja. */
+let profileFitHeight = 168;
+let profileFitStart = null;
 let profileBusy = false;
 
 /**
@@ -3726,9 +3771,9 @@ function renderProfilePanel() {
   if (profileVE === null) {
     // «Fit»: la curva se estira al alto de la hoja.
     wrap.classList.remove('pf-scroll');
-    wrap.style.height = '';
+    wrap.style.height = `${profileFitHeight}px`;
     svg.style.height = '';
-    height = Math.max(110, Math.round(wrap.clientHeight));
+    height = Math.max(60, profileFitHeight);
   } else {
     // Exageración fija: el alto sale de la cota y la hoja desplaza si no cabe.
     height = profileHeightFor(result, width, profileVE);
@@ -3819,6 +3864,18 @@ function downloadProfileSketcher() {
     `${profileBaseName()}.sketch.json`,
     'application/json',
   );
+}
+
+/** El perfil topográfico que se ve, directo a StructuralSketcher. */
+function openProfileInSketcher() {
+  const result = store.getState().profile;
+  if (!result || !result.coords || result.coords.length < 2) return;
+  const section = buildSection({ coords: result.coords, profile: result });
+  const doc = sketcherDocument(section, {
+    name: `FieldDraw profile ${Math.round(section.azimuth)}°`,
+    exaggeration: 1,
+  });
+  showBanner(sketcherMessage(openInSketcher(doc, `${profileBaseName()}.sketch.json`)), 'info');
 }
 
 /** Nombre de archivo de las salidas del perfil: la fecha basta para ordenarlas. */
@@ -6401,7 +6458,38 @@ export function initUI() {
   $('btn-profile-png').addEventListener('click', downloadProfilePNG);
   $('btn-profile-svg').addEventListener('click', downloadProfileSVG);
   wireProfilePointer();
+  $('saved-sections-show').addEventListener('change', (e) => store.setShowSavedSections(e.target.checked));
+  renderSavedSections();
   initProfileWalk({ chart: () => chart });
+  // La hoja del perfil se puede mover, achicar y plegar: tapa el mapa justo
+  // donde hay que ver la traza o elegir los manteos.
+  makeFloating({
+    panel: $('profile-sheet'),
+    handle: $('profile-sheet').querySelector('header'),
+    grip: $('profile-grip'),
+    collapseBtn: $('btn-profile-collapse'),
+    onGrip: (dw, dh, st) => {
+      // En «Fit» el alto del gráfico también se redimensiona con la esquina.
+      if (profileVE === null) {
+        profileFitHeight = Math.min(600, Math.max(70, (profileFitStart ?? profileFitHeight) + dh));
+      }
+    },
+    onLayout: () => {},
+  });
+  $('profile-grip').addEventListener('pointerdown', () => {
+    profileFitStart = profileFitHeight;
+  });
+  if (typeof ResizeObserver !== 'undefined') {
+    let ultimo = 0;
+    new ResizeObserver(() => {
+      const w = Math.round($('profile-chart-wrap').clientWidth);
+      if (store.getState().profile && w > 0 && Math.abs(w - ultimo) > 2) {
+        ultimo = w;
+        renderProfilePanel();
+      }
+    }).observe($('profile-chart-wrap'));
+  }
+  $('btn-profile-open-sketcher').addEventListener('click', openProfileInSketcher);
   $('profile-ve').addEventListener('input', (e) => {
     profileVE = Number(e.target.value);
     renderProfilePanel();
@@ -6500,6 +6588,7 @@ export function initUI() {
     if (store.changed('ornaments')) renderSymbology();
     if (store.changed('importStyle')) syncImportControls();
     if (store.changed('layers') || store.changed('straboDatasets')) renderLayers();
+    if (store.changed('savedSections') || store.changed('showSavedSections')) renderSavedSections();
     // Abrir un proyecto reescribe los ajustes: los controles tienen que
     // reflejarlo, o mostrarían valores que ya no son los que rigen.
     if (
@@ -6565,7 +6654,7 @@ export function initUI() {
       const pedido = store.getState().pendingSection;
       if (pedido) runSection(pedido);
     }
-    if (store.changed('section') || store.changed('sectionOpts') || store.changed('pickDips')) {
+    if (store.changed('section') || store.changed('sectionOpts') || store.changed('pickDips') || store.changed('pickBand')) {
       renderSectionPanel();
     }
     if (store.changed('pickDips') || (store.getState().pickDips && store.changed('selection'))) {

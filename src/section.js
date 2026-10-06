@@ -23,6 +23,7 @@
  */
 
 import { haversine } from './dem.js';
+import { LINE_TYPE_BY_ID } from './symbology.js';
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -367,6 +368,99 @@ export function intersections(trace, features) {
 }
 
 /**
+ * ¿Es un contacto? Una línea de tipo contacto, o el borde de un polígono (una
+ * unidad cartografiada acaba en un contacto, tenga o no la línea dibujada).
+ */
+export function isContactFeature(f) {
+  const g = f && f.geometry;
+  if (!g) return false;
+  if (g.type === 'Polygon' || g.type === 'MultiPolygon') return true;
+  const tipo = LINE_TYPE_BY_ID.get(f.properties && f.properties.type);
+  return !!tipo && tipo.group === 'Contacts';
+}
+
+/**
+ * Proyecta los contactos del mapa sobre el perfil.
+ *
+ * Un contacto que NO cruza la traza pero pasa cerca no aparece en
+ * `intersections`, aunque a efectos de interpretar el corte importa: indica
+ * dónde estaría el contacto si se prolonga hasta el plano del perfil. Aquí se
+ * toma la franja de ancho `bandwidth` a cada lado de la traza (distancia
+ * perpendicular) y cada tramo continuo de contacto que cae dentro de ella se
+ * proyecta en su punto más cercano a la traza.
+ *
+ * Los tramos que atraviesan la traza se descartan: ya son cruces exactos, y
+ * dibujarlos otra vez como "proyectados" los duplicaría. El `offset` de cada
+ * resultado es la distancia real a la que se proyectó, que es lo que dice
+ * cuánto se estiró el dato.
+ *
+ * @returns {Array<{id, type, name, s, offset, side, lngLat, enabled}>}
+ */
+export function projectContacts(trace, features, bandwidth) {
+  const out = [];
+  if (!(bandwidth > 0)) return out;
+  const { toXY, toLngLat } = trace.frame;
+  const paso = Math.min(200, Math.max(5, bandwidth / 10));
+
+  for (const f of features) {
+    if (!isContactFeature(f)) continue;
+    const g = f.geometry;
+    const partes =
+      g.type === 'LineString'
+        ? [g.coordinates]
+        : g.type === 'MultiLineString'
+          ? g.coordinates
+          : g.type === 'Polygon'
+            ? g.coordinates
+            : g.type === 'MultiPolygon'
+              ? g.coordinates.flat()
+              : [];
+    const props = f.properties || {};
+
+    for (const parte of partes) {
+      // Muestras a lo largo de la línea, con paso acotado: un segmento de
+      // varios kilómetros no puede quedar sin mirar bajo una franja angosta.
+      let tramo = [];
+      const cerrar = () => {
+        if (tramo.length) {
+          const cruza = tramo.some((q, i) => i > 0 && q.side !== tramo[i - 1].side && q.offset < paso * 2);
+          const mejor = tramo.reduce((a, b) => (b.offset < a.offset ? b : a));
+          // Rozar la traza (offset ≈ 0) también es un cruce, ya listado.
+          if (!cruza && mejor.offset >= paso / 2) {
+            out.push({
+              id: props.id,
+              type: props.type || '',
+              kind: g.type === 'Polygon' || g.type === 'MultiPolygon' ? 'polygon' : 'line',
+              name: featureName(props),
+              s: mejor.s,
+              offset: mejor.offset,
+              side: mejor.side,
+              lngLat: toLngLat(...mejor.xy),
+              enabled: true,
+            });
+          }
+        }
+        tramo = [];
+      };
+      for (let i = 1; i < parte.length; i++) {
+        const a = toXY(parte[i - 1]);
+        const b = toXY(parte[i]);
+        const largo = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const n = Math.min(2000, Math.max(1, Math.ceil(largo / paso)));
+        for (let k = i === 1 ? 0 : 1; k <= n; k++) {
+          const xy = [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n];
+          const p = trace.project(toLngLat(...xy));
+          if (p && p.offset <= bandwidth) tramo.push({ ...p, xy });
+          else cerrar();
+        }
+      }
+      cerrar();
+    }
+  }
+  return out.sort((a, b) => a.s - b.s);
+}
+
+/**
  * Corte de dos segmentos. Devuelve los parámetros de cada uno o null.
  *
  * Se descartan los paralelos por el determinante y no por comparar ángulos: es
@@ -448,6 +542,8 @@ export function buildSection({ coords, profile, measurements = [], features = []
     samples: profile ? profile.samples : [],
     dips,
     intersections: cruces,
+    contacts: [],
+    ink: [],
     zMin,
     zMax,
     source: profile ? profile.label : '',

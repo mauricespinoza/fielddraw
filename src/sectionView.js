@@ -44,6 +44,9 @@ export function sectionScales(section, width, height, exaggeration = 1) {
   return {
     x: (s) => MARGIN.left + (s / total) * w,
     y: (z) => MARGIN.top + (zMax - z) * pxPerM * ve,
+    /** Inversas: de píxeles del SVG a posición a lo largo (m) y cota (m). */
+    sAt: (px) => ((px - MARGIN.left) / w) * total,
+    zAt: (py) => zMax - (py - MARGIN.top) / (pxPerM * ve),
     w,
     h,
     total,
@@ -96,6 +99,8 @@ export function renderSection(svg, section, opts = {}) {
     showIntersections = true,
     showLabels = true,
     showCrossLabels = true,
+    showContacts = true,
+    ink = [],
     theme = 'dark',
   } = opts;
 
@@ -218,6 +223,48 @@ export function renderSection(svg, section, opts = {}) {
     svg.appendChild(gi);
   }
 
+  /* --- contactos proyectados desde la franja --- */
+  /*
+   * Anillo hueco, no punto lleno: el contacto NO corta el perfil, se proyectó
+   * desde `offset` metros. Con su distancia en el rótulo, para que se vea
+   * cuánto se estiró.
+   */
+  if (showContacts && section.contacts && section.contacts.length) {
+    const gc = el('g');
+    const puestos = [];
+    for (const k of section.contacts) {
+      if (k.enabled === false) continue;
+      const tipo = LINE_TYPE_BY_ID.get(k.type);
+      const color = tipo ? tipo.color : c.muted;
+      const px = s.x(k.s);
+      const zTopo = elevationAt(section.samples, k.s);
+      const y0 = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
+      const texto = `${k.name || (tipo ? tipo.label : k.type || 'contact')} (${Math.round(k.offset)} m)`;
+      if (showCrossLabels) {
+        const ancho = texto.length * 5.6 + 6;
+        let ty = y0 + 16;
+        for (let n = 0; n < 12; n++) {
+          const pisa = puestos.some(
+            (q) => Math.abs(q.px - px) < (q.ancho + ancho) / 2 && Math.abs(q.ty - ty) < 12,
+          );
+          if (!pisa) break;
+          ty += 13;
+        }
+        puestos.push({ px, ancho, ty });
+        const t = el('text', {
+          x: px, y: ty, fill: color, 'font-size': 10, 'font-style': 'italic', 'text-anchor': 'middle',
+          stroke: c.bg, 'stroke-width': 3, 'paint-order': 'stroke',
+        });
+        t.textContent = texto;
+        gc.appendChild(t);
+      }
+      gc.appendChild(el('circle', {
+        cx: px, cy: y0, r: 4, fill: c.bg, stroke: color, 'stroke-width': 2,
+      }));
+    }
+    svg.appendChild(gc);
+  }
+
   /* --- manteos proyectados --- */
   const gd = el('g');
   for (const d of section.dips) {
@@ -254,6 +301,29 @@ export function renderSection(svg, section, opts = {}) {
     }
   }
   svg.appendChild(gd);
+
+  /* --- dibujo a mano --- */
+  /*
+   * Los trazos viven en coordenadas del corte (distancia, cota) y no en
+   * píxeles: así acompañan al perfil al cambiar la exageración o el tamaño de
+   * la ventana, y salen en el SVG/PNG exportado.
+   */
+  if (ink.length) {
+    const gk = el('g', { id: 'ink-layer', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' });
+    for (const t of ink) {
+      if (!t.pts || t.pts.length === 0) continue;
+      const d = t.pts
+        .map((q, i) => `${i ? 'L' : 'M'}${s.x(q[0]).toFixed(1)} ${s.y(q[1]).toFixed(1)}`)
+        .join(' ');
+      gk.appendChild(el('path', {
+        d: t.pts.length === 1 ? `${d} L${(s.x(t.pts[0][0]) + 0.1).toFixed(1)} ${s.y(t.pts[0][1]).toFixed(1)}` : d,
+        stroke: t.color, 'stroke-width': t.width, opacity: t.alpha ?? 1,
+        'data-ink': t.id,
+        ...(t.alpha && t.alpha < 1 ? { style: 'mix-blend-mode:multiply' } : {}),
+      }));
+    }
+    svg.appendChild(gk);
+  }
 
   /* --- rótulos de los extremos --- */
   const izq = el('text', { x: MARGIN.left, y: MARGIN.top - 5, fill: c.fg, 'font-size': 12, 'font-weight': 600 });

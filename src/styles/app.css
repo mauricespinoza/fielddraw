@@ -3820,3 +3820,172 @@ a.link-pill {
   color: var(--accent);
   white-space: nowrap;
 }
+
+/* ---------- ventanas flotantes: plegado ---------- */
+
+.section-view.collapsed > :not(header),
+.profile-sheet.collapsed > :not(header) {
+  display: none !important;
+}
+
+.section-view.collapsed {
+  max-height: none;
+}
+
+/* ---------- dibujo a mano sobre el perfil ---------- */
+
+.draw-pill.active {
+  background: linear-gradient(135deg, #ec4899, #f59e0b);
+  color: #111;
+  border-color: transparent;
+}
+
+.sv-ink {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ink-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ink-pen {
+  min-height: 30px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ink-pen.active {
+  background: rgba(45, 212, 191, 0.2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ink-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.ink-swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+#ink-color {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.sv-chart.inking {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sv-chart.erasing {
+  touch-action: none;
+  cursor: cell;
+}
+
+/* ---------- franja de contactos ---------- */
+
+#pickband-bar {
+  flex-wrap: wrap;
+  justify-content: center;
+  border-radius: 18px;
+  max-width: min(94vw, 720px);
+}
+
+.band-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.band-field input[type='range'] {
+  width: 180px;
+  accent-color: #14b8a6;
+}
+
+.band-field input[type='number'] {
+  width: 74px;
+  min-height: 30px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+/* ---------- perfiles guardados (panel de capas) ---------- */
+
+.saved-sections h3 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.saved-sections h3 .sv-check {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#saved-sections-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#saved-sections-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+#saved-sections-list .ss-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#saved-sections-list .ss-sub {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
