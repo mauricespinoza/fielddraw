@@ -2371,6 +2371,53 @@ input[type='radio'] {
   touch-action: none;
 }
 
+.pf-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pf-tools .pill {
+  min-height: 28px;
+  padding: 3px 11px;
+  font-size: 12px;
+}
+
+.pf-ve {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pf-ve input[type='range'] {
+  width: 130px;
+  accent-color: var(--accent);
+}
+
+.pf-ve b {
+  min-width: 62px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Con exageración fija el gráfico puede ser más alto que la hoja: desplaza en
+   vertical y deja el horizontal al lápiz. */
+.pf-chart-wrap.pf-scroll {
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+
+}
+
+.pf-chart.walking {
+  cursor: crosshair;
+  touch-action: none;
+}
+
 .pf-chart {
   display: block;
   width: 100%;
@@ -2865,21 +2912,6 @@ input[type='radio'] {
   border-color: transparent;
 }
 
-.sv-walkbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.sv-walk-title {
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .sv-levels {
   display: flex;
   gap: 4px;
@@ -2911,10 +2943,6 @@ input[type='radio'] {
   color: var(--muted);
 }
 
-.sv-chart.walking {
-  touch-action: none;
-  cursor: crosshair;
-}
 
 .sv-head {
   display: flex;

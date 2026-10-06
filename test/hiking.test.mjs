@@ -45,4 +45,13 @@ console.log('== bordes ==');
   ok('formato', H.formatDuration(85) === '1 h 25 min' && H.formatDuration(0.2) === '<1 min');
 }
 
+console.log('== plano ==');
+{
+  const p = [0, 100, 200].map((d) => ({ distance: d, elevation: 0, lngLat: [d / 1000, 0] }));
+  ok('interpola lng/lat', cerca(H.lngLatInterp(p, 150)[0], 0.15));
+  const ruta = H.walkPathLngLat(p, 50, 180);
+  ok('camino con extremos y vértice', ruta.length === 3 && cerca(ruta[0][0], 0.05) && cerca(ruta[2][0], 0.18));
+  ok('hacia atrás invierte', cerca(H.walkPathLngLat(p, 180, 50)[0][0], 0.18));
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1); }

@@ -1416,7 +1416,22 @@
           <button class="pill" id="btn-profile-svg" title="Save the profile as vector art, editable in Illustrator or Inkscape">SVG</button>
           <button class="icon-btn close-x" id="btn-close-profile" aria-label="Close profile">✕</button>
         </header>
-        <div class="pf-chart-wrap">
+        <div class="pf-tools">
+          <label class="pf-ve" title="Vertical exaggeration — Fit stretches the curve to the sheet; 1× is true 1:1">
+            <span>V.E.</span>
+            <input type="range" id="profile-ve" min="1" max="10" step="0.5" value="1" />
+            <b id="profile-ve-label">Fit</b>
+          </label>
+          <button class="pill" id="btn-profile-ve-fit" title="Stretch the curve to fit the sheet">Fit</button>
+          <button class="pill walk-pill" id="btn-profile-walk" title="Walking time: press a point and drag along the profile">🥾 Walk</button>
+          <div class="sv-levels hidden" id="profile-levels" role="group" aria-label="Walking level">
+            <button class="sv-level" data-level="amateur">Amateur</button>
+            <button class="sv-level" data-level="normal">Normal</button>
+            <button class="sv-level" data-level="expert">Expert</button>
+          </div>
+          <span class="sv-walk-hint hidden" id="profile-walk-hint"></span>
+        </div>
+        <div class="pf-chart-wrap" id="profile-chart-wrap">
           <svg id="profile-chart" class="pf-chart" preserveAspectRatio="none" aria-label="Elevation along the drawn line"></svg>
         </div>
         <div class="pf-stats" id="profile-stats"></div>
@@ -1432,7 +1447,6 @@
           <h2>Structural section</h2>
           <span class="sv-meta" id="section-meta"></span>
           <span class="sv-spacer"></span>
-          <button class="pill walk-pill" id="btn-section-walk" title="Walking time: press a point and drag along the profile">🥾 Walk</button>
           <button class="icon-btn" id="btn-section-info" aria-label="About this section" title="How to read this section">ⓘ</button>
           <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
         </header>
@@ -1461,15 +1475,6 @@
           <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
           <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
           <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
-        </div>
-        <div class="sv-walkbar hidden" id="section-walkbar">
-          <span class="sv-walk-title">Walking pace</span>
-          <div class="sv-levels" id="section-levels" role="group" aria-label="Walking level">
-            <button class="sv-level" data-level="amateur">Amateur</button>
-            <button class="sv-level" data-level="normal">Normal</button>
-            <button class="sv-level" data-level="expert">Expert</button>
-          </div>
-          <span class="sv-walk-hint" id="section-walk-hint">Press a point on the profile, then drag.</span>
         </div>
         <div class="sv-body">
           <div class="sv-chart-wrap" id="section-chart-wrap">
