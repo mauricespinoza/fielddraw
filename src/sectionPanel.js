@@ -14,7 +14,10 @@
  */
 
 import * as store from './store.js';
-import { buildSection } from './section.js';
+import { buildSection, projectContacts } from './section.js';
+import { initSectionInk } from './sectionInk.js';
+import { openInSketcher, sketcherMessage } from './sketcherLink.js';
+import { makeFloating } from './floating.js';
 import { renderSection, sectionPNG, sectionSVG } from './sectionView.js';
 import { sketcherDocument, structuralModellerZip } from './sectionExport.js';
 import { LINE_TYPE_BY_ID, STRUCTURE_TYPE_BY_ID } from './symbology.js';
@@ -53,6 +56,21 @@ export function initSectionPanel({ message, busy, sampler }) {
   });
   $('btn-section-info').addEventListener('click', () => $('section-note').classList.toggle('hidden'));
   initFloating();
+  initSectionInk({ scales: () => lastScales });
+
+  $('btn-section-save').addEventListener('click', saveProfile);
+  $('btn-section-open-sketcher').addEventListener('click', openSketcher);
+  $('btn-project-contacts').addEventListener('click', () => {
+    const sec = store.getState().section;
+    if (sec) store.beginPickBand({ coords: sec.coords, width: sec.bandwidth || 500 });
+  });
+  $('pickband-range').addEventListener('input', (e) => store.setBandWidth(Number(e.target.value)));
+  $('pickband-num').addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    if (v > 0) store.setBandWidth(v);
+  });
+  $('pickband-cancel').addEventListener('click', () => store.cancelPickBand());
+  $('pickband-confirm').addEventListener('click', confirmBand);
   $('section-x-all').addEventListener('click', () => store.setAllIntersections(true));
   $('section-x-none').addEventListener('click', () => store.setAllIntersections(false));
 
@@ -164,10 +182,11 @@ export async function runSection(pending) {
 export function renderSectionPanel() {
   const st = store.getState();
   const panel = $('section-view');
+  renderBandBar(st);
   // Mientras se eligen los manteos en el mapa (`pickDips`) la vista se quita
   // de en medio, aunque ya hubiera un corte construido: es al mapa a donde
   // hay que ver, y el corte anterior sigue intacto para cuando se cancele.
-  if (!st.section || st.pickDips) {
+  if (!st.section || st.pickDips || st.pickBand) {
     panel.classList.add('hidden');
     return;
   }
@@ -179,17 +198,18 @@ export function renderSectionPanel() {
     `${(s.length / 1000).toFixed(2)} km · azimuth ${Math.round(s.azimuth)}° · ` +
     `${Math.round(s.zMin)}–${Math.round(s.zMax)} m`;
 
-  applyFloatingPosition();
   const wrap = $('section-chart-wrap');
   // Solo el ancho viene de la ventana: el alto lo da la escala 1:1 del corte.
   const width = Math.max(320, Math.round(wrap.clientWidth) - 2);
   lastWidth = width;
-  renderSection($('section-chart'), s, {
+  const { scales } = renderSection($('section-chart'), s, {
     width,
     exaggeration: o.exaggeration,
     showIntersections: o.showIntersections,
     showLabels: o.showLabels,
     showCrossLabels: o.showCrossLabels,
+    showContacts: o.showIntersections,
+    ink: s.ink || [],
     // Papel blanco: se interpreta a la luz del día, junto al afloramiento —el
     // mismo motivo por el que la brújula en vivo (`compassWidget.js`) también
     // se dibuja clara y no oscura— y es lo que sale impreso o pegado en un
@@ -197,8 +217,11 @@ export function renderSectionPanel() {
     theme: 'light',
   });
 
+  lastScales = scales;
+
   renderDipList(s);
   renderCrossingList(s);
+  renderContactList(s);
   $('section-note').textContent = sectionNote(s);
 
   const ex = $('section-exag');
@@ -211,65 +234,22 @@ export function renderSectionPanel() {
 
 /* ==================================================== ventana flotante === */
 
-const win = { left: null, top: null, width: null };
 let lastWidth = 0;
+let lastScales = null;
 
-function applyFloatingPosition() {
-  const p = $('section-view');
-  if (win.width) p.style.width = `${win.width}px`;
-  if (win.left !== null) {
-    p.style.left = `${win.left}px`;
-    p.style.top = `${win.top}px`;
-  }
-}
-
-/** Arrastre por la cabecera y redimensión por la esquina. */
+/** Arrastre, redimensión y plegado: ver `floating.js`. */
 function initFloating() {
-  const p = $('section-view');
-  const clampWin = () => {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    win.width = Math.min(Math.max(win.width || p.offsetWidth, 340), vw - 8);
-    win.left = Math.min(Math.max(win.left, 4 - win.width + 120), vw - 120);
-    win.top = Math.min(Math.max(win.top, 0), vh - 48);
-  };
-  const drag = (handle, onMove) => {
-    handle.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button, a, input, label')) return;
-      e.preventDefault();
-      handle.setPointerCapture(e.pointerId);
-      const r = p.getBoundingClientRect();
-      const start = { x: e.clientX, y: e.clientY, left: r.left, top: r.top, width: r.width };
-      const move = (ev) => {
-        onMove(start, ev.clientX - start.x, ev.clientY - start.y);
-        clampWin();
-        applyFloatingPosition();
-      };
-      const up = () => {
-        handle.removeEventListener('pointermove', move);
-        handle.removeEventListener('pointerup', up);
-        handle.removeEventListener('pointercancel', up);
-      };
-      handle.addEventListener('pointermove', move);
-      handle.addEventListener('pointerup', up);
-      handle.addEventListener('pointercancel', up);
-    });
-  };
-  drag($('section-drag'), (st, dx, dy) => {
-    win.left = st.left + dx;
-    win.top = st.top + dy;
-    win.width = st.width;
+  makeFloating({
+    panel: $('section-view'),
+    handle: $('section-drag'),
+    grip: $('section-grip'),
+    collapseBtn: $('btn-section-collapse'),
   });
-  drag($('section-grip'), (st, dx) => {
-    win.left = st.left;
-    win.top = st.top;
-    win.width = st.width + dx;
-  });
-  // Un cambio de ancho por otra vía (rotar el equipo) también re-escala el corte.
+  // Un cambio de ancho de la ventana re-escala el corte (el alto sale de 1:1).
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(() => {
       const w = Math.max(320, Math.round($('section-chart-wrap').clientWidth) - 2);
-      if (store.getState().section && Math.abs(w - lastWidth) > 2) renderSectionPanel();
+      if (store.getState().section && w > 0 && Math.abs(w - lastWidth) > 2) renderSectionPanel();
     }).observe($('section-chart-wrap'));
   }
 }
@@ -354,6 +334,33 @@ function renderCrossingList(section) {
   }
 }
 
+function renderContactList(section) {
+  const lista = $('section-c-list');
+  lista.replaceChildren();
+  const contactos = section.contacts || [];
+  const on = contactos.filter((x) => x.enabled !== false).length;
+  $('section-c-count').textContent = contactos.length ? `${on}/${contactos.length}` : '';
+
+  contactos.forEach((k, i) => {
+    const tipo = LINE_TYPE_BY_ID.get(k.type);
+    const r = row(lista, {
+      color: tipo ? tipo.color : '#888',
+      what: k.name || (tipo ? tipo.label : 'Contact'),
+      num: `${(k.s / 1000).toFixed(2)} km · ${Math.round(k.offset)} m`,
+      className: k.enabled === false ? 'off' : '',
+    });
+    r.style.cursor = 'pointer';
+    r.title = `Projected from ${Math.round(k.offset)} m ${k.side > 0 ? 'left' : 'right'} of the profile. Click to ${k.enabled === false ? 'show' : 'hide'}.`;
+    r.addEventListener('click', () => store.toggleContact(i));
+  });
+  if (contactos.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = 'Use "Project contacts" to bring nearby contacts onto the profile.';
+    lista.appendChild(p);
+  }
+}
+
 /** La nota al pie: de dónde salen los números y qué NO dicen. */
 function sectionNote(section) {
   const achatados = section.dips.filter((d) => d.foreshortening < 0.35).length;
@@ -370,6 +377,64 @@ function sectionNote(section) {
     partes.push(`${lejos} were projected from over 1 km away — that is extrapolation, not measurement.`);
   }
   return partes.join(' ');
+}
+
+/* ================================================== franja de contactos === */
+
+/** Barra flotante donde se fija el ancho de la franja, viéndola en el mapa. */
+function renderBandBar(st) {
+  const bar = $('pickband-bar');
+  if (!st.pickBand) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  const w = Math.round(st.pickBand.width);
+  const largo = st.section ? st.section.length : 10000;
+  const range = $('pickband-range');
+  range.max = String(Math.max(1000, Math.round(largo / 2 / 100) * 100));
+  if (document.activeElement !== range) range.value = String(Math.min(w, Number(range.max)));
+  if (document.activeElement !== $('pickband-num')) $('pickband-num').value = String(w);
+  $('pickband-note').textContent =
+    `Band ±${w} m around the profile (${w * 2} m wide): contacts inside it are projected onto the section.`;
+}
+
+function confirmBand() {
+  const st = store.getState();
+  if (!st.pickBand || !st.section) return;
+  const width = st.pickBand.width;
+  const lineas = st.features.filter((f) => f.geometry && f.geometry.type !== 'Point');
+  const contactos = projectContacts(st.section.trace, lineas, width);
+  store.setSectionContacts(contactos, width);
+  onMessage(
+    contactos.length
+      ? `${contactos.length} contact(s) projected from within ±${Math.round(width)} m.`
+      : `No contact that doesn't already cross the profile lies within ±${Math.round(width)} m: try a wider band.`,
+    'info',
+  );
+}
+
+/* ================================================= guardar y abrir fuera === */
+
+function saveProfile() {
+  const sec = store.getState().section;
+  if (!sec) return;
+  const sugerido = `Profile ${Math.round(sec.azimuth)}° · ${(sec.length / 1000).toFixed(1)} km`;
+  const nombre = window.prompt('Name for this profile:', sugerido);
+  if (nombre === null) return;
+  const e = store.saveCurrentSection(nombre.trim() || sugerido);
+  if (e) onMessage(`Saved "${e.name}" with its drawing. Its trace is on the map; reopen it from the Layers panel.`, 'info');
+}
+
+/** El perfil que se ve, sin el dibujo a mano, directo a StructuralSketcher. */
+function openSketcher() {
+  const st = store.getState();
+  if (!st.section) return;
+  const doc = sketcherDocument(st.section, {
+    name: `FieldDraw section ${Math.round(st.section.azimuth)}°`,
+    exaggeration: st.sectionOpts.exaggeration,
+  });
+  onMessage(sketcherMessage(openInSketcher(doc, `${baseName(st.section)}.sketch.json`)), 'info');
 }
 
 /* ========================================================== exportación === */

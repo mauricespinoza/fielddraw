@@ -16,6 +16,8 @@ import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedControlPointStyle,
   loadSavedFeatures,
+  loadSavedSections,
+  saveSections,
   loadSavedImportStyle,
   loadSavedOpenTopoKey,
   loadSavedOrnaments,
@@ -80,6 +82,8 @@ const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
 // Después del dibujo y no antes: un dataset ya abierto se reconoce por sus
 // elementos en el dibujo, y sin ellos cargados se daría por vacío.
+const savedSections = loadSavedSections();
+if (savedSections) store.loadSavedSections(savedSections);
 const savedStraboDatasets = loadSavedStraboDatasets();
 if (savedStraboDatasets) store.loadStraboDatasets(savedStraboDatasets);
 
@@ -108,6 +112,7 @@ store.subscribe(() => {
     clearTimeout(straboSaveTimer);
     straboSaveTimer = setTimeout(() => saveStraboDatasets(store.currentStraboDatasets()), 500);
   }
+  if (store.changed('savedSections')) saveSections(store.getState().savedSections);
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);

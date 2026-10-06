@@ -104,6 +104,15 @@ const CONTOUR_LAYER_IDS = ['contour-lines', 'contour-index', 'contour-labels'];
 const TERRAIN_SOURCE = 'terrain-dem-src';
 const HILLSHADE_LAYER_IDS = ['hillshade'];
 
+/**
+ * Perfiles estructurales guardados (su traza y su nombre) y la franja de
+ * contactos que se está fijando. La franja se dibuja como una línea gruesa cuyo
+ * ancho en píxeles crece con el zoom, para que mida metros reales en el suelo.
+ */
+const SECTIONS_SOURCE = 'saved-sections-src';
+const BAND_SOURCE = 'section-band-src';
+const SECTIONS_LAYER_IDS = ['section-band', 'section-band-edge', 'section-band-edge-r', 'saved-sections-casing', 'saved-sections-line', 'saved-sections-label'];
+
 /** Traza del perfil topográfico y la muestra que señala el gráfico. */
 const PROFILE_SOURCE = 'profile-src';
 const PROFILE_LAYER_IDS = [
@@ -252,6 +261,7 @@ function applyLayerStack(map, layers) {
   for (const id of [
     ...PICK_LAYER_IDS,
     ...THICKNESS_LAYER_IDS,
+    ...SECTIONS_LAYER_IDS,
     ...PROFILE_LAYER_IDS,
     ...PLANE_TRACE_LAYER_IDS,
     ...DRAFT_LAYER_IDS,
@@ -880,6 +890,58 @@ export function createMapView({
      * el mapa y saber por dónde va el corte. El ámbar la separa del dibujo
      * geológico, que nunca usa ese color.
      */
+    map.addSource(BAND_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'section-band',
+      type: 'line',
+      source: BAND_SOURCE,
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': '#14b8a6', 'line-width': 2, 'line-opacity': 0.28 },
+    });
+    map.addLayer({
+      id: 'section-band-edge',
+      type: 'line',
+      source: BAND_SOURCE,
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': '#0f766e', 'line-width': 1.4, 'line-dasharray': [3, 2], 'line-opacity': 0.9 },
+    });
+    map.addLayer({
+      id: 'section-band-edge-r',
+      type: 'line',
+      source: BAND_SOURCE,
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: { 'line-color': '#0f766e', 'line-width': 1.4, 'line-dasharray': [3, 2], 'line-opacity': 0.9 },
+    });
+    map.addSource(SECTIONS_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({
+      id: 'saved-sections-casing',
+      type: 'line',
+      source: SECTIONS_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.8 },
+    });
+    map.addLayer({
+      id: 'saved-sections-line',
+      type: 'line',
+      source: SECTIONS_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#7c3aed', 'line-width': 3, 'line-dasharray': [2, 1.2] },
+    });
+    map.addLayer({
+      id: 'saved-sections-label',
+      type: 'symbol',
+      source: SECTIONS_SOURCE,
+      layout: {
+        'symbol-placement': 'line',
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 12,
+        'text-max-angle': 90,
+        'symbol-spacing': 300,
+      },
+      paint: { 'text-color': '#5b21b6', 'text-halo-color': 'rgba(255,255,255,0.95)', 'text-halo-width': 1.6 },
+    });
+
     map.addSource(PROFILE_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -1032,6 +1094,8 @@ export function createMapView({
     syncStrabo({ fit: false });
     syncDraft();
     syncProfile();
+    syncSavedSections();
+    syncBand();
     syncPlaneTrace();
     syncThickness();
     applyTerrain();
@@ -1523,6 +1587,51 @@ export function createMapView({
       out.push(punto(thicknessFrom.lngLat, 'anchor'));
     }
     src.setData({ type: 'FeatureCollection', features: out });
+  }
+
+  /** Perfiles estructurales guardados, si se quieren ver en el mapa. */
+  function syncSavedSections() {
+    if (!ready) return;
+    const src = map.getSource(SECTIONS_SOURCE);
+    if (!src) return;
+    const { savedSections, showSavedSections } = store.getState();
+    const features = showSavedSections
+      ? savedSections.map((e) => ({
+          type: 'Feature',
+          properties: { id: e.id, name: e.name },
+          geometry: { type: 'LineString', coordinates: e.data.coords },
+        }))
+      : [];
+    src.setData({ type: 'FeatureCollection', features });
+  }
+
+  /** La franja de contactos que se está fijando, con su ancho en metros reales. */
+  function syncBand() {
+    if (!ready) return;
+    const src = map.getSource(BAND_SOURCE);
+    if (!src || !map.getLayer('section-band')) return;
+    const { pickBand } = store.getState();
+    if (!pickBand) {
+      src.setData(EMPTY_FC);
+      return;
+    }
+    src.setData({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: pickBand.coords },
+    });
+    // Metros → píxeles: a zoom z un píxel mide 156543·cos(lat)/2^z metros, así
+    // que el ancho en píxeles se duplica por nivel de zoom. Dos lados = 2·B.
+    const lat = pickBand.coords[Math.floor(pickBand.coords.length / 2)][1];
+    const pxPorMetroZ0 = 1 / (156543.03392 * Math.cos((lat * Math.PI) / 180));
+    const w0 = 2 * pickBand.width * pxPorMetroZ0;
+    const ancho = ['interpolate', ['exponential', 2], ['zoom'], 0, w0, 24, w0 * 2 ** 24];
+    map.setPaintProperty('section-band', 'line-width', ancho);
+    // Los bordes: dos líneas finas desplazadas ±B (el desplazamiento también
+    // crece con el zoom).
+    const lado = (k) => ['interpolate', ['exponential', 2], ['zoom'], 0, k * (w0 / 2), 24, k * (w0 / 2) * 2 ** 24];
+    map.setPaintProperty('section-band-edge', 'line-offset', lado(1));
+    map.setPaintProperty('section-band-edge-r', 'line-offset', lado(-1));
   }
 
   /** Traza del perfil y la muestra que el gráfico tiene señalada. */
@@ -3539,6 +3648,8 @@ export function createMapView({
       publishScale(true);
     }
     if (store.changed('profile') || store.changed('profileCursor') || store.changed('profileWalk')) syncProfile();
+    if (store.changed('savedSections') || store.changed('showSavedSections')) syncSavedSections();
+    if (store.changed('pickBand')) syncBand();
     if (store.changed('planeTrace')) syncPlaneTrace();
     if (store.changed('thickness') || store.changed('thicknessFrom')) syncThickness();
     if (store.changed('units')) {

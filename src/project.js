@@ -38,6 +38,8 @@ export function serializeProject(name = '') {
     // importadas: son el trabajo del resto del proyecto, pesan lo que una
     // libreta y sin señal no hay cómo volver a bajarlos.
     straboDatasets: store.currentStraboDatasets(),
+    // Perfiles estructurales guardados, con sus dibujos.
+    sections: store.getState().savedSections,
   };
 }
 
@@ -106,6 +108,7 @@ export function parseProject(text) {
       settings: raw.settings && typeof raw.settings === 'object' ? raw.settings : null,
       layers: Array.isArray(raw.layers) ? raw.layers : null,
       straboDatasets: Array.isArray(raw.straboDatasets) ? raw.straboDatasets : null,
+      sections: Array.isArray(raw.sections) ? raw.sections : null,
     },
     warnings,
   };

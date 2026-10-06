@@ -272,6 +272,27 @@ export function sketcherDocument(section, { name = 'FieldDraw section', exaggera
     });
   }
 
+  // Contactos proyectados desde la franja: también semillas verticales, pero
+  // punteadas, porque no cortan el perfil.
+  for (const k of section.contacts || []) {
+    if (k.enabled === false) continue;
+    const z = elevationAt(section.samples, k.s);
+    if (!Number.isFinite(z)) continue;
+    const tipo = LINE_TYPE_BY_ID.get(k.type);
+    lines.push({
+      id: genId(),
+      kind: 'horizon',
+      name: `${k.name || (tipo ? tipo.label : 'Contact')} (projected ${Math.round(k.offset)} m)`,
+      vertices: [[k.s, z], [k.s, z - INTERSECTION_SEED_M]],
+      visible: true,
+      locked: false,
+      unit_id: null,
+      origin: 'imported',
+      style: { color: rgbOf(tipo ? tipo.color : '#808080'), width: 2, dash: true },
+      fault_style: { sense: 'none', flip: false },
+    });
+  }
+
   const dips = section.dips
     .filter((d) => Number.isFinite(d.z))
     .map((d) => ({

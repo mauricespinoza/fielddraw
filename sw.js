@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v51';
+const VERSION = 'v52';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -97,6 +97,11 @@ const SHELL = [
   './src/average.js',
   './src/sectionExport.js',
   './src/sectionPanel.js',
+  './src/sectionInk.js',
+  './src/floating.js',
+  './src/hiking.js',
+  './src/profileWalk.js',
+  './src/sketcherLink.js',
   './src/sectionView.js',
   './src/scale.js',
   './src/shapefile.js',

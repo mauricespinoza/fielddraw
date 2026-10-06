@@ -1258,6 +1258,14 @@
           is listed top to bottom exactly as it is drawn.
         </p>
         <ul id="layer-list"></ul>
+
+        <div class="saved-sections" id="saved-sections">
+          <h3>
+            Saved profiles
+            <label class="sv-check"><input type="checkbox" id="saved-sections-show" checked /> Show on map</label>
+          </h3>
+          <ul id="saved-sections-list"></ul>
+        </div>
         <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
 
         <hr class="sep" />
@@ -1411,9 +1419,10 @@
           >Structural section</button>
           <button class="pill" id="btn-profile-csv" title="The sampled elevations as a table">CSV</button>
           <button class="pill" id="btn-profile-sketcher" title="Topography as a StructuralSketcher project (.sketch.json)">Sketcher</button>
-          <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
+          <button class="pill link-pill" id="btn-profile-open-sketcher" title="Open this profile in StructuralSketcher">Open in StructuralSketcher ↗</button>
           <button class="pill" id="btn-profile-png" title="Save the profile as a picture, laid out for a report">PNG</button>
           <button class="pill" id="btn-profile-svg" title="Save the profile as vector art, editable in Illustrator or Inkscape">SVG</button>
+          <button class="icon-btn" id="btn-profile-collapse" aria-label="Collapse" title="Collapse to the title bar">—</button>
           <button class="icon-btn close-x" id="btn-close-profile" aria-label="Close profile">✕</button>
         </header>
         <div class="pf-tools">
@@ -1436,6 +1445,7 @@
         </div>
         <div class="pf-stats" id="profile-stats"></div>
         <p class="hint footnote" id="profile-note"></p>
+        <div class="sv-grip" id="profile-grip" aria-label="Resize"></div>
       </div>
 
       <!-- Perfil estructural. Ventana flotante: se arrastra por la cabecera y
@@ -1448,10 +1458,12 @@
           <span class="sv-meta" id="section-meta"></span>
           <span class="sv-spacer"></span>
           <button class="icon-btn" id="btn-section-info" aria-label="About this section" title="How to read this section">ⓘ</button>
+          <button class="icon-btn" id="btn-section-collapse" aria-label="Collapse" title="Collapse to the title bar">—</button>
           <button class="icon-btn close-x" id="btn-close-section" aria-label="Close section">✕</button>
         </header>
         <div class="sv-tools">
           <button class="pill accent" id="btn-project-dips" title="Choose which dip measurements to project onto this section, and how">Project dips</button>
+          <button class="pill accent" id="btn-project-contacts" title="Project the mapped contacts that pass near the profile: set the band on the map">Project contacts</button>
           <label class="sv-field" title="Vertical exaggeration — 1 is true 1:1">
             <span>V.E.</span>
             <input type="number" id="section-exag" min="0.2" max="20" step="0.1" value="1" />
@@ -1469,12 +1481,32 @@
             Dips
           </label>
           <button class="pill" id="btn-section-lists">Lists</button>
-          <span class="sv-spacer"></span>
+          <button class="pill draw-pill" id="btn-section-draw" title="Draw on the profile with pens and an eraser">✏️ Draw</button>
+        </div>
+        <div class="sv-tools sv-tools-out">
+          <button class="pill accent" id="btn-section-save" title="Keep this profile, with its drawing, in the project and show its trace on the map">💾 Save profile</button>
           <button class="pill" id="btn-section-png">PNG</button>
           <button class="pill" id="btn-section-svg">SVG</button>
           <button class="pill" id="btn-section-shp" title="3D shapefile for Structural Modeller">SHP 3D</button>
           <button class="pill" id="btn-section-sketcher" title="Project for StructuralSketcher">Sketcher</button>
-          <a class="pill link-pill" href="https://mauricespinoza.github.io/StructuralSketcher/" target="_blank" rel="noopener" title="Open StructuralSketcher, the web app where the exported profile is interpreted">StructuralSketcher ↗</a>
+          <button class="pill link-pill" id="btn-section-open-sketcher" title="Open this profile (without the drawing) in StructuralSketcher">Open in StructuralSketcher ↗</button>
+        </div>
+        <div class="sv-ink hidden" id="section-ink">
+          <div class="ink-group" id="ink-pens">
+            <button class="ink-pen active" data-pen="pencil" title="Fine pencil">✎ Pencil</button>
+            <button class="ink-pen" data-pen="pen" title="Pen">🖊 Pen</button>
+            <button class="ink-pen" data-pen="marker" title="Marker">🖍 Marker</button>
+            <button class="ink-pen" data-pen="highlighter" title="Translucent highlighter">▮ Highlighter</button>
+          </div>
+          <div class="ink-group" id="ink-colors" aria-label="Colour"></div>
+          <input type="color" id="ink-color" value="#111827" title="Any colour" />
+          <label class="sv-field" title="Stroke width in pixels">
+            <span>Width</span>
+            <input type="range" id="ink-width" min="1" max="30" step="1" value="2" />
+          </label>
+          <button class="ink-pen" id="ink-eraser" title="Erase whole strokes by touching them">⌫ Eraser</button>
+          <button class="pill" id="ink-undo">Undo</button>
+          <button class="pill" id="ink-clear">Clear</button>
         </div>
         <div class="sv-body">
           <div class="sv-chart-wrap" id="section-chart-wrap">
@@ -1489,6 +1521,8 @@
               <button class="sv-mini" id="section-x-none">none</button>
             </h3>
             <div class="sv-list" id="section-x-list"></div>
+            <h3>Projected contacts <span class="sv-count" id="section-c-count"></span></h3>
+            <div class="sv-list" id="section-c-list"></div>
           </aside>
         </div>
         <p class="hint footnote hidden" id="section-note"></p>
@@ -1609,6 +1643,19 @@
         <span class="count" id="pickdips-count">0 selected</span>
         <button class="pill accent" id="pickdips-confirm" disabled>Project dips</button>
         <button class="pill" id="pickdips-cancel">Cancel</button>
+      </div>
+
+      <!-- Franja de contactos: el ancho se fija viendo la banda sobre el mapa. -->
+      <div class="pickdips-bar hidden" id="pickband-bar">
+        <span id="pickband-note">Set the band around the profile: contacts passing inside it are projected.</span>
+        <label class="band-field">
+          <span>Band ±</span>
+          <input type="range" id="pickband-range" min="10" max="5000" step="10" value="500" />
+          <input type="number" id="pickband-num" min="1" step="10" value="500" />
+          <span>m</span>
+        </label>
+        <button class="pill accent" id="pickband-confirm">Project contacts</button>
+        <button class="pill" id="pickband-cancel">Cancel</button>
       </div>
 
       <div class="busy hidden" id="busy"><span class="spinner"></span><span id="busy-text"></span></div>

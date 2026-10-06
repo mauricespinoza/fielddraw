@@ -1,4 +1,5 @@
 import { BASEMAPS } from './basemaps.js';
+import { SectionTrace } from './section.js';
 import {
   LINE_KIND_BY_STRUCTURE,
   clampPlunge,
@@ -213,6 +214,15 @@ let state = {
    */
   pendingSection: null,
   section: null,
+  /**
+   * Perfiles estructurales guardados: `{id, name, savedAt, data}`, con `data`
+   * el corte sin su `trace` (que se reconstruye de `coords`). Se ven en el mapa
+   * y se reabren desde el panel de capas.
+   */
+  savedSections: [],
+  showSavedSections: true,
+  /** Franja de contactos que se está fijando sobre el mapa: `{coords, width}`. */
+  pickBand: null,
   sectionOpts: {
     exaggeration: 1,
     showIntersections: true,
@@ -1160,8 +1170,132 @@ export function clearPendingSection() {
   set({ pendingSection: null });
 }
 
+const sameCoords = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
 export function setSection(section) {
-  set({ section, pendingSection: null });
+  // Reconstruir el corte (p. ej. al proyectar otros manteos) no debe tirar lo
+  // dibujado ni los contactos ya proyectados sobre la misma traza.
+  const prev = state.section;
+  const mismo = prev && sameCoords(prev.coords, section.coords);
+  set({
+    section: {
+      ...section,
+      ink: section.ink && section.ink.length ? section.ink : mismo ? prev.ink || [] : [],
+      contacts: section.contacts && section.contacts.length ? section.contacts : mismo ? prev.contacts || [] : [],
+    },
+    pendingSection: null,
+  });
+}
+
+/* ---------- dibujo a mano sobre el corte ---------- */
+
+export function addInkStroke(stroke) {
+  const sec = state.section;
+  if (!sec) return;
+  set({ section: { ...sec, ink: [...(sec.ink || []), stroke] } });
+}
+
+export function removeInkStrokes(ids) {
+  const sec = state.section;
+  if (!sec || !ids.length) return;
+  const quitar = new Set(ids);
+  set({ section: { ...sec, ink: (sec.ink || []).filter((t) => !quitar.has(t.id)) } });
+}
+
+export function undoInkStroke() {
+  const sec = state.section;
+  if (!sec || !(sec.ink || []).length) return;
+  set({ section: { ...sec, ink: sec.ink.slice(0, -1) } });
+}
+
+export function clearInk() {
+  const sec = state.section;
+  if (!sec || !(sec.ink || []).length) return;
+  set({ section: { ...sec, ink: [] } });
+}
+
+/* ---------- contactos proyectados sobre el corte ---------- */
+
+export function beginPickBand({ coords, width }) {
+  if (!Array.isArray(coords) || coords.length < 2) return false;
+  set({ pickBand: { coords, width: width > 0 ? width : 500 } });
+  return true;
+}
+
+export function setBandWidth(width) {
+  if (!state.pickBand || !(width > 0)) return;
+  set({ pickBand: { ...state.pickBand, width } });
+}
+
+export function cancelPickBand() {
+  set({ pickBand: null });
+}
+
+export function setSectionContacts(contacts, bandwidth) {
+  const sec = state.section;
+  if (!sec) return;
+  set({ section: { ...sec, contacts, bandwidth }, pickBand: null });
+}
+
+export function toggleContact(index) {
+  const sec = state.section;
+  if (!sec || !sec.contacts[index]) return;
+  set({
+    section: {
+      ...sec,
+      contacts: sec.contacts.map((c, i) => (i === index ? { ...c, enabled: !c.enabled } : c)),
+    },
+  });
+}
+
+/* ---------- perfiles guardados ---------- */
+
+const plainSection = (sec) => {
+  const { trace, ...rest } = sec;
+  return JSON.parse(JSON.stringify(rest));
+};
+
+export function saveCurrentSection(name) {
+  const sec = state.section;
+  if (!sec) return null;
+  const id = `sec-${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+  const entry = {
+    id,
+    name: name || `Profile ${state.savedSections.length + 1}`,
+    savedAt: new Date().toISOString(),
+    data: plainSection(sec),
+  };
+  set({ savedSections: [...state.savedSections, entry] });
+  return entry;
+}
+
+export function deleteSavedSection(id) {
+  set({ savedSections: state.savedSections.filter((e) => e.id !== id) });
+}
+
+export function renameSavedSection(id, name) {
+  set({ savedSections: state.savedSections.map((e) => (e.id === id ? { ...e, name } : e)) });
+}
+
+export function setShowSavedSections(show) {
+  set({ showSavedSections: !!show });
+}
+
+export function loadSavedSections(list) {
+  const ok = Array.isArray(list)
+    ? list.filter((e) => e && e.id && e.data && Array.isArray(e.data.coords) && e.data.coords.length >= 2)
+    : [];
+  set({ savedSections: ok });
+}
+
+/** Reabre un perfil guardado como el corte actual. */
+export function openSavedSection(id) {
+  const e = state.savedSections.find((x) => x.id === id);
+  if (!e) return null;
+  const data = JSON.parse(JSON.stringify(e.data));
+  const section = { ...data, trace: new SectionTrace(data.coords), ink: data.ink || [], contacts: data.contacts || [] };
+  set({ section, pendingSection: null, pickDips: null });
+  return section;
 }
 
 export function clearSection() {
@@ -2151,8 +2285,10 @@ export function loadProject({
   settings,
   layers,
   straboDatasets,
+  sections,
 } = {}) {
   resetHistory();
+  if (Array.isArray(sections)) loadSavedSections(sections);
   const patch = {
     features: Array.isArray(features) ? features : [],
     draft: null,
