@@ -35,6 +35,10 @@ export const CONTACT_COLOR = '#000000';
 export const DIKE_COLOR = '#ff0000';
 
 /** `short` es lo que se ve en la paleta compacta; `label` va en tooltips. */
+/** Los tres contactos (estratigráfico, intrusivo, estructural). */
+export const isContactLine = (type) =>
+  LINE_TYPES.some((t) => t.id === type && t.group === 'Contacts');
+
 export const LINE_TYPES = [
   { id: 'stratigraphic-contact', short: 'Strat.', label: 'Stratigraphic contact', group: 'Contacts', color: CONTACT_COLOR, weight: 1 },
   { id: 'intrusive-contact', short: 'Intrus.', label: 'Intrusive contact', group: 'Contacts', color: CONTACT_COLOR, weight: 1 },

@@ -18,6 +18,7 @@ import {
   certaintyFor,
   defaultImportStyle,
   isFaultLine,
+  isContactLine,
   defaultOrnaments,
   defaultStructureStyle,
   sanitizeFaultSense,
@@ -2116,6 +2117,60 @@ export function transformSelectedGeometry(fn) {
   });
 }
 
+/* ---------- unidades en contacto ---------- */
+
+/** Rótulo «arriba-abajo» con los códigos de las dos unidades de un contacto. */
+function contactLabelFor(units, aboveId, belowId) {
+  const code = (id) => {
+    const u = units.find((x) => x.id === id);
+    return u ? String(u.code || u.name || '') : '';
+  };
+  return [code(aboveId), code(belowId)].filter(Boolean).join('-');
+}
+
+/** Recalcula el rótulo de cada contacto que cita alguna de las unidades. */
+function relabelContacts(features, units) {
+  return features.map((f) => {
+    const p = f.properties;
+    if (!p.unitAboveId && !p.unitBelowId) return f;
+    const contactLabel = contactLabelFor(units, p.unitAboveId, p.unitBelowId);
+    return contactLabel === (p.contactLabel || '') ? f : { ...f, properties: { ...p, contactLabel } };
+  });
+}
+
+/**
+ * Indica qué unidades se ponen en contacto: la que queda arriba y la que queda
+ * abajo. `undefined` deja el lado como está; `null` lo quita.
+ *
+ * @returns {number} cuántos contactos cambiaron
+ */
+export function setSelectedContactUnits({ above, below }) {
+  const ids = new Set(state.selection);
+  const objetivo = state.features.filter(
+    (f) => ids.has(f.properties.id) && f.geometry.type === 'LineString' && isContactLine(f.properties.type),
+  );
+  if (objetivo.length === 0) return 0;
+  pushHistory();
+  const tocar = new Set(objetivo.map((f) => f.properties.id));
+  set({
+    features: state.features.map((f) => {
+      if (!tocar.has(f.properties.id)) return f;
+      const props = { ...f.properties };
+      if (above !== undefined) {
+        if (above) props.unitAboveId = above;
+        else delete props.unitAboveId;
+      }
+      if (below !== undefined) {
+        if (below) props.unitBelowId = below;
+        else delete props.unitBelowId;
+      }
+      props.contactLabel = contactLabelFor(state.units, props.unitAboveId, props.unitBelowId);
+      return { ...f, properties: props };
+    }),
+  });
+  return objetivo.length;
+}
+
 /* ---------- unidades ---------- */
 
 export function addUnit({ name, code, color }) {
@@ -2141,7 +2196,7 @@ export function updateUnit(id, patch) {
     }
     return f;
   });
-  set({ units, features });
+  set({ units, features: relabelContacts(features, units) });
 }
 
 export function removeUnit(id) {
@@ -2156,10 +2211,17 @@ export function removeUnit(id) {
     if (!conEtiqueta.has(f.properties.geomKind) || f.properties.unitId !== id) return f;
     const { unitId: _unitId, unit: _unit, code: _code, ...rest } = f.properties;
     return { ...f, properties: rest };
+  }).map((f) => {
+    const p = f.properties;
+    if (p.unitAboveId !== id && p.unitBelowId !== id) return f;
+    const { unitAboveId, unitBelowId, ...rest } = p;
+    if (unitAboveId !== id) rest.unitAboveId = unitAboveId;
+    if (unitBelowId !== id) rest.unitBelowId = unitBelowId;
+    return { ...f, properties: rest };
   });
   set({
     units,
-    features,
+    features: relabelContacts(features, units),
     polygonType: state.polygonType === id ? units[0].id : state.polygonType,
     measureUnit: state.measureUnit === id ? null : state.measureUnit,
     controlPointUnit: state.controlPointUnit === id ? null : state.controlPointUnit,

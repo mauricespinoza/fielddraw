@@ -221,6 +221,36 @@ export function geologyLayers() {
   }
 
   /*
+   * Rótulo de un contacto: los códigos de las dos unidades que se tocan,
+   * «arriba-abajo». Sigue la traza y se lee de pie.
+   */
+  layers.push({
+    id: 'geology-contact-label',
+    type: 'symbol',
+    source: GEOLOGY_SOURCE,
+    filter: [
+      'all',
+      ['==', ['geometry-type'], 'LineString'],
+      ['!=', ['coalesce', ['get', 'contactLabel'], ''], ''],
+    ],
+    layout: {
+      'symbol-placement': 'line-center',
+      'text-field': ['get', 'contactLabel'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': 12,
+      'text-padding': 4,
+      'text-allow-overlap': false,
+      'text-keep-upright': true,
+    },
+    paint: {
+      'text-color': '#12181f',
+      'text-halo-color': 'rgba(255,255,255,0.92)',
+      'text-halo-width': 1.6,
+    },
+  });
+  BASE_OPACITY['geology-contact-label'] = 1;
+
+  /*
    * EL CÓDIGO DE LA UNIDAD, ROTULADO SOBRE EL POLÍGONO.
    *
    * Va la última —encima de todo lo demás del dibujo— y apagada de fábrica:
