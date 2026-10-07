@@ -84,6 +84,22 @@ function topoPath(samples, s) {
   return d.trim();
 }
 
+/** Letra del tipo de falla o de pliegue; el resto de líneas no lleva. */
+const STRUCTURE_LETTER = {
+  'thrust-fault': 'T',
+  'normal-fault': 'N',
+  'dextral-fault': 'D',
+  'sinistral-fault': 'S',
+  'undefined-fault': 'U',
+  antiform: 'A',
+  synform: 'S',
+};
+
+/** Código corto de un cruce o contacto: letra de falla/pliegue o códigos de unidad. */
+function codeOf(x) {
+  return STRUCTURE_LETTER[x.type] || x.contactLabel || '';
+}
+
 /**
  * Dibuja el perfil entero dentro de un `<svg>` ya existente.
  *
@@ -99,6 +115,7 @@ export function renderSection(svg, section, opts = {}) {
     showIntersections = true,
     showLabels = true,
     showCrossLabels = true,
+    showCodes = false,
     showContacts = true,
     ink = [],
     theme = 'dark',
@@ -180,7 +197,9 @@ export function renderSection(svg, section, opts = {}) {
         px: s.x(x.s),
         y0: Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top,
         color: tipo ? tipo.color : c.muted,
-        text: x.name || (tipo ? tipo.label : x.type) || 'line',
+        text: showCodes
+          ? codeOf(x) || (showCrossLabels ? x.name || (tipo ? tipo.label : x.type) || 'line' : '')
+          : x.name || (tipo ? tipo.label : x.type) || 'line',
       });
     }
     items.sort((a, b) => a.px - b.px);
@@ -202,7 +221,7 @@ export function renderSection(svg, section, opts = {}) {
     }
     for (const it of items) {
       const ty = it.ty;
-      if (showCrossLabels) {
+      if ((showCrossLabels || showCodes) && it.text) {
         if (ty < it.y0 - 14) {
           gi.appendChild(el('line', {
             x1: it.px, y1: it.y0, x2: it.px, y2: ty + 2,
@@ -239,8 +258,9 @@ export function renderSection(svg, section, opts = {}) {
       const px = s.x(k.s);
       const zTopo = elevationAt(section.samples, k.s);
       const y0 = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
-      const texto = `${k.name || (tipo ? tipo.label : k.type || 'contact')} (${Math.round(k.offset)} m)`;
-      if (showCrossLabels) {
+      const nombre = `${k.name || (tipo ? tipo.label : k.type || 'contact')} (${Math.round(k.offset)} m)`;
+      const texto = showCodes ? codeOf(k) || (showCrossLabels ? nombre : '') : nombre;
+      if ((showCrossLabels || showCodes) && texto) {
         const ancho = texto.length * 5.6 + 6;
         let ty = y0 + 16;
         for (let n = 0; n < 12; n++) {
