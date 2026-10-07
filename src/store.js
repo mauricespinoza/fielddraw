@@ -229,6 +229,7 @@ let state = {
     showIntersections: true,
     showLabels: true,
     showCrossLabels: true,
+    showCodes: false,
   },
   /**
    * Cómo se desliza un manteo hasta el corte: perpendicular (`'orthogonal'`,

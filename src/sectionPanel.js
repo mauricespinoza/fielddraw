@@ -49,6 +49,9 @@ export function initSectionPanel({ message, busy, sampler }) {
   $('section-show-cross-labels').addEventListener('change', (e) =>
     store.setSectionOpts({ showCrossLabels: e.target.checked }),
   );
+  $('section-show-codes').addEventListener('change', (e) =>
+    store.setSectionOpts({ showCodes: e.target.checked }),
+  );
   $('btn-section-lists').addEventListener('click', () => {
     $('section-side').classList.toggle('hidden');
     $('btn-section-lists').classList.toggle('active');
@@ -208,6 +211,7 @@ export function renderSectionPanel() {
     showIntersections: o.showIntersections,
     showLabels: o.showLabels,
     showCrossLabels: o.showCrossLabels,
+    showCodes: !!o.showCodes,
     showContacts: o.showIntersections,
     ink: s.ink || [],
     // Papel blanco: se interpreta a la luz del día, junto al afloramiento —el
@@ -229,6 +233,7 @@ export function renderSectionPanel() {
   $('section-show-intersections').checked = o.showIntersections;
   $('section-show-labels').checked = o.showLabels;
   $('section-show-cross-labels').checked = o.showCrossLabels;
+  $('section-show-codes').checked = !!o.showCodes;
   $('section-show-cross-labels').disabled = !o.showIntersections;
 }
 
