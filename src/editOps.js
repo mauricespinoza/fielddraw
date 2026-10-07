@@ -225,7 +225,8 @@ export function applyTopology() {
  * es el polígono que encierran, no un polígono por trazo. El puente entre
  * pieza y pieza queda como un segmento recto, igual que en Unir.
  *
- * El polígono nace con la unidad activa de la paleta —una línea no tiene
+ * El polígono nace con la unidad de los contactos (la más repetida) o, si no
+ * la tienen, con la activa de la paleta —una línea no tiene
  * unidad de la que heredarla— y conserva certeza y opacidad de la primera
  * línea. Las líneas de origen desaparecen: es una conversión, no una copia.
  */
@@ -244,7 +245,23 @@ export function applyLinesToPolygon() {
     throw new Error('The line does not enclose an area: it needs three distinct vertices.');
   }
 
-  const unit = st.units.find((u) => u.id === st.polygonType);
+  // Si los contactos traen unidad asignada, el polígono conserva la que más
+  // se repite (en un empate, la de la primera línea que la nombra); sin
+  // ninguna, vale la activa de la paleta.
+  const votos = new Map();
+  for (const l of lineas) {
+    const u = l.properties.unitAboveId;
+    if (u && st.units.some((x) => x.id === u)) votos.set(u, (votos.get(u) || 0) + 1);
+  }
+  let unitId = st.polygonType;
+  let mejor = 0;
+  for (const [id, n] of votos) {
+    if (n > mejor) {
+      mejor = n;
+      unitId = id;
+    }
+  }
+  const unit = st.units.find((u) => u.id === unitId);
   const source = lineas[0];
   const polygon = store.derivedFeature(source, { type: 'Polygon', coordinates: [ring] });
   // `flip` es del ornamento de la falla y no significa nada en un polígono;
@@ -253,10 +270,11 @@ export function applyLinesToPolygon() {
   polygon.properties = {
     ...polygon.properties,
     kind: 'polygon',
-    type: st.polygonType,
+    type: unitId,
     unit: unit ? unit.name : '',
     code: unit ? unit.code : '',
   };
+  for (const k of ['unitAboveId', 'unitBelowId', 'contactLabel']) delete polygon.properties[k];
 
   store.replaceFeatures(
     lineas.map((f) => f.properties.id),
