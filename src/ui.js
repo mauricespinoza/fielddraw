@@ -29,6 +29,7 @@ import {
   STRUCTURE_TYPE_BY_ID,
   effectiveLineColor,
   isFaultLine,
+  isContactLine,
   isObservedOnly,
 } from './symbology.js';
 import {
@@ -1855,6 +1856,45 @@ export function openPropsMenu(screen) {
       openPanel('symbology-panel');
     });
     simb.appendChild(abrir);
+  }
+
+  /*
+   * Unidades en contacto: cuál queda arriba y cuál abajo. El mapa rotula el
+   * contacto con los códigos de ambas, «arriba-abajo».
+   */
+  const contactos = lines.filter((f) => isContactLine(f.properties.type));
+  if (contactos.length > 0) {
+    const sec = section(
+      body,
+      contactos.length === 1 ? 'Units in contact' : `Units in contact (${contactos.length} contacts)`,
+    );
+    const comun = (k) =>
+      contactos.every((f) => f.properties[k] === contactos[0].properties[k])
+        ? contactos[0].properties[k] || null
+        : null;
+    for (const [campo, titulo, clave] of [
+      ['above', 'Above', 'unitAboveId'],
+      ['below', 'Below', 'unitBelowId'],
+    ]) {
+      const fila = document.createElement('div');
+      fila.className = 'palette-row';
+      const et = document.createElement('span');
+      et.className = 'hint';
+      et.textContent = titulo;
+      fila.appendChild(et);
+      unitSelect(fila, s.units, comun(clave), (id) => {
+        store.setSelectedContactUnits({ [campo]: id });
+        openPropsMenu(screen);
+      });
+      sec.appendChild(fila);
+    }
+    const etiqueta = comun('contactLabel');
+    if (etiqueta) {
+      const h = document.createElement('p');
+      h.className = 'hint';
+      h.textContent = `Label: ${etiqueta}`;
+      sec.appendChild(h);
+    }
   }
 
   // Certeza
