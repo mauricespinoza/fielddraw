@@ -409,7 +409,7 @@ function unitChips(container, units, activeId, onPick, { allowNone = true } = {}
  * es tocar rápido, no ver el color de un vistazo — ese color ya se ve en el
  * chip de la medida una vez puesta.
  */
-function unitSelect(container, units, activeId, onPick) {
+function unitSelect(container, units, activeId, onPick, onAdd) {
   const select = document.createElement('select');
   select.className = 'palette-select';
   const none = document.createElement('option');
@@ -422,8 +422,18 @@ function unitSelect(container, units, activeId, onPick) {
     opt.textContent = u.code ? `${u.code} — ${u.name}` : u.name;
     select.appendChild(opt);
   }
+  if (onAdd) {
+    const add = document.createElement('option');
+    add.value = '__add__';
+    add.textContent = '+ Add unit…';
+    select.appendChild(add);
+  }
   select.value = activeId || '';
-  select.addEventListener('change', () => onPick(select.value || null));
+  select.addEventListener('change', () => {
+    if (select.value !== '__add__') return onPick(select.value || null);
+    select.value = activeId || '';
+    onAdd();
+  });
   container.appendChild(select);
 }
 
@@ -1872,9 +1882,18 @@ export function openPropsMenu(screen) {
       contactos.every((f) => f.properties[k] === contactos[0].properties[k])
         ? contactos[0].properties[k] || null
         : null;
+    // Basta la unidad de arriba; la de abajo es opcional.
+    const crearUnidad = (campo) => {
+      const name = (window.prompt('New unit name') || '').trim();
+      if (!name) return;
+      const code = (window.prompt('Unit code (upper/lower case allowed)', '') || '').trim();
+      const unit = store.addUnit({ name, code });
+      store.setSelectedContactUnits({ [campo]: unit.id });
+      openPropsMenu(screen);
+    };
     for (const [campo, titulo, clave] of [
-      ['above', 'Above', 'unitAboveId'],
-      ['below', 'Below', 'unitBelowId'],
+      ['above', 'Unit (above)', 'unitAboveId'],
+      ['below', 'Unit below (optional)', 'unitBelowId'],
     ]) {
       const fila = document.createElement('div');
       fila.className = 'palette-row';
@@ -1882,10 +1901,16 @@ export function openPropsMenu(screen) {
       et.className = 'hint';
       et.textContent = titulo;
       fila.appendChild(et);
-      unitSelect(fila, s.units, comun(clave), (id) => {
-        store.setSelectedContactUnits({ [campo]: id });
-        openPropsMenu(screen);
-      });
+      unitSelect(
+        fila,
+        s.units,
+        comun(clave),
+        (id) => {
+          store.setSelectedContactUnits({ [campo]: id });
+          openPropsMenu(screen);
+        },
+        () => crearUnidad(campo),
+      );
       sec.appendChild(fila);
     }
     const etiqueta = comun('contactLabel');

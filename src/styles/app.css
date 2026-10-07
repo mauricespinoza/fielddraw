@@ -1139,7 +1139,6 @@ input[type='radio'] {
 .unit-code {
   width: 62px;
   flex: none;
-  text-transform: uppercase;
 }
 
 .unit-new {

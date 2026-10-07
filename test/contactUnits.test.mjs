@@ -18,4 +18,18 @@ S.updateUnit(a.id, { code: 'ZZ' });
 ok('renombrar la unidad actualiza el rótulo', get('c1').contactLabel === `ZZ-${b.code}`);
 S.setSelectedContactUnits({ below: null });
 ok('quitar un lado', get('c1').contactLabel === 'ZZ' && !get('c1').unitBelowId);
+
+const E = await import('../src/editOps.js');
+const u = S.addUnit({ name: 'Mixta', code: 'KiGr', color: '#123456' });
+ok('código con mayúsculas y minúsculas', S.getState().units.find((x) => x.id === u.id).code === 'KiGr');
+const L = (id, c, above) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: c },
+  properties: { id, type: 'stratigraphic-contact', certainty: 'observed', ...(above ? { unitAboveId: above } : {}) } });
+S.loadFeatures([
+  L('a', [[0, 0], [1, 0]], u.id), L('b', [[1, 0], [1, 1]], u.id), L('c', [[1, 1], [0, 0]], b.id),
+]);
+S.setSelection(['a', 'b', 'c']);
+E.applyLinesToPolygon();
+const poly = S.getState().features.find((f) => f.geometry.type === 'Polygon');
+ok('el polígono conserva la unidad mayoritaria', poly && poly.properties.type === u.id && poly.properties.code === 'KiGr');
+ok('sin atributos de contacto', poly && poly.properties.unitAboveId === undefined);
 process.exit(fails ? 1 : 0);
