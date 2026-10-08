@@ -107,13 +107,24 @@ console.log('== geologyStyle ==');
 const G = await import(BASE + 'geologyStyle.js');
 const gl = G.geologyLayers();
 ok('una capa de traza por certeza', G.GEOLOGY_LINE_LAYER_IDS.length === 3);
-// El halo solo va en las continuas: sobre una segmentada, el patrón blanco de
-// atrás asoma entre los guiones y ensucia justo lo que hay que distinguir.
+// Un halo por certeza; en las segmentadas lleva su propio patrón, calculado
+// para que cada guion del trazo tenga el suyo.
 {
   const casings = gl.filter((l) => l.id.startsWith('geology-line-casing-'));
-  ok('un solo casing, el de observado', casings.length === 1 && casings[0].id === 'geology-line-casing-observed',
-     JSON.stringify(casings.map((l) => l.id)));
-  ok('y ese casing no lleva dasharray', !('line-dasharray' in casings[0].paint));
+  ok('un casing por certeza', casings.length === 3, JSON.stringify(casings.map((l) => l.id)));
+  const cObs = casings.find((l) => l.id === 'geology-line-casing-observed');
+  ok('el de observado no lleva dasharray', !('line-dasharray' in cObs.paint));
+  const cInf = casings.find((l) => l.id === 'geology-line-casing-inferred');
+  const d = cInf.paint['line-dasharray'];
+  ok('el de inferido lleva un step de zoom', Array.isArray(d) && d[0] === 'step' && JSON.stringify(d[1]) === '["zoom"]');
+  // A z13 con grosor 1: trazo 2.4 px, guion 2.6·2.4 = 6.24 px, periodo 10.32 px.
+  const m = d[d.indexOf(13) + 1];
+  const pat = m[m.length - 1][1];
+  const wc = 2.4 + 2.4;
+  const px = pat.map((v) => v * wc);
+  ok('el periodo del halo calza con el del trazo', Math.abs(px.reduce((a, b) => a + b, 0) - 4.3 * 2.4) < 0.05, JSON.stringify(px));
+  ok('y su guion asoma 1.2 px por cada lado', Math.abs(px[0] + px[2] - (2.6 * 2.4 + 2.4)) < 0.05, JSON.stringify(px));
+  ok('GEOLOGY_CASING_LAYER_IDS los nombra a los tres', G.GEOLOGY_CASING_LAYER_IDS.length === 3);
 }
 ok('ids de capa únicos', new Set(gl.map(l=>l.id)).size === gl.length);
 ok('BASE_OPACITY cubre todas las capas', gl.every(l => typeof G.BASE_OPACITY[l.id] === 'number'));

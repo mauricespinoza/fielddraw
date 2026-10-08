@@ -2,15 +2,17 @@ import * as store from './store.js';
 import { downloadBlob } from './persistence.js';
 import { certaintyFor } from './symbology.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
+import { buildZip, readZip } from './zip.js';
 
 /**
  * Proyectos de FieldDraw: un único JSON con el dibujo, las unidades, la
  * simbología y los ajustes.
  *
- * Deliberadamente NO guarda las capas importadas ni los mapas offline: son
- * archivos de cientos de MB que viven en Archivos/Drive, y meterlos dentro
- * convertiría un proyecto de 40 KB en uno de 2 GB. Se vuelven a abrir con
- * Importar, que es el mismo gesto de siempre.
+ * El `.fdproj.json` NO guarda las capas importadas ni los mapas offline: son
+ * archivos de cientos de MB, y meterlos dentro convertiría un proyecto de
+ * 40 KB en uno de 2 GB. Para llevar todo a otro dispositivo está el PAQUETE
+ * (`.fdproj.zip`, ver `buildProjectPackage`): el mismo JSON más los PMTiles/
+ * MBTiles y el DEM, sin recomprimir.
  *
  * El formato es GeoJSON válido por dentro (`features` es una lista de features),
  * así que un proyecto se puede inspeccionar con cualquier herramienta.
@@ -59,6 +61,77 @@ export function saveProject(name = '') {
   const data = serializeProject(name);
   downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), projectFilename(name));
   return data;
+}
+
+/** Nombre del JSON dentro del paquete. */
+const PACKAGE_PROJECT = 'project.fdproj.json';
+
+export function packageFilename(name = '') {
+  return projectFilename(name).replace(/\.json$/, '.zip');
+}
+
+/**
+ * Paquete de proyecto: el proyecto más los mapas offline y el DEM.
+ *
+ * @param {string} name
+ * @param {{role: 'tiles'|'dem', name: string, file: Blob}[]} files
+ * @param {(hechos: number, total: number) => void} [onProgress]
+ * @returns {Promise<{data: object, blob: Blob}>}
+ */
+export async function buildProjectPackage(name, files, onProgress) {
+  const data = serializeProject(name);
+  const usados = new Set();
+  const dentro = files.map((f) => {
+    const base = String(f.name || 'file').replace(/[\\/:*?"<>|]+/g, '_') || 'file';
+    let path = `files/${base}`;
+    for (let i = 2; usados.has(path); i++) path = `files/${i}-${base}`;
+    usados.add(path);
+    return { path, role: f.role, name: f.name, file: f.file };
+  });
+  data.offlineFiles = dentro.map(({ path, role, name: n }) => ({ path, role, name: n }));
+  const blob = await buildZip(
+    [
+      { name: PACKAGE_PROJECT, blob: new Blob([JSON.stringify(data)], { type: 'application/json' }) },
+      ...dentro.map((e) => ({ name: e.path, blob: e.file })),
+    ],
+    onProgress,
+  );
+  return { data, blob };
+}
+
+/**
+ * Abre un paquete: el texto del proyecto y sus archivos, cada uno como un
+ * `File` que es un trozo del ZIP (no se copia nada a memoria).
+ *
+ * @returns {Promise<{text: string, files: {role: string, name: string, file: File}[], warnings: string[]}>}
+ */
+export async function readProjectPackage(zipFile) {
+  const entries = await readZip(zipFile);
+  const porNombre = new Map(entries.map((e) => [e.name, e]));
+  const proj =
+    porNombre.get(PACKAGE_PROJECT) ||
+    entries.find((e) => /\.(fdproj\.json|fdproj|json)$/i.test(e.name) && !e.name.startsWith('files/'));
+  if (!proj || !proj.blob) throw new Error('the ZIP holds no FieldDraw project');
+  const text = await proj.blob.text();
+  let manifest = [];
+  try {
+    manifest = JSON.parse(text).offlineFiles || [];
+  } catch {
+    manifest = [];
+  }
+  const warnings = [];
+  const files = [];
+  for (const m of Array.isArray(manifest) ? manifest : []) {
+    const e = m && porNombre.get(m.path);
+    if (!e || !e.blob) {
+      warnings.push(`${(m && m.name) || 'A file'} is listed but missing or compressed in the package.`);
+      continue;
+    }
+    const role = m.role === 'dem' ? 'dem' : 'tiles';
+    const nombre = m.name || e.name.replace(/^files\//, '');
+    files.push({ role, name: nombre, file: new File([e.blob], nombre) });
+  }
+  return { text, files, warnings };
 }
 
 /**

@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -292,7 +292,7 @@ Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
 | Relieve 3D | botón **3D**; Línea y Polígono siguen dibujando sobre él |
 | Fijar la escala | botón **Scale** de la barra, píldora `1:…` abajo a la izquierda, o `K` |
 | Decirle cuánto mide la pantalla | en el mismo panel: **This screen** |
-| Ir a mi posición | botón **Locate** |
+| Ir a mi posición | botón de GPS sobre el mapa (◎, abajo a la derecha) o tecla `G` |
 | Rotular los polígonos con su código | casilla en el panel de **Unidades** |
 | Exportar la vista como lámina | **Proyecto → Export the map view…** (SVG, PNG o PDF) |
 

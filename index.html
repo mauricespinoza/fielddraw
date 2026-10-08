@@ -154,15 +154,6 @@
           </svg>
           <span>Scale</span>
         </button>
-
-        <button class="tool" id="t-locate" title="Centre the map on your GPS position">
-          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-            <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8" />
-            <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-            <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          <span>Locate</span>
-        </button>
       </div>
 
       <!--
@@ -498,7 +489,7 @@
         </button>
         <input type="file" id="file-gpkg" accept=".gpkg,.geopackage,.mbtiles,.pmtiles" hidden />
         <input type="file" id="file-dem" accept=".pmtiles,.mbtiles" hidden />
-        <input type="file" id="file-project" accept=".json,.fdproj,.geojson" hidden />
+        <input type="file" id="file-project" accept=".json,.fdproj,.geojson,.zip" hidden />
       </div>
 
       <div class="dropdown hidden" id="project-menu">
@@ -511,6 +502,9 @@
           <input type="text" id="project-name" placeholder="Cerro Colorado map" />
         </label>
         <button class="pill wide" id="btn-save-project">Save project…</button>
+        <button class="pill wide" id="btn-save-package" title="One .zip with the project plus the offline maps and elevation model that are open, to open directly on another device">
+          Save with offline maps &amp; DEM (.zip)…
+        </button>
         <button class="pill wide" id="btn-open-project">Open project…</button>
         <!-- La lámina cuelga de Proyecto y no de Export, que es donde está el
              GeoPackage: lo de Export son DATOS para otro programa, y esto es
@@ -519,8 +513,10 @@
         <button class="pill wide" id="btn-map-image">Export the map view…</button>
         <button class="pill danger wide" id="btn-new-project">New project</button>
         <p class="hint">
-          A <code>.fdproj.json</code> holding the drawing, units, symbology and settings. Imported
-          layers and offline maps are not included: reopen those with <strong>Import</strong>.
+          <strong>Save project</strong> writes a <code>.fdproj.json</code> with the drawing, units,
+          symbology and settings. <strong>Save with offline maps &amp; DEM</strong> writes a
+          <code>.fdproj.zip</code> that also carries the open PMTiles/MBTiles and elevation model;
+          <strong>Open project</strong> reads either one. GeoPackage layers are not included.
         </p>
         <p class="hint footnote" id="project-status">Not saved yet in this session.</p>
       </div>
@@ -1613,6 +1609,9 @@
           <span id="scale-value">1:—</span>
           <span class="lock" id="scale-lock-mark" hidden>🔒</span>
         </button>
+        <!-- Coordenadas del cursor (PC) o del centro del mapa (táctil), en
+             grados decimales, con la cota del DEM debajo. -->
+        <span class="coord-readout" id="coord-readout" aria-live="off"></span>
         <span id="status-text">Navigation mode — pick Line or Polygon to draw</span>
         <span class="count" id="status-count">0 features</span>
       </div>
