@@ -138,9 +138,19 @@ export async function runSection(pending) {
     // aporta su borde, que ya está cartografiado como contacto casi siempre.
     const lineas = st.features.filter((f) => f.geometry && f.geometry.type !== 'Point');
 
+    // Al proyectar manteos sobre la MISMA traza se reutiliza la topografía del
+    // corte ya abierto: `st.profile` es el perfil topográfico de ahora (puede
+    // haberse cerrado o ser el de otra traza) y, sin él, el corte se
+    // reconstruiría sin la línea del terreno.
+    const previo = st.section;
+    const mismaTraza =
+      previo && previo.samples && previo.samples.length > 0 &&
+      JSON.stringify(previo.coords) === JSON.stringify(coords);
+    const perfil = mismaTraza ? { samples: previo.samples, label: previo.source } : st.profile;
+
     const section = buildSection({
       coords,
-      profile: st.profile,
+      profile: perfil,
       measurements: conCota,
       features: lineas,
       maxOffset: maxOffset === null || maxOffset === undefined ? Infinity : maxOffset,

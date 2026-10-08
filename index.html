@@ -1250,6 +1250,14 @@
           <h2>Layers</h2>
           <button class="icon-btn close-x" id="btn-close-layers" aria-label="Close layers panel">✕</button>
         </header>
+        <div class="saved-sections" id="saved-sections">
+          <h3>
+            Saved profiles
+            <label class="sv-check"><input type="checkbox" id="saved-sections-show" checked /> Show on map</label>
+          </h3>
+          <ul id="saved-sections-list"></ul>
+        </div>
+
         <p class="hint">
           The drawing comes apart into its four pieces — units, traces, measurements and control
           points — so you can put the contacts against the imagery without the unit fills on top,
@@ -1259,13 +1267,6 @@
         </p>
         <ul id="layer-list"></ul>
 
-        <div class="saved-sections" id="saved-sections">
-          <h3>
-            Saved profiles
-            <label class="sv-check"><input type="checkbox" id="saved-sections-show" checked /> Show on map</label>
-          </h3>
-          <ul id="saved-sections-list"></ul>
-        </div>
         <p class="hint footnote">MBTiles and GeoPackage layers join this same list.</p>
 
         <hr class="sep" />
@@ -1273,15 +1274,7 @@
         <label class="row">
           <input type="checkbox" id="opt-terrain" />
           3D terrain
-          <span class="sub">
-            Real relief off the same DEM as the contour lines, with the drawing draped over it.
-            <strong>Digitising stays on:</strong> what you touch is unprojected against the relief
-            itself, so a vertex lands on the ground you are pointing at and not on the plane
-            underneath. The map is still a map — the scale printed at the foot is the plan-view
-            one at the centre of the screen, which is the only scale a tilted view has. Off the
-            tiles already cached it renders flat, and on an older tablet it costs noticeably more
-            to draw.
-          </span>
+          <span class="sub">Real relief from the DEM, with the drawing draped over it. Digitising stays on.</span>
         </label>
 
         <label class="row column">
