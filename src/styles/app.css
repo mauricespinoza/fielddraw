@@ -3013,6 +3013,8 @@ input[type='radio'] {
 
 .sv-chart {
   display: block;
+  /* Desplazar con un dedo; el pellizco lo maneja `sectionZoom`, no la página. */
+  touch-action: pan-x pan-y;
 }
 
 /* ---------- red estereográfica ---------- */
