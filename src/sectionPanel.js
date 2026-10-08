@@ -205,7 +205,15 @@ export function renderSectionPanel() {
   // Solo el ancho viene de la ventana: el alto lo da la escala 1:1 del corte.
   const width = Math.max(320, Math.round(wrap.clientWidth) - 2);
   lastWidth = width;
-  const { scales } = renderSection($('section-chart'), s, {
+  // El rótulo de unidad se toma del mapa de ahora: así un contacto al que se le
+  // asignó unidad (o cuyo código cambió) después de armar el corte se ve sin
+  // tener que regenerarlo.
+  const vivo = new Map(st.features.map((f) => [f.properties.id, f.properties.contactLabel || '']));
+  const conCodigo = (x) => (vivo.has(x.id) ? { ...x, contactLabel: vivo.get(x.id) } : x);
+  const { scales } = renderSection(
+    $('section-chart'),
+    { ...s, intersections: s.intersections.map(conCodigo), contacts: (s.contacts || []).map(conCodigo) },
+    {
     width,
     exaggeration: o.exaggeration,
     showIntersections: o.showIntersections,
@@ -219,7 +227,8 @@ export function renderSectionPanel() {
     // se dibuja clara y no oscura— y es lo que sale impreso o pegado en un
     // informe, donde un fondo negro gasta tinta y desentona con el resto.
     theme: 'light',
-  });
+    },
+  );
 
   lastScales = scales;
 
