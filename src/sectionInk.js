@@ -9,6 +9,7 @@
  */
 
 import * as store from './store.js';
+import { getZoom } from './sectionZoom.js';
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -71,7 +72,8 @@ export function initSectionInk({ scales }) {
   });
 
   svg.addEventListener('pointerdown', (e) => {
-    if (!ink.active) return;
+    // Un segundo dedo es el zoom (ver `sectionZoom`), no un trazo más.
+    if (!ink.active || !e.isPrimary) return;
     const sc = getScales();
     if (!sc) return;
     e.preventDefault();
@@ -91,7 +93,7 @@ export function initSectionInk({ scales }) {
     drawLive(sc);
   });
   svg.addEventListener('pointermove', (e) => {
-    if (!ink.active || !livePts) return;
+    if (!ink.active || !livePts || !e.isPrimary) return;
     if (livePts === 'erase') {
       erase(e);
       return;
@@ -123,6 +125,13 @@ export function initSectionInk({ scales }) {
   refresh();
 }
 
+/** Descarta el trazo en curso sin guardarlo (llegó un segundo dedo). */
+export function cancelStroke() {
+  if (live) live.remove();
+  live = null;
+  livePts = null;
+}
+
 function setColor(c) {
   ink.color = c;
   ink.erasing = false;
@@ -145,7 +154,8 @@ function refresh() {
 
 function toData(e, sc) {
   const r = $('section-chart').getBoundingClientRect();
-  return [sc.sAt(e.clientX - r.left), sc.zAt(e.clientY - r.top)];
+  const z = getZoom();
+  return [sc.sAt((e.clientX - r.left) / z), sc.zAt((e.clientY - r.top) / z)];
 }
 
 function drawLive(sc) {
@@ -171,8 +181,8 @@ function erase(e) {
   const sc = getScales();
   if (!sec || !sc) return;
   const r = $('section-chart').getBoundingClientRect();
-  const px = e.clientX - r.left;
-  const py = e.clientY - r.top;
+  const px = (e.clientX - r.left) / getZoom();
+  const py = (e.clientY - r.top) / getZoom();
   const quitar = [];
   for (const t of sec.ink || []) {
     const reach = 8 + t.width / 2;

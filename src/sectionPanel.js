@@ -15,7 +15,8 @@
 
 import * as store from './store.js';
 import { buildSection, projectContacts } from './section.js';
-import { initSectionInk } from './sectionInk.js';
+import { cancelStroke, initSectionInk } from './sectionInk.js';
+import { applyZoom, initSectionZoom } from './sectionZoom.js';
 import { openInSketcher, sketcherMessage } from './sketcherLink.js';
 import { makeFloating } from './floating.js';
 import { renderSection, sectionPNG, sectionSVG } from './sectionView.js';
@@ -60,6 +61,7 @@ export function initSectionPanel({ message, busy, sampler }) {
   $('btn-section-info').addEventListener('click', () => $('section-note').classList.toggle('hidden'));
   initFloating();
   initSectionInk({ scales: () => lastScales });
+  initSectionZoom($('section-chart'), $('section-chart-wrap'), { onStart: cancelStroke });
 
   $('btn-section-save').addEventListener('click', saveProfile);
   $('btn-section-open-sketcher').addEventListener('click', openSketcher);
@@ -241,6 +243,7 @@ export function renderSectionPanel() {
   );
 
   lastScales = scales;
+  applyZoom($('section-chart'));
 
   renderDipList(s);
   renderCrossingList(s);
