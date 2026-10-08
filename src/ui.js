@@ -122,7 +122,15 @@ import {
   applyReshape,
   applyTopology,
 } from './editOps.js';
-import { openProject, parseProject, saveProject } from './project.js';
+import {
+  buildProjectPackage,
+  openProject,
+  packageFilename,
+  parseProject,
+  readProjectPackage,
+  saveProject,
+} from './project.js';
+import { isZip } from './zip.js';
 import {
   APP_AUTHOR,
   APP_CONTACT,
@@ -2149,8 +2157,11 @@ function positionPropsMenu(menu, screen) {
  * Cablea el botón de GPS. Va aparte del resto de la barra porque su manejador
  * lo provee mapView, que se construye después de `initUI()`.
  */
+let locateHandler = null;
 export function wireLocate(handler) {
-  $('t-locate').addEventListener('click', handler);
+  // Sin botón propio en la barra: el control GPS de MapLibre sobre el mapa ya
+  // hace lo mismo. Queda para el atajo `G` y el aviso de "GPS requerido".
+  locateHandler = handler;
 }
 
 export function closePropsMenu() {
@@ -3375,7 +3386,7 @@ function shortcutActions() {
     'toggle-trace': () => store.setTraceEnabled(!store.getState().traceEnabled),
     'toggle-terrain': () => $('t-3d').click(),
     'cycle-certainty': cycleCertainty,
-    locate: () => $('t-locate').click(),
+    locate: () => locateHandler?.(),
 
     finish: () => store.finishDraft(),
     'undo-vertex': () => store.undoVertex(),
@@ -3608,7 +3619,6 @@ function annotateToolbarShortcuts() {
     't-snap': 'toggle-snap',
     't-trace': 'toggle-trace',
     't-3d': 'toggle-terrain',
-    't-locate': 'locate',
     't-merge': 'merge',
     't-topo': 'topology',
     'btn-layers': 'panel-layers',
@@ -3675,6 +3685,85 @@ let mapBridge = null;
 
 export function wireMapView(view) {
   mapBridge = view;
+  wireCoordReadout(view.map);
+}
+
+/**
+ * Coordenadas y cota junto a la escala numérica.
+ *
+ * Con ratón se lee bajo el cursor —es lo que uno apunta—; en táctil no hay
+ * cursor, así que se lee el centro de la vista. La cota sale del mismo DEM que
+ * los perfiles (el propio si está elegido, si no el terrarium), con un pequeño
+ * retardo para no pedir una tesela por cada píxel que se mueve el ratón.
+ * OpenTopography no sirve aquí: cada lectura sería una descarga.
+ */
+function wireCoordReadout(map) {
+  const el = $('coord-readout');
+  if (!el || !map) return;
+  let token = 0;
+  let timer = null;
+  let sobreMapa = false;
+
+  const fmt = (v) => v.toFixed(5);
+  function mostrar(lngLat) {
+    const { lng, lat } = lngLat;
+    const base = `${fmt(lat)}, ${fmt(lng)}`;
+    el.textContent = `${base}  ·  … m`;
+    const mio = ++token;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const st = store.getState();
+      const sampler =
+        st.profileSource === 'imported' && st.demSet
+          ? demSamplerFor(st.demSet)
+          : (terrariumSampler ||= new DemSampler());
+      let z = null;
+      try {
+        z = await sampler.elevationAt(lng, lat);
+      } catch {
+        z = null;
+      }
+      if (mio !== token) return;
+      el.textContent = `${base}  ·  ${Number.isFinite(z) ? `${Math.round(z)} m` : '— m'}`;
+    }, 120);
+  }
+
+  const centro = () => {
+    if (!sobreMapa) mostrar(map.getCenter());
+  };
+  /*
+   * `pointermove` nativo y no el `mousemove` de MapLibre: con una herramienta
+   * de dibujo el controlador se traga el hover, y aquí se quiere igual. Uno
+   * por cuadro como mucho —con relieve, proyectar el píxel no es gratis—.
+   */
+  const cont = map.getCanvasContainer();
+  let pendiente = null;
+  let raf = 0;
+  cont.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const rect = cont.getBoundingClientRect();
+    pendiente = [e.clientX - rect.left, e.clientY - rect.top];
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (!pendiente) return;
+      sobreMapa = true;
+      mostrar(map.unproject(pendiente));
+    });
+  });
+  cont.addEventListener('pointerleave', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    pendiente = null;
+    sobreMapa = false;
+    centro();
+  });
+  map.on('moveend', centro);
+  if (map.loaded()) centro();
+  else map.once('load', centro);
+  // Cambiar de DEM cambia la cota de lo que ya se está mirando.
+  store.subscribe(() => {
+    if (store.changed('demSet') || store.changed('profileSource')) centro();
+  });
 }
 
 /** Handle del gráfico dibujado, para mover el cursor sin repintar todo. */
@@ -5362,11 +5451,103 @@ function doSaveProject() {
   showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
 }
 
+/**
+ * Los mapas offline y el DEM que están abiertos ahora, con sus bytes (de
+ * IndexedDB, que es donde se guardó cada archivo al importarlo).
+ */
+async function currentOfflineFiles() {
+  const st = store.getState();
+  const abiertos = new Set([...st.tileSets.map((t) => t.id), ...(st.demSet ? [st.demSet.id] : [])]);
+  if (!abiertos.size) return [];
+  const records = await listImportedFiles();
+  return records
+    .filter((r) => abiertos.has(r.id) && r.file)
+    .map((r) => ({ role: r.role === 'dem' ? 'dem' : 'tiles', name: r.name || r.file.name, file: r.file }));
+}
+
+/** Habilita «Save with offline maps» solo si hay algo que meter. */
+function renderPackageButton() {
+  const st = store.getState();
+  const btn = $('btn-save-package');
+  if (btn) btn.disabled = !st.tileSets.length && !st.demSet;
+}
+
+async function doSaveProjectPackage() {
+  const name = $('project-name').value.trim();
+  setBusy('Packing the project…');
+  try {
+    const files = await currentOfflineFiles();
+    if (!files.length) {
+      showBanner('No offline map or elevation model is open: saving the plain project instead.', 'warn');
+      doSaveProject();
+      return;
+    }
+    const { data, blob } = await buildProjectPackage(name, files, (hechos, total) => {
+      setBusy(`Packing the project… ${total ? Math.round((hechos / total) * 100) : 100}%`);
+    });
+    downloadBlob(blob, packageFilename(name));
+    setProjectStatus(
+      `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s) + ${files.length} file(s), ${fmtMB(blob.size)}.`,
+    );
+    showBanner(
+      `Project packed with ${files.map((f) => f.name).join(', ')} (${fmtMB(blob.size)}). Open the .zip with Open project on the other device.`,
+      'info',
+    );
+  } catch (err) {
+    showBanner(`Could not pack the project: ${err.message}`);
+  } finally {
+    setBusy(null);
+  }
+}
+
+/**
+ * Abre los mapas offline y el DEM de un paquete. Uno ya abierto con el mismo
+ * nombre y tamaño no se duplica.
+ */
+async function openPackagedFiles(files) {
+  const yaGuardados = await listImportedFiles().catch(() => []);
+  const st = store.getState();
+  const abiertos = new Set([...st.tileSets.map((t) => t.id), ...(st.demSet ? [st.demSet.id] : [])]);
+  const repetido = (f) =>
+    yaGuardados.some((r) => abiertos.has(r.id) && r.name === f.name && r.bytes === f.file.size);
+  const hechos = [];
+  const fallos = [];
+  for (const f of files) {
+    if (repetido(f)) {
+      hechos.push(`${f.name} (already open)`);
+      continue;
+    }
+    setBusy(`Opening ${f.name}…`);
+    try {
+      const id = `${f.role === 'dem' ? 'dem' : 'tiles'}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+      const descriptor = await openTileFile(f.file, id);
+      if (f.role === 'dem') store.setDemSet(descriptor);
+      else store.addTileSet(descriptor);
+      await rememberImported(id, f.role === 'dem' ? 'dem' : 'tiles', f.file);
+      hechos.push(f.name);
+    } catch (err) {
+      fallos.push(`${f.name}: ${err.message}`);
+    }
+  }
+  return { hechos, fallos };
+}
+
 async function doOpenProject(file) {
   setBusy(`Opening ${file.name}…`);
   try {
-    const text = await file.text();
-    const { project, warnings } = parseProject(text);
+    let text;
+    let empaquetados = [];
+    let avisosPaquete = [];
+    if (await isZip(file)) {
+      const pkg = await readProjectPackage(file);
+      text = pkg.text;
+      empaquetados = pkg.files;
+      avisosPaquete = pkg.warnings;
+    } else {
+      text = await file.text();
+    }
+    const { project, warnings: avisos } = parseProject(text);
+    const warnings = [...avisos, ...avisosPaquete];
     // Se pregunta DESPUÉS de validar: no tiene sentido avisar de que se va a
     // perder el dibujo si el archivo ni siquiera era un proyecto.
     if (
@@ -5376,6 +5557,11 @@ async function doOpenProject(file) {
       return;
     }
     const n = openProject(project);
+    if (empaquetados.length) {
+      const { hechos, fallos } = await openPackagedFiles(empaquetados);
+      if (hechos.length) warnings.push(`Offline maps / DEM: ${hechos.join(', ')}.`);
+      if (fallos.length) warnings.push(`Could not open: ${fallos.join('; ')}.`);
+    }
     // La vista va a donde está lo que se acaba de abrir: el proyecto puede
     // ser de otra zona, y quedarse mirando la anterior lo haría parecer vacío.
     if (mapBridge) mapBridge.fitToFeatures(project.features);
@@ -6336,6 +6522,11 @@ export function initUI() {
   $('btn-project').addEventListener('click', () => togglePanel('project-menu'));
   $('btn-close-project').addEventListener('click', () => $('project-menu').classList.add('hidden'));
   $('btn-save-project').addEventListener('click', doSaveProject);
+  $('btn-save-package').addEventListener('click', doSaveProjectPackage);
+  renderPackageButton();
+  store.subscribe(() => {
+    if (store.changed('tileSets') || store.changed('demSet')) renderPackageButton();
+  });
   $('btn-new-project').addEventListener('click', doNewProject);
   $('btn-open-project').addEventListener('click', () => $('file-project').click());
   $('file-project').addEventListener('change', (e) => {

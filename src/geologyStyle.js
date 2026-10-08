@@ -67,6 +67,64 @@ export function casingWidthExpr(ornaments) {
   return zoomWidth((v) => ['+', ['*', peso, v], 2.4]);
 }
 
+/** Ancho del halo a cada lado de la traza, en px (la mitad del `+ 2.4`). */
+const HALO_PX = 1.2;
+
+/** El ancho de la traza a un zoom entero, igual que `zoomWidth`. */
+function widthAt(z, peso) {
+  const stops = [
+    [8, 1.5],
+    [13, 2.4],
+    [18, 4.2],
+  ];
+  let v;
+  if (z <= stops[0][0]) v = stops[0][1];
+  else if (z >= stops[2][0]) v = stops[2][1];
+  else {
+    const i = z < stops[1][0] ? 0 : 1;
+    const [z0, v0] = stops[i];
+    const [z1, v1] = stops[i + 1];
+    v = v0 + ((v1 - v0) * (z - z0)) / (z1 - z0);
+  }
+  return peso * v;
+}
+
+/**
+ * Patrón de guiones del halo de una línea segmentada o punteada.
+ *
+ * MapLibre mide los guiones en anchos de línea, así que el mismo patrón en
+ * el halo —más ancho— no calzaba con el del trazo. Aquí se recalcula en
+ * píxeles para cada zoom entero (MapLibre escala los guiones con el ancho del
+ * zoom entero inferior) y cada grosor de tipo: cada guion del trazo queda con
+ * su propio halo, `HALO_PX` más largo por cada extremo. Con remate redondo el
+ * propio remate, más ancho, ya rodea el punto, y basta con el mismo ritmo.
+ */
+export function casingDashExpr(certainty, ornaments) {
+  const c = CERTAINTIES.find((x) => x.id === certainty);
+  if (!c || !c.dash) return null;
+  const [d, g] = c.dash;
+  const patron = (z, peso) => {
+    const w = widthAt(z, peso);
+    const wc = w + 2 * HALO_PX;
+    const r = (v) => Math.max(0, Math.round((v / wc) * 1000) / 1000);
+    if (c.cap === 'round') return [r(d * w), r(g * w)];
+    const hueco = Math.max(0.05 * wc, g * w - 2 * HALO_PX);
+    // Rotado HALO_PX hacia atrás: guion, hueco, el trozo que asoma ANTES del
+    // siguiente guion y un hueco nulo que MapLibre funde.
+    return [r(d * w + HALO_PX), r(hueco), r(HALO_PX), 0];
+  };
+  const pesos = LINE_TYPES.map((t) => [t.id, effectiveLineWeight(t.id, ornaments)]);
+  const porZoom = (z) => [
+    'match',
+    ['get', 'type'],
+    ...pesos.flatMap(([id, p]) => [id, ['literal', patron(z, p)]]),
+    ['literal', patron(z, 1)],
+  ];
+  const expr = ['step', ['zoom'], porZoom(0)];
+  for (let z = 1; z <= 24; z++) expr.push(z, porZoom(z));
+  return expr;
+}
+
 /**
  * El color de los polígonos sale de las unidades definidas por el usuario, que
  * cambian en caliente: mapView reescribe estas expresiones cada vez que se
@@ -94,6 +152,79 @@ export function unitCodeExpr(units) {
   const list = (units || []).filter((u) => u && u.id);
   if (!list.length) return reserva;
   return ['match', ['get', 'type'], ...list.flatMap((u) => [u.id, String(u.code || '')]), reserva];
+}
+
+/** Luminancia relativa (0–1) de un hex; `null` si no se puede leer. */
+function luminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const lin = (v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+}
+
+/**
+ * Rótulo de un contacto, «arriba-abajo», cada código con el color de su
+ * unidad. Sale del catálogo, como el color de los polígonos: recolorear o
+ * recodificar una unidad se ve en el acto. Sin catálogo se cae al texto que
+ * guarda el propio contacto, en negro.
+ *
+ * El halo se elige por contraste con los colores del par: bajo un amarillo o
+ * un rosado pálido un halo blanco los borraba.
+ */
+export function contactLabelStyle(units) {
+  const list = (units || []).filter((u) => u && u.id);
+  if (!list.length) {
+    return { field: ['get', 'contactLabel'], halo: 'rgba(255,255,255,0.92)' };
+  }
+  const lado = (prop) => ['coalesce', ['get', prop], ''];
+  const code = (prop) => [
+    'match',
+    lado(prop),
+    ...list.flatMap((u) => [u.id, String(u.code || u.name || '')]),
+    '',
+  ];
+  const color = (prop) => ['match', lado(prop), ...list.flatMap((u) => [u.id, u.color || '#12181f']), '#12181f'];
+  // Halo que mejor contrasta con las DOS unidades del par (contraste WCAG):
+  // claro bajo códigos oscuros, oscuro bajo códigos claros, y en un par
+  // mixto el que deja legible al peor de los dos.
+  const BLANCO = 'rgba(255,255,255,0.92)';
+  const OSCURO = 'rgba(18,24,31,0.88)';
+  const lum = new Map(list.map((u) => [u.id, luminance(u.color) ?? 0]));
+  const contraste = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const haloPara = (la, lb) => {
+    const conBlanco = Math.min(contraste(la, 1), contraste(lb, 1));
+    const conOscuro = Math.min(contraste(la, 0.009), contraste(lb, 0.009));
+    return conOscuro > conBlanco ? OSCURO : BLANCO;
+  };
+  const porLado = (l) => [
+    'match',
+    lado('unitBelowId'),
+    ...list.flatMap((u) => [u.id, haloPara(l, lum.get(u.id))]),
+    haloPara(l, l),
+  ];
+  const field = [
+    'format',
+    code('unitAboveId'),
+    { 'text-color': color('unitAboveId') },
+    ['case', ['all', ['!=', code('unitAboveId'), ''], ['!=', code('unitBelowId'), '']], '-', ''],
+    // Gris medio: se lee sobre el halo claro y sobre el oscuro.
+    { 'text-color': '#8a94a0' },
+    code('unitBelowId'),
+    { 'text-color': color('unitBelowId') },
+  ];
+  // Sin unidad abajo cuenta solo la de arriba (y viceversa).
+  const soloAbajo = ['match', lado('unitBelowId'), ...list.flatMap((u) => [u.id, haloPara(lum.get(u.id), lum.get(u.id))]), BLANCO];
+  const halo = [
+    'match',
+    lado('unitAboveId'),
+    ...list.flatMap((u) => [u.id, porLado(lum.get(u.id))]),
+    soloAbajo,
+  ];
+  return { field, halo };
 }
 
 export function unitOutlineExpr(units, importStyle) {
@@ -179,15 +310,14 @@ export function geologyLayers() {
     /*
      * Halo blanco: sin esto las líneas oscuras desaparecen sobre el satélite.
      *
-     * Solo lo llevan las líneas CONTINUAS. En una segmentada o punteada el
-     * halo es un segundo patrón de guiones por detrás del primero, más ancho y
-     * con la escala corregida, así que nunca calza: los guiones blancos asoman
-     * entre los del trazo y el patrón de certeza —que es justo lo que hay que
-     * distinguir a ojo— se lee emborronado. Una línea segmentada ya se separa
-     * del fondo por su propio ritmo.
+     * En las segmentadas y punteadas el halo lleva su propio patrón de
+     * guiones (`casingDashExpr`), calculado para que cada guion del trazo
+     * tenga el suyo: el mismo patrón del trazo, en un halo más ancho, no
+     * calzaba y emborronaba el ritmo de la certeza.
      */
-    if (!c.dash) {
+    {
       const casingId = `geology-line-casing-${c.id}`;
+      const dash = casingDashExpr(c.id, null);
       layers.push({
         id: casingId,
         type: 'line',
@@ -198,6 +328,7 @@ export function geologyLayers() {
           'line-color': '#ffffff',
           'line-width': casingWidthExpr(null),
           'line-opacity': 0.55,
+          ...(dash ? { 'line-dasharray': dash } : {}),
         },
       });
       BASE_OPACITY[casingId] = 0.55;
@@ -222,7 +353,9 @@ export function geologyLayers() {
 
   /*
    * Rótulo de un contacto: los códigos de las dos unidades que se tocan,
-   * «arriba-abajo». Sigue la traza y se lee de pie.
+   * «arriba-abajo», cada uno con el color de su unidad. Se coloca en el
+   * centro de la traza pero se lee HORIZONTAL, como el resto de rótulos de
+   * la pantalla: girado a lo largo de un contacto sinuoso costaba leerlo.
    */
   layers.push({
     id: 'geology-contact-label',
@@ -235,16 +368,17 @@ export function geologyLayers() {
     ],
     layout: {
       'symbol-placement': 'line-center',
-      'text-field': ['get', 'contactLabel'],
+      'text-field': contactLabelStyle(null).field,
       'text-font': ['Noto Sans Regular'],
       'text-size': 12,
       'text-padding': 4,
       'text-allow-overlap': false,
-      'text-keep-upright': true,
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport',
     },
     paint: {
       'text-color': '#12181f',
-      'text-halo-color': 'rgba(255,255,255,0.92)',
+      'text-halo-color': contactLabelStyle(null).halo,
       'text-halo-width': 1.6,
     },
   });
@@ -329,10 +463,8 @@ export const UNIT_LABEL_LAYER_ID = 'geology-unit-label';
 /** Capas cuyo `line-color` sale del catálogo de tipos de línea. */
 export const GEOLOGY_LINE_LAYER_IDS = CERTAINTIES.map((c) => `geology-line-${c.id}`);
 
-/** Los halos blancos, que solo llevan las continuas (ver arriba por qué). */
-export const GEOLOGY_CASING_LAYER_IDS = CERTAINTIES.filter((c) => !c.dash).map(
-  (c) => `geology-line-casing-${c.id}`,
-);
+/** Los halos blancos de las trazas, uno por grado de certeza. */
+export const GEOLOGY_CASING_LAYER_IDS = CERTAINTIES.map((c) => `geology-line-casing-${c.id}`);
 
 /** Capas del elemento en construcción: siempre por encima de todo. */
 export function draftLayers() {

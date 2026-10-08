@@ -37,12 +37,14 @@ import {
   GEOLOGY_UNIT_LAYER_IDS,
   UNIT_LABEL_LAYER_ID,
   casingWidthExpr,
+  casingDashExpr,
   draftLayers,
   editLayers,
   geologyLayers,
   lineColorExpr,
   lineWidthExpr,
   unitCodeExpr,
+  contactLabelStyle,
   unitFillExpr,
   unitOutlineExpr,
   withFeatureAlpha,
@@ -809,6 +811,37 @@ export function createMapView({
     });
 
     /*
+     * Doble clic sobre un perfil guardado lo abre, como tocar su nombre en
+     * Capas. Solo con ratón y en Navegar/Elegir: con una herramienta de dibujo
+     * el doble clic es del trazo (y el controlador ni lo deja llegar aquí).
+     */
+    map.on('dblclick', (e) => {
+      const tool = store.getState().tool;
+      if (tool !== 'navigate' && tool !== 'select') return;
+      const capas = ['saved-sections-line', 'saved-sections-casing'].filter((id) => map.getLayer(id));
+      if (!capas.length) return;
+      const r = 6;
+      const box = [
+        [e.point.x - r, e.point.y - r],
+        [e.point.x + r, e.point.y + r],
+      ];
+      const hit = map.queryRenderedFeatures(box, { layers: capas })[0];
+      const id = hit && hit.properties && hit.properties.id;
+      if (!id) return;
+      e.preventDefault();
+      const abierto = store.openSavedSection(id);
+      if (abierto && abierto.coords) {
+        fitToGeoJSON(
+          {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: abierto.coords } }],
+          },
+          60,
+        );
+      }
+    });
+
+    /*
      * Resalte de lo que se está consultando en una capa importada.
      *
      * Va en cian, el mismo color con el que se marca la selección propia: no
@@ -1129,7 +1162,11 @@ export function createMapView({
     }
     const halo = casingWidthExpr(ornaments);
     for (const id of GEOLOGY_CASING_LAYER_IDS) {
-      if (map.getLayer(id)) map.setPaintProperty(id, 'line-width', halo);
+      if (!map.getLayer(id)) continue;
+      map.setPaintProperty(id, 'line-width', halo);
+      // Los guiones del halo dependen del grosor de la traza: ver casingDashExpr.
+      const dash = casingDashExpr(id.replace('geology-line-casing-', ''), ornaments);
+      if (dash) map.setPaintProperty(id, 'line-dasharray', dash);
     }
   }
 
@@ -1148,6 +1185,12 @@ export function createMapView({
     // sin tocar los polígonos.
     if (map.getLayer(UNIT_LABEL_LAYER_ID)) {
       map.setLayoutProperty(UNIT_LABEL_LAYER_ID, 'text-field', unitCodeExpr(units));
+    }
+    // Y el del contacto, con el color de cada unidad.
+    if (map.getLayer('geology-contact-label')) {
+      const { field, halo } = contactLabelStyle(units);
+      map.setLayoutProperty('geology-contact-label', 'text-field', field);
+      map.setPaintProperty('geology-contact-label', 'text-halo-color', halo);
     }
   }
 
