@@ -19,12 +19,13 @@ import { cancelStroke, initSectionInk } from './sectionInk.js';
 import { applyZoom, initSectionZoom } from './sectionZoom.js';
 import { openInSketcher, sketcherMessage } from './sketcherLink.js';
 import { makeFloating } from './floating.js';
+import { byId, getSectionPopup, setSectionPopup } from './sectionWindow.js';
 import { renderSection, sectionPNG, sectionSVG } from './sectionView.js';
 import { sketcherDocument, structuralModellerZip } from './sectionExport.js';
 import { LINE_TYPE_BY_ID, STRUCTURE_TYPE_BY_ID } from './symbology.js';
 import { downloadBlob } from './persistence.js';
 
-const $ = (id) => document.getElementById(id);
+const $ = byId;
 
 let onMessage = () => {};
 let onBusy = () => {};
@@ -57,6 +58,14 @@ export function initSectionPanel({ message, busy, sampler }) {
     $('section-side').classList.toggle('hidden');
     $('btn-section-lists').classList.toggle('active');
     renderSectionPanel();
+  });
+  $('section-dips-by-unit').addEventListener('change', (e) =>
+    store.setSectionOpts({ dipsByUnit: e.target.checked }),
+  );
+  $('btn-section-popout').addEventListener('click', togglePopOut);
+  window.addEventListener('beforeunload', () => {
+    const w = getSectionPopup();
+    if (w) w.close();
   });
   $('btn-section-info').addEventListener('click', () => $('section-note').classList.toggle('hidden'));
   initFloating();
@@ -203,6 +212,7 @@ export function renderSectionPanel() {
   // hay que ver, y el corte anterior sigue intacto para cuando se cancele.
   if (!st.section || st.pickDips || st.pickBand) {
     panel.classList.add('hidden');
+    if (!st.section && getSectionPopup()) getSectionPopup().close();
     return;
   }
   panel.classList.remove('hidden');
@@ -222,10 +232,22 @@ export function renderSectionPanel() {
   // tener que regenerarlo.
   const vivo = new Map(st.features.map((f) => [f.properties.id, f.properties.contactLabel || '']));
   const conCodigo = (x) => (vivo.has(x.id) ? { ...x, contactLabel: vivo.get(x.id) } : x);
+  // Unidad de cada manteo, leída del dibujo de ahora (puede haberse cambiado
+  // después de proyectarlo) y con el color del catálogo vivo.
+  const unidadViva = new Map(st.features.map((f) => [f.properties.id, f.properties.unitId || null]));
+  const colores = new Map(st.units.map((u) => [u.id, u.color]));
+  const conUnidad = (d) => (unidadViva.has(d.id) ? { ...d, unitId: unidadViva.get(d.id) } : d);
   const { scales } = renderSection(
     $('section-chart'),
-    { ...s, intersections: s.intersections.map(conCodigo), contacts: (s.contacts || []).map(conCodigo) },
     {
+      ...s,
+      intersections: s.intersections.map(conCodigo),
+      contacts: (s.contacts || []).map(conCodigo),
+      dips: s.dips.map(conUnidad),
+    },
+    {
+    unitColor: (id) => colores.get(id) || null,
+    dipsByUnit: !!o.dipsByUnit,
     width,
     exaggeration: o.exaggeration,
     showIntersections: o.showIntersections,
@@ -245,9 +267,9 @@ export function renderSectionPanel() {
   lastScales = scales;
   applyZoom($('section-chart'));
 
-  renderDipList(s);
+  renderDipList(s, o.dipsByUnit ? colores : null);
   renderCrossingList(s);
-  renderContactList(s);
+  renderContactList(s, colores);
   $('section-note').textContent = sectionNote(s);
 
   const ex = $('section-exag');
@@ -256,6 +278,7 @@ export function renderSectionPanel() {
   $('section-show-labels').checked = o.showLabels;
   $('section-show-cross-labels').checked = o.showCrossLabels;
   $('section-show-codes').checked = !!o.showCodes;
+  $('section-dips-by-unit').checked = !!o.dipsByUnit;
   $('section-show-cross-labels').disabled = !o.showIntersections;
 }
 
@@ -301,7 +324,7 @@ function row(parent, { color, what, num, className }) {
   return r;
 }
 
-function renderDipList(section) {
+function renderDipList(section, colorByUnit = null) {
   const lista = $('section-dip-list');
   lista.replaceChildren();
   $('section-dip-count').textContent = String(section.dips.length);
@@ -313,8 +336,9 @@ function renderDipList(section) {
      * kilómetros del corte, dibujada sobre él, es una extrapolación, y quien
      * mire la figura tiene derecho a saber cuánto se estiró.
      */
+    const unit = colorByUnit && d.unitId ? colorByUnit.get(d.unitId) : null;
     const r = row(lista, {
-      color: tipo ? tipo.color : '#2dd4bf',
+      color: unit || (tipo ? tipo.color : '#2dd4bf'),
       what: `${Math.round(d.strike)}/${Math.round(d.dip)}${tipo ? ` · ${tipo.short}` : ''}`,
       num: `${Math.round(d.apparent)}° ap · ${Math.round(d.offset)} m`,
       // Muy achatado: el corte va casi paralelo al rumbo y el aparente ya no
@@ -361,7 +385,7 @@ function renderCrossingList(section) {
   }
 }
 
-function renderContactList(section) {
+function renderContactList(section, colorByUnit = null) {
   const lista = $('section-c-list');
   lista.replaceChildren();
   const contactos = section.contacts || [];
@@ -371,7 +395,7 @@ function renderContactList(section) {
   contactos.forEach((k, i) => {
     const tipo = LINE_TYPE_BY_ID.get(k.type);
     const r = row(lista, {
-      color: tipo ? tipo.color : '#888',
+      color: (colorByUnit && colorByUnit.get(k.type)) || (tipo ? tipo.color : '#888'),
       what: k.name || (tipo ? tipo.label : 'Contact'),
       num: `${(k.s / 1000).toFixed(2)} km · ${Math.round(k.offset)} m`,
       className: k.enabled === false ? 'off' : '',
@@ -426,12 +450,39 @@ function renderBandBar(st) {
     `Band ±${w} m around the profile (${w * 2} m wide): contacts inside it are projected onto the section.`;
 }
 
-function confirmBand() {
+async function confirmBand() {
   const st = store.getState();
   if (!st.pickBand || !st.section) return;
   const width = st.pickBand.width;
   const lineas = st.features.filter((f) => f.geometry && f.geometry.type !== 'Point');
   const contactos = projectContacts(st.section.trace, lineas, width);
+
+  /*
+   * La cota de cada vértice del trazo, del mismo DEM del perfil: es lo que
+   * hace que el contacto se dibuje a su altura y no como un punto sobre la
+   * topografía. Un hueco sin dato queda como `null` y la línea se corta ahí.
+   */
+  if (contactos.some((k) => k.path && k.path.length)) {
+    onBusy('Reading elevations along the contacts…');
+    try {
+      const sampler = samplerFor(st);
+      const todos = contactos.flatMap((k) => (k.path || []).map((q) => q.lngLat));
+      if (sampler.loadGrid && todos.length) await sampler.loadGrid(todos);
+      for (const k of contactos) {
+        const zs = await Promise.all(
+          (k.path || []).map((q) => sampler.elevationAt(q.lngLat[0], q.lngLat[1]).catch(() => null)),
+        );
+        k.path = k.path.map((q, i) => [q.s, Number.isFinite(zs[i]) ? zs[i] : null]);
+      }
+    } catch (err) {
+      // Sin cotas el contacto vuelve a dibujarse como punto, que es lo de antes.
+      for (const k of contactos) delete k.path;
+      onMessage(`Could not read elevations along the contacts (${err.message}); they are drawn as points.`, 'warn');
+    } finally {
+      onBusy(null);
+    }
+  }
+
   store.setSectionContacts(contactos, width);
   onMessage(
     contactos.length
@@ -439,6 +490,77 @@ function confirmBand() {
       : `No contact that doesn't already cross the profile lies within ±${Math.round(width)} m: try a wider band.`,
     'info',
   );
+}
+
+/* ======================================================= otra ventana === */
+
+/** Dónde estaba el panel en el documento principal, para devolverlo. */
+let anclaPanel = null;
+
+function togglePopOut() {
+  const abierta = getSectionPopup();
+  if (abierta) {
+    abierta.close(); // `pagehide` lo devuelve a su sitio
+    return;
+  }
+  const panel = document.getElementById('section-view');
+  const w = window.open('', 'fielddraw-section', 'popup=yes,width=1180,height=760');
+  if (!w) {
+    onMessage('The browser blocked the new window: allow pop-ups for this site and try again.');
+    return;
+  }
+  // Mismas hojas de estilo y mismo tema que la ventana principal; las rutas
+  // se vuelven absolutas porque la ventana nueva es about:blank.
+  const d = w.document;
+  d.open();
+  d.write('<!doctype html><html><head><meta charset="utf-8"><title>FieldDraw — Structural section</title></head><body></body></html>');
+  d.close();
+  d.documentElement.className = document.documentElement.className;
+  for (const a of document.documentElement.attributes) d.documentElement.setAttribute(a.name, a.value);
+  for (const l of document.querySelectorAll('link[rel="stylesheet"]')) {
+    const n = d.createElement('link');
+    n.rel = 'stylesheet';
+    n.href = l.href;
+    d.head.appendChild(n);
+  }
+  const estilo = d.createElement('style');
+  // Ocupa la ventana entera y ya no es flotante: ni arrastre ni esquina.
+  estilo.textContent = `
+    html, body { margin: 0; height: 100%; background: var(--panel-solid, #0d1117); overflow: hidden; }
+    .section-view.popped { position: static !important; width: 100% !important;
+      height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none;
+      box-sizing: border-box; padding: 8px 10px 10px; }
+    .section-view.popped .sv-body { flex: 1; min-height: 0; }
+    .section-view.popped #section-chart-wrap { max-height: none; flex: 1; min-height: 0; }
+    .section-view.popped #section-grip, .section-view.popped #btn-section-collapse { display: none; }
+    .section-view.popped #section-drag { cursor: default; }
+  `;
+  d.head.appendChild(estilo);
+
+  anclaPanel = { parent: panel.parentNode, next: panel.nextSibling };
+  setSectionPopup(w);
+  d.body.appendChild(d.adoptNode(panel));
+  panel.classList.add('popped');
+  panel.classList.remove('collapsed');
+  $('btn-section-popout').title = 'Bring the profile back into the app window';
+
+  const volver = () => {
+    if (getSectionPopup() !== w && !w.closed) return;
+    setSectionPopup(null);
+    panel.classList.remove('popped');
+    if (anclaPanel) {
+      anclaPanel.parent.insertBefore(document.adoptNode(panel), anclaPanel.next);
+      anclaPanel = null;
+    }
+    $('btn-section-popout').title = 'Open the profile in its own window (drag it to another screen)';
+    lastWidth = 0;
+    renderSectionPanel();
+  };
+  w.addEventListener('pagehide', volver);
+  // Mientras el panel vive en la otra ventana, el ancho lo da esa ventana.
+  w.addEventListener('resize', () => renderSectionPanel());
+  lastWidth = 0;
+  renderSectionPanel();
 }
 
 /* ================================================= guardar y abrir fuera === */

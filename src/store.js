@@ -230,6 +230,8 @@ let state = {
     showLabels: true,
     showCrossLabels: true,
     showCodes: false,
+    // Colorear los manteos por la unidad a la que pertenecen.
+    dipsByUnit: false,
   },
   /**
    * Cómo se desliza un manteo hasta el corte: perpendicular (`'orthogonal'`,

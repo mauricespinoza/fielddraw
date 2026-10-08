@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v56';
+const VERSION = 'v57';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -103,6 +103,7 @@ const SHELL = [
   './src/profileWalk.js',
   './src/sketcherLink.js',
   './src/sectionView.js',
+  './src/sectionWindow.js',
   './src/sectionZoom.js',
   './src/scale.js',
   './src/shapefile.js',

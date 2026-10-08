@@ -275,7 +275,28 @@ console.log('== contactos proyectados ==');
   ok('con su offset real', r[0] && r[0].offset > 200 && r[0].offset < 330, String(r[0] && r[0].offset));
   ok('el que cruza ya es un cruce: no se repite', !r.some((x) => x.id === 'cruza'));
   ok('franja nula no proyecta nada', S.projectContacts(t, [c('cerca', [[0.03, 0.002], [0.05, 0.003]])], 0).length === 0);
+  // El trazo punto a punto: cada vértice con su `s` a lo largo del perfil.
+  ok('lleva el trazo punto a punto', Array.isArray(r[0].path) && r[0].path.length >= 2, JSON.stringify(r[0].path && r[0].path.length));
+  ok('cada punto con su s y su posición', r[0].path.every((q) => Number.isFinite(q.s) && q.lngLat.length === 2));
+  const ss = r[0].path.map((q) => q.s);
+  ok('el trazo avanza a lo largo del perfil', ss[ss.length - 1] > ss[0], JSON.stringify([ss[0], ss[ss.length - 1]]));
+  ok('el trazo se adelgaza', S.projectContacts(t, [c('largo', [[0.0, 0.002], [0.1, 0.002]])], 500)[0].path.length <= 251);
   ok('solo contactos', S.projectContacts(t, [{ geometry: { type: 'LineString', coordinates: [[0.03, 0.002], [0.05, 0.003]] }, properties: { id: 'f', type: 'normal-fault' } }], 500).length === 0);
+}
+
+console.log('== manteo con unidad / contacto en el export ==');
+{
+  const t = new S.SectionTrace([[0, 0], [0.1, 0]]);
+  const d = S.projectMeasurements([{ lngLat: [0.05, 0.001], elevation: 100, properties: { id: 'm', strike: 0, dip: 30, unitId: 'u1' } }], t);
+  ok('el manteo proyectado conserva su unidad', d.length === 1 && d[0].unitId === 'u1');
+  const sec = {
+    length: 11000, zMin: 0, zMax: 500, azimuth: 90, samples: [{ distance: 0, elevation: 100 }, { distance: 11000, elevation: 100 }],
+    intersections: [], dips: [],
+    contacts: [{ type: 'stratigraphic-contact', name: 'c', s: 50, offset: 200, enabled: true, path: [[10, 120], [50, 150], [90, null], [100, 130]] }],
+  };
+  const doc = X.sketcherDocument(sec, { name: 'x', exaggeration: 1 });
+  const l = doc.section.lines.find((x) => /projected/.test(x.name));
+  ok('el contacto sale como línea con su cota', l && l.vertices.length === 3 && l.vertices[1][1] === 150, JSON.stringify(l && l.vertices));
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
