@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.45.0';
+export const APP_VERSION = '0.46.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,18 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.46.0',
+    highlights: [
+      'Structural section: mouse-wheel zoom, projected contacts drawn as lines at their elevation, dips coloured by unit, and the section can open in its own window.',
+    ],
+    items: [
+      'La vista de perfil hace zoom con la rueda del ratón (bajo el cursor) además de con dos dedos; el doble clic vuelve a 1×.',
+      'Los contactos proyectados ya no son un punto con texto: se dibuja la línea del contacto, vértice a vértice, cada uno a su posición proyectada en el perfil y a la cota del DEM por la que pasa. El borde de un polígono se pinta con el color de su unidad; también salen como línea en StructuralSketcher. Hay que volver a pulsar «Project contacts» en perfiles ya guardados para que tengan trazo.',
+      'Casilla «By unit» en el perfil: colorea cada manteo con el color de la unidad en que se midió.',
+      'Botón ⧉ en el perfil: lo abre en una ventana aparte (para llevarlo a otra pantalla) con todos sus controles; al cerrarla vuelve a la ventana de la app.',
+    ],
+  },
   {
     version: '0.45.0',
     highlights: [

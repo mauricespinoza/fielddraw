@@ -276,6 +276,25 @@ export function sketcherDocument(section, { name = 'FieldDraw section', exaggera
   // punteadas, porque no cortan el perfil.
   for (const k of section.contacts || []) {
     if (k.enabled === false) continue;
+    // Con trazo punto a punto, el contacto va como línea a su cota; sin él
+    // (perfiles guardados antes), como la semilla vertical de siempre.
+    const traza = (k.path || []).filter((q) => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]));
+    if (traza.length >= 2) {
+      const tipoT = LINE_TYPE_BY_ID.get(k.type);
+      lines.push({
+        id: genId(),
+        kind: 'horizon',
+        name: `${k.name || (tipoT ? tipoT.label : 'Contact')} (projected ${Math.round(k.offset)} m)`,
+        vertices: traza.map((q) => [q[0], q[1]]),
+        visible: true,
+        locked: false,
+        unit_id: null,
+        origin: 'imported',
+        style: { color: rgbOf(tipoT ? tipoT.color : '#808080'), width: 2, dash: true },
+        fault_style: { sense: 'none', flip: false },
+      });
+      continue;
+    }
     const z = elevationAt(section.samples, k.s);
     if (!Number.isFinite(z)) continue;
     const tipo = LINE_TYPE_BY_ID.get(k.type);

@@ -10,8 +10,9 @@
 
 import * as store from './store.js';
 import { getZoom } from './sectionZoom.js';
+import { byId, panelAll } from './sectionWindow.js';
 
-const $ = (id) => document.getElementById(id);
+const $ = byId;
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 export const PENS = {
@@ -48,7 +49,7 @@ export function initSectionInk({ scales }) {
   $('ink-width').addEventListener('input', (e) => {
     ink.width = Number(e.target.value);
   });
-  for (const b of document.querySelectorAll('#ink-pens .ink-pen')) {
+  for (const b of panelAll('#ink-pens .ink-pen')) {
     b.addEventListener('click', () => {
       ink.pen = b.dataset.pen;
       ink.erasing = false;
@@ -140,11 +141,11 @@ function setColor(c) {
 }
 
 function refresh() {
-  for (const b of document.querySelectorAll('#ink-pens .ink-pen')) {
+  for (const b of panelAll('#ink-pens .ink-pen')) {
     b.classList.toggle('active', !ink.erasing && b.dataset.pen === ink.pen);
   }
   $('ink-eraser').classList.toggle('active', ink.erasing);
-  for (const b of document.querySelectorAll('#ink-colors .ink-swatch')) {
+  for (const b of panelAll('#ink-colors .ink-swatch')) {
     b.classList.toggle('active', b.dataset.color === ink.color);
   }
   const svg = $('section-chart');

@@ -273,6 +273,7 @@ export function projectMeasurements(
     const az = trace.azimuthAt(p.s);
     out.push({
       id: props.id,
+      unitId: props.unitId || null,
       lngLat,
       s: p.s,
       z: Number.isFinite(p.z) ? p.z : Number.isFinite(m.elevation) ? m.elevation : null,
@@ -395,8 +396,11 @@ export function isContactFeature(f) {
  * resultado es la distancia real a la que se proyectó, que es lo que dice
  * cuánto se estiró el dato.
  *
- * @returns {Array<{id, type, name, s, offset, side, lngLat, enabled}>}
+ * @returns {Array<{id, type, name, s, offset, side, lngLat, enabled, path}>}
+ * `path` es el trazo punto a punto; la cota (`z`) la añade el panel.
  */
+const MAX_PATH_POINTS = 250;
+
 export function projectContacts(trace, features, bandwidth) {
   const out = [];
   if (!(bandwidth > 0)) return out;
@@ -428,11 +432,24 @@ export function projectContacts(trace, features, bandwidth) {
           const mejor = tramo.reduce((a, b) => (b.offset < a.offset ? b : a));
           // Rozar la traza (offset ≈ 0) también es un cruce, ya listado.
           if (!cruza && mejor.offset >= paso / 2) {
+            /*
+             * El trazo entero del contacto dentro de la franja, punto a punto:
+             * cada uno con su posición a lo largo del perfil (`s`, proyectado
+             * en perpendicular) y su posición en el mapa, de donde el panel
+             * saca la cota. Adelgazado: un contacto de kilómetros muestreado
+             * cada pocos metros no necesita miles de vértices para dibujarse.
+             */
+            const paso2 = Math.max(1, Math.ceil(tramo.length / MAX_PATH_POINTS));
+            const path = tramo
+              .filter((_, i) => i % paso2 === 0 || i === tramo.length - 1)
+              .map((q) => ({ s: q.s, lngLat: toLngLat(...q.xy) }));
             out.push({
+              path,
               id: props.id,
               type: props.type || '',
               kind: g.type === 'Polygon' || g.type === 'MultiPolygon' ? 'polygon' : 'line',
               contactLabel: props.contactLabel || '',
+              certainty: props.certainty || 'observed',
               name: featureName(props),
               s: mejor.s,
               offset: mejor.offset,

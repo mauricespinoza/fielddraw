@@ -117,6 +117,11 @@ export function renderSection(svg, section, opts = {}) {
     showCrossLabels = true,
     showCodes = false,
     showContacts = true,
+    // Color de una unidad por su id, o null: lo pone el panel con el catálogo
+    // vivo. `dipsByUnit` pinta con él los manteos; los contactos que son el
+    // borde de un polígono lo llevan siempre.
+    unitColor = () => null,
+    dipsByUnit = false,
     ink = [],
     theme = 'dark',
   } = opts;
@@ -244,9 +249,12 @@ export function renderSection(svg, section, opts = {}) {
 
   /* --- contactos proyectados desde la franja --- */
   /*
-   * Anillo hueco, no punto lleno: el contacto NO corta el perfil, se proyectó
-   * desde `offset` metros. Con su distancia en el rótulo, para que se vea
-   * cuánto se estiró.
+   * El trazo del contacto, no un punto: cada vértice de la línea del mapa se
+   * proyecta en perpendicular al perfil (su `s`) y cuelga de su propia cota,
+   * así que la línea sube y baja con el relieve por el que pasa el contacto.
+   * Los que se guardaron antes de existir el trazo caen al anillo hueco de
+   * siempre. El rótulo lleva el nombre o el código, no la distancia: esa va
+   * en la lista.
    */
   if (showContacts && section.contacts && section.contacts.length) {
     const gc = el('g');
@@ -254,15 +262,51 @@ export function renderSection(svg, section, opts = {}) {
     for (const k of section.contacts) {
       if (k.enabled === false) continue;
       const tipo = LINE_TYPE_BY_ID.get(k.type);
-      const color = tipo ? tipo.color : c.muted;
+      const color = unitColor(k.type) || (tipo ? tipo.color : c.muted);
       const px = s.x(k.s);
       const zTopo = elevationAt(section.samples, k.s);
-      const y0 = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
-      const nombre = `${k.name || (tipo ? tipo.label : k.type || 'contact')} (${Math.round(k.offset)} m)`;
+      let ancla = Number.isFinite(zTopo) ? s.y(zTopo) : MARGIN.top;
+
+      const pts = (k.path || []).filter((q) => Array.isArray(q) && Number.isFinite(q[0]));
+      if (pts.length >= 2) {
+        let d = '';
+        let abierto = false;
+        let mejor = null;
+        for (const [ps, pz] of pts) {
+          if (!Number.isFinite(pz)) {
+            abierto = false;
+            continue;
+          }
+          const x = s.x(ps);
+          const y = s.y(pz);
+          d += `${abierto ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)} `;
+          abierto = true;
+          const dist = Math.abs(ps - k.s);
+          if (!mejor || dist < mejor.dist) mejor = { dist, y };
+        }
+        if (d) {
+          gc.appendChild(el('path', {
+            d: d.trim(), fill: 'none', stroke: c.bg, 'stroke-width': 4.2,
+            'stroke-linecap': 'round', 'stroke-linejoin': 'round', opacity: 0.85,
+          }));
+          gc.appendChild(el('path', {
+            d: d.trim(), fill: 'none', stroke: color, 'stroke-width': 2,
+            'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+            ...(k.certainty && k.certainty !== 'observed' ? { 'stroke-dasharray': '6 4' } : {}),
+          }));
+          if (mejor) ancla = mejor.y;
+        }
+      } else {
+        gc.appendChild(el('circle', {
+          cx: px, cy: ancla, r: 4, fill: c.bg, stroke: color, 'stroke-width': 2,
+        }));
+      }
+
+      const nombre = k.name || (tipo ? tipo.label : k.type || 'contact');
       const texto = showCodes ? codeOf(k) || (showCrossLabels ? nombre : '') : nombre;
       if ((showCrossLabels || showCodes) && texto) {
         const ancho = texto.length * 5.6 + 6;
-        let ty = y0 + 16;
+        let ty = ancla + 16;
         for (let n = 0; n < 12; n++) {
           const pisa = puestos.some(
             (q) => Math.abs(q.px - px) < (q.ancho + ancho) / 2 && Math.abs(q.ty - ty) < 12,
@@ -278,9 +322,6 @@ export function renderSection(svg, section, opts = {}) {
         t.textContent = texto;
         gc.appendChild(t);
       }
-      gc.appendChild(el('circle', {
-        cx: px, cy: y0, r: 4, fill: c.bg, stroke: color, 'stroke-width': 2,
-      }));
     }
     svg.appendChild(gc);
   }
@@ -304,17 +345,18 @@ export function renderSection(svg, section, opts = {}) {
 
     // Cuanto más achatado el manteo por la proyección, más pálido el tick: a
     // 20° del rumbo el aparente ya no dice nada de la estructura.
+    const tono = (dipsByUnit && d.unitId && unitColor(d.unitId)) || '#2dd4bf';
     const opacidad = 0.35 + 0.65 * Math.min(1, Math.max(0, d.foreshortening));
     gd.appendChild(el('line', {
       x1: px - dx, y1: py - dy, x2: px + dx, y2: py + dy,
-      stroke: '#2dd4bf', 'stroke-width': 2.4, 'stroke-linecap': 'round', opacity: opacidad,
+      stroke: tono, 'stroke-width': 2.4, 'stroke-linecap': 'round', opacity: opacidad,
     }));
     gd.appendChild(el('circle', {
-      cx: px, cy: py, r: 3.4, fill: c.bg, stroke: '#2dd4bf', 'stroke-width': 2,
+      cx: px, cy: py, r: 3.4, fill: c.bg, stroke: tono, 'stroke-width': 2,
     }));
     if (showLabels) {
       const t = el('text', {
-        x: px + 7, y: py - 7, fill: '#2dd4bf', 'font-size': 10,
+        x: px + 7, y: py - 7, fill: tono, 'font-size': 10,
       });
       t.textContent = `${Math.round(Math.abs(d.apparent))}°`;
       gd.appendChild(t);

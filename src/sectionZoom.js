@@ -7,7 +7,8 @@
  * del corte, y `sectionInk` solo divide la posición del dedo por `getZoom()`.
  *
  * El gesto se maneja con eventos táctiles para poder impedir que el navegador
- * lo trate como un zoom de página. Un doble toque con el ratón vuelve a 1×.
+ * lo trate como un zoom de página. La rueda del ratón también hace zoom, y un
+ * doble clic vuelve a 1×.
  */
 
 const MIN = 1;
@@ -77,6 +78,32 @@ export function initSectionZoom(svg, wrap, { onStart } = {}) {
   };
   svg.addEventListener('touchend', fin);
   svg.addEventListener('touchcancel', fin);
+
+  /*
+   * Rueda del ratón: zoom bajo el cursor, el mismo que hacen los dos dedos.
+   * Un paso de rueda multiplica por 1.15 (o divide), y el punto del dibujo que
+   * está bajo el cursor no se mueve. Se captura la rueda entera —sin ella la
+   * ventana solo se desplazaba— y con 1× vuelve el scroll de siempre.
+   */
+  wrap.addEventListener(
+    'wheel',
+    (e) => {
+      if (!e.deltaY) return;
+      if (k === 1 && e.deltaY > 0) return;
+      e.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      const cx = e.clientX - r.left;
+      const cy = e.clientY - r.top;
+      const px = (wrap.scrollLeft + cx) / k;
+      const py = (wrap.scrollTop + cy) / k;
+      const paso = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      k = Math.min(MAX, Math.max(MIN, k * Math.exp(-paso * 0.0015)));
+      applyZoom(svg);
+      wrap.scrollLeft = px * k - cx;
+      wrap.scrollTop = py * k - cy;
+    },
+    { passive: false },
+  );
 
   svg.addEventListener('dblclick', () => {
     if (k === 1) return;
