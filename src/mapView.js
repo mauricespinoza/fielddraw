@@ -435,7 +435,7 @@ export function createMapView({
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'bottom-right');
   map.addControl(fitAllControl(), 'bottom-right');
-  map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
+  map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left');
   /*
    * Control de GPS de MapLibre. Se conserva tal cual —trae el marcador, el
    * círculo de precisión y el seguimiento ya resueltos— pero además se expone

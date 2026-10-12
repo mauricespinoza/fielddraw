@@ -3704,7 +3704,14 @@ function wireCoordReadout(map) {
   let timer = null;
   let sobreMapa = false;
 
-  const fmt = (v) => v.toFixed(5);
+  /*
+   * Lectura en la misma fila que la escala gráfica: se cuelga del contenedor
+   * de controles de abajo a la izquierda de MapLibre, junto a la barra.
+   */
+  const esquina = map.getContainer().querySelector('.maplibregl-ctrl-bottom-left');
+  if (esquina) esquina.appendChild(el);
+
+  const fmt = (v) => v.toFixed(2);
   function mostrar(lngLat) {
     const { lng, lat } = lngLat;
     const base = `${fmt(lat)}, ${fmt(lng)}`;
