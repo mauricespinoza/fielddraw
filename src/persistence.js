@@ -1,3 +1,5 @@
+import { STORE_DRAWING, get, put } from './idb.js';
+
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
 const ORNAMENTS_KEY = 'fielddraw.ornaments.v1';
@@ -18,11 +20,68 @@ const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
  */
 const OPENTOPO_KEY = 'fielddraw.opentopo-key.v1';
 
+/** Cuándo se escribió la copia del dibujo que hay en localStorage (ms). */
+const FEATURES_SAVED_AT_KEY = 'fielddraw.features.saved-at.v1';
+
+/** Id del registro del dibujo en IndexedDB (`STORE_DRAWING`). */
+const FEATURES_IDB_ID = 'features';
+
+/**
+ * Guarda el dibujo en localStorage y, además, en IndexedDB.
+ *
+ * localStorage es síncrono —lo único que alcanza a escribirse al cerrar la
+ * app de golpe— pero tiene unos 5 MB. Antes, al llenarse, el error se tragaba
+ * en silencio: el dibujo dejaba de guardarse y al recargar volvía una versión
+ * vieja sin que nadie lo supiera. Ahora la copia de IndexedDB (con mucho más
+ * cupo) lleva la hora de guardado y al abrir gana la más reciente; si
+ * localStorage se llena, su copia vieja se borra para que no se cuele.
+ *
+ * Devuelve una promesa: `true` si al menos una de las dos copias quedó al día.
+ */
 export function saveFeatures(features) {
+  const savedAt = Date.now();
+  const json = JSON.stringify(features);
+  let local = false;
   try {
-    localStorage.setItem(KEY, JSON.stringify(features));
+    localStorage.setItem(KEY, json);
+    localStorage.setItem(FEATURES_SAVED_AT_KEY, String(savedAt));
+    local = true;
   } catch {
-    // Cuota llena o modo privado: no vale la pena romper el dibujo por esto.
+    // Cuota llena (o modo privado): fuera la copia vieja, que ya no es la buena.
+    try {
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(FEATURES_SAVED_AT_KEY);
+    } catch {
+      /* ignorar */
+    }
+  }
+  return put(STORE_DRAWING, { id: FEATURES_IDB_ID, savedAt, json }).then(
+    () => true,
+    () => local,
+  );
+}
+
+/** Hora de la copia del dibujo en localStorage (0 si no hay o es anterior a guardarla). */
+export function savedFeaturesTime() {
+  try {
+    return Number(localStorage.getItem(FEATURES_SAVED_AT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * La copia del dibujo en IndexedDB si es MÁS RECIENTE que la de localStorage
+ * (hora `than`); si no, `null`. Nunca falla: sin IndexedDB, `null`.
+ */
+export async function loadNewerFeatures(than) {
+  try {
+    const rec = await get(STORE_DRAWING, FEATURES_IDB_ID);
+    if (!rec || !(rec.savedAt > than)) return null;
+    const parsed = JSON.parse(rec.json);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
   }
 }
 

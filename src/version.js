@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.46.0';
+export const APP_VERSION = '0.46.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.46.1',
+    highlights: [
+      'Autosave no longer stops silently when browser storage fills up: the drawing also goes to IndexedDB, the newest copy wins on reopen, and you get a warning if neither copy fits.',
+      'Pending changes are saved when the app goes to the background or closes (iPad included).',
+      'Offline tiles: cached tiles are no longer downloaded again in the background, and broken or opaque responses are not stored.',
+    ],
+  },
   {
     version: '0.46.0',
     highlights: [

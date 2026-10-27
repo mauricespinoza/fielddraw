@@ -17,12 +17,13 @@ const DB_NAME = 'fielddraw';
 
 /**
  * Sube con cada almacén nuevo. v1 traía solo los archivos importados; v2
- * añade el manifiesto de áreas descargadas.
+ * añade el manifiesto de áreas descargadas; v3, la copia del dibujo.
  */
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export const STORE_FILES = 'imported-files';
 export const STORE_AREAS = 'offline-areas';
+export const STORE_DRAWING = 'drawing';
 
 let dbPromise = null;
 
@@ -43,6 +44,9 @@ function openDb() {
         }
         if (!db.objectStoreNames.contains(STORE_AREAS)) {
           db.createObjectStore(STORE_AREAS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_DRAWING)) {
+          db.createObjectStore(STORE_DRAWING, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -84,6 +88,11 @@ export async function withStore(name, mode, fn) {
 export async function getAll(name) {
   const all = await withStore(name, 'readonly', (st) => done(st.getAll()));
   return all || [];
+}
+
+/** Un registro por clave, o `undefined` si no está. */
+export function get(name, key) {
+  return withStore(name, 'readonly', (st) => done(st.get(key)));
 }
 
 export function put(name, value) {
