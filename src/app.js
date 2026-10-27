@@ -15,6 +15,7 @@ import {
 import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedControlPointStyle,
+  loadNewerFeatures,
   loadSavedFeatures,
   loadSavedSections,
   saveSections,
@@ -33,6 +34,7 @@ import {
   saveStraboStyle,
   saveStructureStyle,
   saveUnits,
+  savedFeaturesTime,
 } from './persistence.js';
 
 initUI();
@@ -80,6 +82,14 @@ const savedOpenTopoKey = loadSavedOpenTopoKey();
 if (savedOpenTopoKey) store.setOpenTopoKey(savedOpenTopoKey);
 const saved = loadSavedFeatures();
 if (saved.length) store.loadFeatures(saved);
+// Si localStorage se llenó, la copia buena es la de IndexedDB: llega un
+// instante después y solo se pone si todavía no se tocó el dibujo.
+{
+  const atStart = store.getState().features;
+  loadNewerFeatures(savedFeaturesTime()).then((newer) => {
+    if (newer && store.getState().features === atStart) store.loadFeatures(newer);
+  });
+}
 // Después del dibujo y no antes: un dataset ya abierto se reconoce por sus
 // elementos en el dibujo, y sin ellos cargados se daría por vacío.
 const savedSections = loadSavedSections();
@@ -115,7 +125,27 @@ store.subscribe(() => {
   if (store.changed('savedSections')) saveSections(store.getState().savedSections);
   if (!store.changed('features')) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => saveFeatures(store.getState().features), 500);
+  saveTimer = setTimeout(flushFeatures, 500);
+});
+
+/** Guarda ya el dibujo pendiente; avisa una vez si no cupo en ningún lado. */
+let saveFailNoticed = false;
+function flushFeatures() {
+  if (saveTimer === null) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saveFeatures(store.getState().features).then((ok) => {
+    if (ok || saveFailNoticed) return;
+    saveFailNoticed = true;
+    showBanner('Autosave failed: browser storage is full. Use “Save project…” to keep a copy of your work.');
+  });
+}
+
+// Al pasar a segundo plano o cerrar: en iOS no hay `beforeunload` y lo de los
+// últimos 500 ms se perdía. `pagehide` y `visibilitychange` sí llegan.
+addEventListener('pagehide', flushFeatures);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushFeatures();
 });
 
 /*

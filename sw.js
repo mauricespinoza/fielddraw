@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v58';
+const VERSION = 'v59';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -48,9 +48,6 @@ const TILE_LIMIT = 6000;
 
 /** Plazo de una tesela que alguien está esperando para pintar, en ms. */
 const TILE_TIMEOUT_MS = 15000;
-
-/** Plazo del refresco en segundo plano. Nadie lo espera: se corta antes. */
-const TILE_REFRESH_TIMEOUT_MS = 8000;
 
 /**
  * Todo lo que la app necesita para arrancar. Las rutas son relativas al scope,
@@ -216,6 +213,28 @@ async function podarTeselas() {
   for (const req of keys.slice(0, keys.length - TILE_LIMIT)) await cache.delete(req);
 }
 
+/*
+ * Podar lista las miles de claves de la caché: hacerlo con cada tesela nueva
+ * era trabajo de sobra. Se poda con la primera tras arrancar el service
+ * worker y luego cada PODA_CADA teselas nuevas (el tope se pasa por poco y
+ * por un rato, nada más).
+ */
+const PODA_CADA = 50;
+let teselasNuevas = 0;
+
+/**
+ * Solo se guardan respuestas CORS correctas. Una opaca (sin CORS) puede ser un
+ * 404 o un 500 escondido —quedaría guardado como si fuera la tesela— y el
+ * navegador la cuenta como varios MB de cuota aunque pese 15 KB: unos cientos
+ * bastan para llenar el cupo del sitio, y con él se arriesgan las áreas
+ * descargadas y el dibujo en IndexedDB.
+ */
+async function guardarTesela(cache, request, res) {
+  if (!res.ok) return;
+  await cache.put(request, res.clone());
+  if (teselasNuevas++ % PODA_CADA === 0) await podarTeselas();
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -285,7 +304,7 @@ self.addEventListener('fetch', (event) => {
 
   if (esTesela(url)) {
     /*
-     * Teselas: CACHÉ PRIMERO, con refresco por detrás.
+     * Teselas: CACHÉ PRIMERO, y a la red solo lo que falta.
      *
      * Antes era al revés —red primero, caché de respaldo— y ese orden era la
      * causa principal de que la app pareciera colgada en terreno. Una tesela
@@ -295,7 +314,7 @@ self.addEventListener('fetch', (event) => {
      * el basemap, las curvas, el sombreado, el relieve 3D y las cotas del
      * perfil, todo eso se detenía a la vez aunque estuviera ya descargado.
      *
-     * Ahora lo cacheado se sirve al instante y la copia se refresca aparte. La
+     * Ahora lo cacheado se sirve al instante, sin pedirlo otra vez. La
      * red solo se espera cuando no hay copia, y con plazo: fallar en 15 s deja
      * un hueco en el mapa, colgarse deja la app inservible.
      */
@@ -312,19 +331,18 @@ self.addEventListener('fetch', (event) => {
         const guardada = await areas.match(request);
         if (guardada) return guardada;
 
+        /*
+         * Lo cacheado se sirve tal cual, sin volver a pedirlo por detrás: una
+         * tesela z/x/y no cambia, y refrescar cada una que se mira gastaba en
+         * terreno el poco ancho de banda en bajar otra vez lo que ya se tenía.
+         */
         const cache = await caches.open(TILES);
         const hit = await cache.match(request);
-        if (hit) {
-          event.waitUntil(refrescarTesela(cache, request));
-          return hit;
-        }
+        if (hit) return hit;
         try {
           const res = await conPlazo(request, TILE_TIMEOUT_MS);
-          // Las respuestas opacas (sin CORS) también sirven para pintar.
-          if (res.ok || res.type === 'opaque') {
-            await cache.put(request, res.clone());
-            event.waitUntil(podarTeselas());
-          }
+          // Las opacas (sin CORS) sí se pintan, pero no se guardan: ver guardarTesela.
+          event.waitUntil(guardarTesela(cache, request, res));
           return res;
         } catch (err) {
           // Sin copia y sin red: que falle rápido y con un código claro. El
@@ -344,25 +362,6 @@ function conPlazo(request, ms) {
   const abort = new AbortController();
   const corte = setTimeout(() => abort.abort(), ms);
   return fetch(request, { signal: abort.signal }).finally(() => clearTimeout(corte));
-}
-
-/**
- * Refresca una tesela ya servida desde la caché, sin que nadie la espere.
- *
- * Se limita a las que se piden de verdad y con plazo corto: es trabajo de
- * fondo, y en terreno el ancho de banda que consuma se lo quita a las teselas
- * que sí hacen falta ahora.
- */
-async function refrescarTesela(cache, request) {
-  try {
-    const fresh = await conPlazo(request, TILE_REFRESH_TIMEOUT_MS);
-    if (fresh.ok || fresh.type === 'opaque') {
-      await cache.put(request, fresh.clone());
-      await podarTeselas();
-    }
-  } catch {
-    /* sin red: la copia que ya se sirvió sigue siendo la buena */
-  }
 }
 
 /** Permite a la app forzar la actualización y consultar el estado. */
