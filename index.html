@@ -564,7 +564,7 @@
           <input type="text" id="map-export-credit" placeholder="Left blank: centre coordinates and date" />
         </label>
         <label class="field">
-          <span>PNG resolution</span>
+          <span>Resolution (PNG, GeoTIFF)</span>
           <select id="map-export-scale">
             <option value="1">1× — screen size</option>
             <option value="2" selected>2× — for a report</option>
@@ -575,6 +575,7 @@
           <button class="pill" id="btn-map-svg">SVG</button>
           <button class="pill" id="btn-map-png">PNG</button>
           <button class="pill" id="btn-map-pdf">PDF</button>
+          <button class="pill" id="btn-map-tif" title="Georeferenced GeoTIFF (Web Mercator): just the map, no frame — opens in place in StructuralSketcher's map view, QGIS or ArcGIS">GeoTIFF</button>
         </div>
         <p class="hint footnote" id="map-export-note"></p>
         <p class="hint footnote">
@@ -583,6 +584,9 @@
           vector in the SVG and the PDF, so the lettering can be restyled in Illustrator or
           Inkscape without exporting again. The sheet is always taken in plan view: tilted or with
           3D terrain on there is no single scale and no honest coordinate frame.
+          <strong>GeoTIFF</strong> is the map alone, without the frame, with its georeference inside
+          (Web Mercator, EPSG:3857; rotated views included): load it in StructuralSketcher's map
+          view, QGIS or ArcGIS and it lands in place.
         </p>
       </div>
 

@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -295,6 +295,7 @@ Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
 | Ir a mi posición | botón de GPS sobre el mapa (◎, abajo a la derecha) o tecla `G` |
 | Rotular los polígonos con su código | casilla en el panel de **Unidades** |
 | Exportar la vista como lámina | **Proyecto → Export the map view…** (SVG, PNG o PDF) |
+| Exportar la vista como GeoTIFF georreferenciado | **Proyecto → Export the map view… → GeoTIFF** |
 
 Los gestos multitáctiles usan umbrales de tiempo holgados a propósito. Con el
 mapa renderizando, el hilo principal se satura y el `pointerup` puede llegar
@@ -2133,6 +2134,30 @@ entre una figura de una memoria y algo pegado en un documento. La lámina lleva:
 - **Título** opcional (se propone el nombre del proyecto) y un pie con el centro
   del encuadre y la fecha, que es lo que permite volver al mismo sitio meses
   después.
+
+### GeoTIFF georreferenciado
+
+El botón **GeoTIFF** del mismo panel escribe **solo el mapa** —sin marco,
+escala ni norte— con la georreferencia dentro del archivo, para que lo lea
+otro programa: se abre en su sitio en la vista de mapa de
+**StructuralSketcher** (**+ Raster**, o arrastrándolo), en QGIS o en ArcGIS.
+
+- **Sistema**: Web Mercator (EPSG:3857), que es el plano en que dibuja
+  MapLibre; cada píxel del lienzo es un cuadrado de ese sistema, así que la
+  imagen se escribe tal cual, sin remuestrear. Las GeoKeys declaran
+  `ProjectedCSType = 3857`, `PixelIsArea` y metros.
+- **Vista girada**: la relación píxel→mundo sigue siendo afín y se escribe
+  entera en `ModelTransformationTag`; al norte se usa el par clásico
+  tiepoint + tamaño de píxel.
+- **Resolución**: el selector del panel (1×, 2×, 3×) redibuja el mapa con esa
+  densidad de píxeles antes de capturarlo —no se reescala después—, con tope
+  en 8192 px por lado.
+- **Formato**: TIFF clásico, RGB (RGBA solo si hay transparencia), franjas
+  de 32 filas con Deflate y predictor horizontal; sin `CompressionStream`, sin
+  comprimir.
+
+El escritor (`geotiff.js`) no depende del navegador; `test/geotiff.test.mjs`
+lo relee byte a byte: etiquetas, píxeles, georreferencia y GeoKeys.
 
 ### El escalón del graticulado
 

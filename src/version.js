@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.46.1';
+export const APP_VERSION = '0.47.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.47.0',
+    highlights: [
+      'Export the map view as a georeferenced GeoTIFF (Web Mercator, EPSG:3857, rotated views included): just the map, no frame, at 1×–3× resolution. It opens in place in StructuralSketcher\'s map view, QGIS or ArcGIS.',
+    ],
+  },
   {
     version: '0.46.1',
     highlights: [

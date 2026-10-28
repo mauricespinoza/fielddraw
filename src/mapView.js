@@ -3937,17 +3937,31 @@ export function createMapView({
    * legible dentro del cuadro en que se pintó. Un `await` de por medio y sale
    * una imagen en blanco.
    */
-  async function captureForExport() {
+  async function captureForExport(opts = {}) {
     if (!ready) throw new Error('The map is still loading.');
 
     const antes = {
       pitch: map.getPitch(),
       terreno: !!(map.getTerrain && map.getTerrain()),
+      ratio: map.getPixelRatio ? map.getPixelRatio() : null,
     };
     const aplanar = antes.pitch > 0.01 || antes.terreno;
     if (aplanar) {
       if (antes.terreno) map.setTerrain(null);
       map.jumpTo({ pitch: 0 });
+    }
+    // Más resolución que la pantalla (el GeoTIFF): se redibuja con otra
+    // densidad de píxeles, con tope para no pasar del lienzo que la tarjeta
+    // gráfica acepta, y se devuelve la de siempre al terminar.
+    let otraDensidad = false;
+    if (opts.pixelRatio && map.setPixelRatio && antes.ratio) {
+      const caja0 = map.getContainer();
+      const tope = 8192 / Math.max(1, caja0.clientWidth, caja0.clientHeight);
+      const pr = Math.max(0.5, Math.min(opts.pixelRatio, tope));
+      if (Math.abs(pr - antes.ratio) > 1e-3) {
+        map.setPixelRatio(pr);
+        otraDensidad = true;
+      }
     }
 
     try {
@@ -3974,8 +3988,16 @@ export function createMapView({
       const w = caja.clientWidth;
       const h = caja.clientHeight;
       const c = map.getCenter();
+      // Las esquinas del lienzo en el terreno (superior izquierda, superior
+      // derecha, inferior izquierda): con la vista en planta, la relación
+      // píxel→Web Mercator es afín aunque el mapa esté girado.
+      const esquina = (x, y) => {
+        const ll = map.unproject([x, y]);
+        return [ll.lng, ll.lat];
+      };
 
       return {
+        corners: [esquina(0, 0), esquina(w, 0), esquina(0, h)],
         image,
         pixelWidth: lienzo.width,
         pixelHeight: lienzo.height,
@@ -3989,6 +4011,7 @@ export function createMapView({
         flattened: aplanar,
       };
     } finally {
+      if (otraDensidad) map.setPixelRatio(antes.ratio);
       if (aplanar) {
         map.jumpTo({ pitch: antes.pitch });
         if (antes.terreno) applyTerrain();
