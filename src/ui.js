@@ -3039,7 +3039,9 @@ async function doExportMapImage(format) {
 
   setBusy('Composing the sheet…');
   try {
-    const view = await mapBridge.captureForExport();
+    // El GeoTIFF es solo el mapa: su resolución es la del lienzo, así que se
+    // redibuja con la densidad de píxeles pedida en vez de reescalar después.
+    const view = await mapBridge.captureForExport(format === 'tif' ? { pixelRatio: escala } : {});
     const { blob, filename, layout } = await exportMapImage(view, {
       format,
       title: titulo,
@@ -3047,6 +3049,17 @@ async function doExportMapImage(format) {
       credit: credito || undefined,
     });
     downloadBlob(blob, filename);
+
+    if (format === 'tif') {
+      showBanner(
+        `Map exported as a georeferenced GeoTIFF (Web Mercator, EPSG:3857), ` +
+          `${view.pixelWidth}\u2009\u00D7\u2009${view.pixelHeight} px. It opens in place in ` +
+          `StructuralSketcher's map view, QGIS or ArcGIS.` +
+          (view.flattened ? ' Taken in plan view.' : ''),
+        'info',
+      );
+      return;
+    }
 
     const mm = pageSizeMm(layout);
     const aviso = view.flattened
@@ -6556,6 +6569,7 @@ export function initUI() {
   $('btn-map-svg').addEventListener('click', () => doExportMapImage('svg'));
   $('btn-map-png').addEventListener('click', () => doExportMapImage('png'));
   $('btn-map-pdf').addEventListener('click', () => doExportMapImage('pdf'));
+  $('btn-map-tif').addEventListener('click', () => doExportMapImage('tif'));
   $('btn-add-unit').addEventListener('click', () => {
     const name = $('new-unit-name').value.trim();
     if (!name) return;

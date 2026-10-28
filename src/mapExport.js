@@ -20,6 +20,7 @@
  */
 
 import { buildFrame } from './mapFrame.js';
+import { affineFromCorners, encodeGeoTiff, lonLatToMercator } from './geotiff.js';
 import { PT_PER_PX, buildPdf } from './pdf.js';
 import { formatScale } from './scale.js';
 
@@ -208,7 +209,7 @@ async function mapImageForPdf(dataUrl, pxW, pxH) {
 
 /* ---------- la salida ---------- */
 
-export const FORMATS = ['svg', 'png', 'pdf'];
+export const FORMATS = ['svg', 'png', 'pdf', 'tif'];
 
 /** Nombre de archivo estable y ordenable. */
 export function exportFilename(title, format) {
@@ -258,6 +259,10 @@ export async function exportMapImage(view, opts = {}) {
 
   const filename = exportFilename(title || 'fielddraw-map', format);
 
+  if (format === 'tif') {
+    return { blob: await mapToGeoTiff(view), filename, layout };
+  }
+
   if (format === 'svg') {
     const svg = frameToSvg(layout, view.image);
     return { blob: new Blob([svg], { type: 'image/svg+xml' }), filename, layout };
@@ -278,4 +283,31 @@ export async function exportMapImage(view, opts = {}) {
 export function pageSizeMm(layout) {
   const mm = (px) => Math.round(((px * PT_PER_PX) / 72) * 25.4);
   return { width: mm(layout.width), height: mm(layout.height) };
+}
+
+/**
+ * La vista como GeoTIFF en Web Mercator: solo el mapa, sin marco, con la
+ * georreferencia dentro. Ver `geotiff.js`.
+ */
+export async function mapToGeoTiff(view) {
+  if (!Array.isArray(view.corners) || view.corners.length < 3) {
+    throw new Error('the map view has no georeference');
+  }
+  const img = await loadImage(view.image);
+  const pw = view.pixelWidth;
+  const ph = view.pixelHeight;
+  const lienzo = document.createElement('canvas');
+  lienzo.width = pw;
+  lienzo.height = ph;
+  const ctx = lienzo.getContext('2d');
+  ctx.drawImage(img, 0, 0, pw, ph);
+  const rgba = ctx.getImageData(0, 0, pw, ph).data;
+  const corners = view.corners.map((c) => lonLatToMercator(c[0], c[1]));
+  const bytes = await encodeGeoTiff({
+    rgba,
+    width: pw,
+    height: ph,
+    transform: affineFromCorners(corners, pw, ph),
+  });
+  return new Blob([bytes], { type: 'image/tiff' });
 }
