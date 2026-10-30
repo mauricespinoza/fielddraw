@@ -32,6 +32,22 @@ export const PREFETCH_CAPPED = 'capped';
  */
 export const BASEMAPS = [
   {
+    /*
+     * Solo rótulos —toponimia, límites, rutas principales— sobre fondo
+     * transparente. Va primero para quedar ENCIMA de los demás basemaps: el
+     * caso de uso es la imagen satelital con los nombres de cerros, quebradas
+     * y localidades, que es como se ubica uno en terreno y como se cita un
+     * afloramiento en la memoria.
+     */
+    id: 'esri-labels',
+    label: 'Esri — Place names (overlay)',
+    tiles: [`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`],
+    attribution: 'Esri, HERE, Garmin',
+    maxzoom: 19,
+    // Esri ArcGIS Online: CDN comercial; se permite con tope.
+    prefetch: PREFETCH_CAPPED,
+  },
+  {
     id: 'esri-imagery',
     label: 'Esri — Imagery',
     tiles: [`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`],
@@ -66,6 +82,18 @@ export const BASEMAPS = [
     maxzoom: 16,
     // Esri ArcGIS Online: CDN comercial; se permite con tope.
     prefetch: PREFETCH_CAPPED,
+  },
+  {
+    // Mapa de calles con toponimia, gratis y sin clave: CARTO sobre datos de
+    // OpenStreetMap. Más legible que el OSM estándar para leer nombres.
+    id: 'carto-voyager',
+    label: 'CARTO — Voyager (place names)',
+    tiles: ['a', 'b', 'c', 'd'].map((s) => `https://${s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png`),
+    attribution: '© OpenStreetMap contributors · © CARTO',
+    maxzoom: 19,
+    // Los términos de CARTO limitan el uso gratuito y no contemplan la
+    // descarga masiva; mismo criterio que OSM.
+    prefetch: PREFETCH_BLOCKED,
   },
   {
     id: 'opentopomap',

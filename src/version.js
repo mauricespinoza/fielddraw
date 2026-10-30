@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.47.0';
+export const APP_VERSION = '0.48.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.48.0',
+    highlights: [
+      'New project now starts truly blank: the drawing, units, symbology, saved sections, StraboSpot datasets, imported GeoPackage layers, offline maps and the imported elevation model are all removed — and forgotten by the browser, so they do not reopen on the next launch.',
+      'Before a project is closed —New project or Open project— the app asks whether to save it first: Save, Don\'t save or Cancel. With offline maps or a DEM open, Save writes the .zip package. Closing the tab with unsaved changes shows the browser\'s own warning.',
+      'Two free basemaps with place names: «Esri — Place names (overlay)», transparent labels (toponymy, boundaries, roads) that sit on top of the imagery or any other basemap, and «CARTO — Voyager», a street map built on OpenStreetMap.',
+    ],
+  },
   {
     version: '0.47.0',
     highlights: [

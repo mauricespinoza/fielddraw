@@ -1,6 +1,7 @@
 import * as store from './store.js';
 import { createMapView } from './mapView.js';
 import {
+  allowUnload,
   closeOverlays,
   initUI,
   openImportedAttrs,
@@ -190,7 +191,11 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
    */
   const habiaControlador = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (habiaControlador) location.reload();
+    if (!habiaControlador) return;
+    // Lo dibujado ya está autoguardado: el aviso de «¿salir sin guardar?»
+    // aquí solo estorbaría una recarga que nadie pidió a mano.
+    allowUnload();
+    location.reload();
   });
 }
 

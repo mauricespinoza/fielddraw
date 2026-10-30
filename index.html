@@ -1657,6 +1657,18 @@
       <div class="busy hidden" id="busy"><span class="spinner"></span><span id="busy-text"></span></div>
     </div>
 
+    <!-- Antes de cerrar un proyecto (nuevo o abrir otro): guardar, descartar
+         o quedarse. `confirm()` solo da dos botones y aquí hacen falta tres. -->
+    <dialog class="save-prompt" id="save-prompt" aria-labelledby="save-prompt-title">
+      <h3 id="save-prompt-title">Save the current project?</h3>
+      <p id="save-prompt-text">The current project has changes that have not been saved to a file.</p>
+      <div class="save-prompt-actions">
+        <button class="pill accent" id="save-prompt-save">Save</button>
+        <button class="pill danger" id="save-prompt-discard">Don't save</button>
+        <button class="pill" id="save-prompt-cancel">Cancel</button>
+      </div>
+    </dialog>
+
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

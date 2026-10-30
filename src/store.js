@@ -2412,6 +2412,59 @@ export function loadProject({
   set(patch);
 }
 
+/**
+ * Proyecto en blanco: nada del anterior sobrevive.
+ *
+ * `loadProject({ features: [] })` no basta para esto: conserva lo que el
+ * proyecto vacío no trae —unidades, simbología, perfiles guardados— y no toca
+ * nada de lo importado, así que el «proyecto nuevo» arrancaba con el
+ * GeoPackage, el MBTiles y el DEM del anterior encima. Los ajustes de trabajo
+ * (tipo de línea, tolerancias, escalas) sí se quedan: son de quien dibuja, no
+ * del mapa.
+ */
+export function resetProject() {
+  resetHistory();
+  set({
+    features: [],
+    draft: null,
+    selection: [],
+    extendFrom: null,
+    pendingCut: null,
+    pendingReshape: null,
+    pendingHole: null,
+    units: defaultUnits(),
+    unitLabels: false,
+    ornaments: defaultOrnaments(),
+    structureStyle: defaultStructureStyle(),
+    controlPointStyle: defaultControlPointStyle(),
+    importStyle: defaultImportStyle(),
+    layers: defaultLayers(),
+    imported: [],
+    tileSets: [],
+    demSet: null,
+    profileSource: 'terrarium',
+    straboDatasets: [],
+    straboFilters: { structures: null, observations: null, lines: null },
+    savedSections: [],
+    pendingSection: null,
+    section: null,
+    pickBand: null,
+    pickDips: null,
+    thicknessFrom: null,
+    pendingThickness: null,
+    thickness: null,
+    pendingProfile: null,
+    profile: null,
+    profileCursor: null,
+    profileWalk: null,
+    pendingPlane: null,
+    planeTrace: null,
+    pendingControlPoint: null,
+    measureUnit: null,
+    controlPointUnit: null,
+  });
+}
+
 /* ---------- capas ---------- */
 
 export function setLayerVisible(id, visible) {

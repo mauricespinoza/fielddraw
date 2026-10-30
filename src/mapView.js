@@ -3753,9 +3753,13 @@ export function createMapView({
         }
       }
     }
+    // Independientes: un proyecto nuevo vacía las dos listas en el mismo
+    // `set`, y con un `else` los mapas offline se quedaban pintados.
     if (store.changed('imported')) syncImported();
-    else if (store.changed('tileSets')) syncTileSets();
-    else if (store.changed('layers')) applyLayerStack(map, store.getState().layers);
+    if (store.changed('tileSets')) syncTileSets();
+    if (!store.changed('imported') && !store.changed('tileSets') && store.changed('layers')) {
+      applyLayerStack(map, store.getState().layers);
+    }
     if (store.changed('features')) {
       syncGeology();
       syncUnitLabels();

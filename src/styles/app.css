@@ -4018,3 +4018,34 @@ a.link-pill {
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* ---------- aviso de guardar antes de cerrar el proyecto ---------- */
+
+.save-prompt {
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  color: var(--text);
+}
+
+.save-prompt::backdrop {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.save-prompt h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.save-prompt p {
+  margin: 0 0 16px;
+}
+
+.save-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
