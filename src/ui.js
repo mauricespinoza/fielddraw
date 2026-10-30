@@ -5465,6 +5465,7 @@ function setProjectStatus(text) {
 function doSaveProject() {
   const name = $('project-name').value.trim();
   const data = saveProject(name);
+  projectDirty = false;
   setProjectStatus(
     `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s).`,
   );
@@ -5492,6 +5493,7 @@ function renderPackageButton() {
   if (btn) btn.disabled = !st.tileSets.length && !st.demSet;
 }
 
+/** @returns {Promise<boolean>} si quedó guardado */
 async function doSaveProjectPackage() {
   const name = $('project-name').value.trim();
   setBusy('Packing the project…');
@@ -5500,12 +5502,13 @@ async function doSaveProjectPackage() {
     if (!files.length) {
       showBanner('No offline map or elevation model is open: saving the plain project instead.', 'warn');
       doSaveProject();
-      return;
+      return true;
     }
     const { data, blob } = await buildProjectPackage(name, files, (hechos, total) => {
       setBusy(`Packing the project… ${total ? Math.round((hechos / total) * 100) : 100}%`);
     });
     downloadBlob(blob, packageFilename(name));
+    projectDirty = false;
     setProjectStatus(
       `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s) + ${files.length} file(s), ${fmtMB(blob.size)}.`,
     );
@@ -5513,11 +5516,108 @@ async function doSaveProjectPackage() {
       `Project packed with ${files.map((f) => f.name).join(', ')} (${fmtMB(blob.size)}). Open the .zip with Open project on the other device.`,
       'info',
     );
+    return true;
   } catch (err) {
     showBanner(`Could not pack the project: ${err.message}`);
+    return false;
   } finally {
     setBusy(null);
   }
+}
+
+/*
+ * Cambios sin guardar EN UN ARCHIVO. El autoguardado del navegador no cuenta:
+ * protege de un cierre accidental, pero no es el proyecto —se pisa con el
+ * siguiente y no sale del dispositivo—.
+ *
+ * Arranca en `true` porque al abrir la app no se sabe si lo restaurado del
+ * autoguardado llegó a guardarse alguna vez. Preguntar de más cuesta un toque;
+ * preguntar de menos, una jornada de terreno.
+ */
+let projectDirty = true;
+/** La recarga que pide una versión nueva del service worker no pregunta. */
+let unloadAllowed = false;
+export function allowUnload() {
+  unloadAllowed = true;
+}
+const PROJECT_KEYS = [
+  'features',
+  'units',
+  'ornaments',
+  'structureStyle',
+  'controlPointStyle',
+  'importStyle',
+  'imported',
+  'tileSets',
+  'demSet',
+  'straboDatasets',
+  'savedSections',
+];
+
+function projectHasContent() {
+  const st = store.getState();
+  return !!(
+    st.features.length ||
+    st.imported.length ||
+    st.tileSets.length ||
+    st.demSet ||
+    st.straboDatasets.length ||
+    st.savedSections.length
+  );
+}
+
+/** Si cerrar el proyecto ahora perdería algo que no está en un archivo. */
+export function projectNeedsSave() {
+  return projectDirty && projectHasContent();
+}
+
+/**
+ * Pregunta si guardar antes de cerrar el proyecto actual.
+ *
+ * @returns {Promise<'save'|'discard'|'cancel'>}
+ */
+function askSaveProject(text) {
+  const dlg = $('save-prompt');
+  $('save-prompt-text').textContent = text;
+  return new Promise((resolve) => {
+    const done = (answer) => {
+      dlg.removeEventListener('cancel', onCancel);
+      for (const [id, fn] of handlers) $(id).removeEventListener('click', fn);
+      if (dlg.open) dlg.close();
+      resolve(answer);
+    };
+    // Escape cierra el diálogo: equivale a Cancel, nunca a descartar.
+    const onCancel = (e) => {
+      e.preventDefault();
+      done('cancel');
+    };
+    const handlers = [
+      ['save-prompt-save', () => done('save')],
+      ['save-prompt-discard', () => done('discard')],
+      ['save-prompt-cancel', () => done('cancel')],
+    ];
+    dlg.addEventListener('cancel', onCancel);
+    for (const [id, fn] of handlers) $(id).addEventListener('click', fn);
+    dlg.showModal();
+  });
+}
+
+/**
+ * El paso previo a cerrar el proyecto: si hay algo sin guardar, pregunta.
+ *
+ * @returns {Promise<boolean>} true si se puede seguir cerrando
+ */
+async function confirmCloseProject(text) {
+  if (!projectNeedsSave()) return true;
+  const answer = await askSaveProject(text);
+  if (answer === 'cancel') return false;
+  if (answer === 'discard') return true;
+  // Con mapas offline o DEM abiertos se guarda el paquete: el .json solo
+  // dejaría fuera justo lo que el proyecto nuevo va a quitar.
+  const st = store.getState();
+  if (st.tileSets.length || st.demSet) return doSaveProjectPackage();
+  doSaveProject();
+  return true;
 }
 
 /**
@@ -5570,12 +5670,12 @@ async function doOpenProject(file) {
     const warnings = [...avisos, ...avisosPaquete];
     // Se pregunta DESPUÉS de validar: no tiene sentido avisar de que se va a
     // perder el dibujo si el archivo ni siquiera era un proyecto.
-    if (
-      store.getState().features.length &&
-      !confirm('Opening this project replaces the current drawing. Continue?')
-    ) {
-      return;
-    }
+    setBusy(null);
+    const seguir = await confirmCloseProject(
+      `Opening ${file.name} closes the current project. Save it first?`,
+    );
+    if (!seguir) return;
+    setBusy(`Opening ${file.name}…`);
     const n = openProject(project);
     if (empaquetados.length) {
       const { hechos, fallos } = await openPackagedFiles(empaquetados);
@@ -5586,6 +5686,8 @@ async function doOpenProject(file) {
     // ser de otra zona, y quedarse mirando la anterior lo haría parecer vacío.
     if (mapBridge) mapBridge.fitToFeatures(project.features);
     if (project.name) $('project-name').value = project.name;
+    // Recién abierto, el proyecto coincide con su archivo.
+    projectDirty = false;
     setProjectStatus(`Opened ${file.name} · ${n} feature(s).`);
     showBanner(
       [`Project opened: ${n} feature(s).`, ...warnings].join(' '),
@@ -5598,12 +5700,26 @@ async function doOpenProject(file) {
   }
 }
 
-function doNewProject() {
-  if (store.getState().features.length && !confirm('Start a new project? The current drawing is deleted.')) {
-    return;
+/**
+ * Proyecto en blanco: sin dibujo, sin capas importadas, sin mapas offline ni
+ * DEM propio. Lo importado se olvida también del almacenamiento del
+ * navegador, o volvería a abrirse solo al recargar.
+ */
+async function doNewProject() {
+  if (projectHasContent()) {
+    const seguir = await confirmCloseProject(
+      'Starting a new project closes the current one and removes its drawing and imported layers. Save it first?',
+    );
+    if (!seguir) return;
   }
-  store.loadProject({ features: [] });
+  store.resetProject();
+  try {
+    for (const rec of await listImportedFiles()) await forgetImportedFile(rec.id);
+  } catch (err) {
+    console.warn('[importados] no se pudo vaciar lo guardado:', err);
+  }
   $('project-name').value = '';
+  projectDirty = false;
   setProjectStatus('New project, not saved yet.');
 }
 
@@ -6546,6 +6662,17 @@ export function initUI() {
   renderPackageButton();
   store.subscribe(() => {
     if (store.changed('tileSets') || store.changed('demSet')) renderPackageButton();
+    if (PROJECT_KEYS.some((k) => store.changed(k))) projectDirty = true;
+  });
+  /*
+   * Cerrar la pestaña o la app con cambios sin archivo. El navegador solo deja
+   * mostrar su propio aviso genérico; en iOS no llega nunca, y por eso el
+   * autoguardado sigue existiendo.
+   */
+  addEventListener('beforeunload', (e) => {
+    if (!projectNeedsSave() || unloadAllowed) return;
+    e.preventDefault();
+    e.returnValue = '';
   });
   $('btn-new-project').addEventListener('click', doNewProject);
   $('btn-open-project').addEventListener('click', () => $('file-project').click());

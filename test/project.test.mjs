@@ -134,6 +134,27 @@ console.log('== medidas estructurales ==');
     conTexto.project.features.length === 1 && conTexto.project.features[0].properties.strike === 120);
 }
 
+console.log('== proyecto nuevo: en blanco ==');
+{
+  store.loadFeatures([feature('n1', [[0, 0], [1, 1]])]);
+  store.addUnit({ name: 'Formación Abanico', code: 'Ab', color: '#00ff00' });
+  store.addImportedLayers([{ label: 'geologia.gpkg', kind: 'line', geojson: { type: 'FeatureCollection', features: [] } }]);
+  store.addTileSet({ id: 'tiles-x', label: 'zona.pmtiles' });
+  store.setDemSet({ id: 'dem-x', label: 'lidar.mbtiles' });
+  store.setSnapTolerance(17);
+
+  store.resetProject();
+  const st = store.getState();
+  ok('sin elementos', st.features.length === 0);
+  ok('sin capas importadas', st.imported.length === 0 && !st.layers.some((l) => l.kind === 'imported'));
+  ok('sin mapas offline', st.tileSets.length === 0 && !st.layers.some((l) => l.kind === 'tiles'));
+  ok('sin DEM propio', st.demSet === null && st.profileSource === 'terrarium');
+  ok('unidades de fábrica', !st.units.some((u) => u.code === 'Ab'));
+  ok('sin perfiles guardados', st.savedSections.length === 0);
+  ok('nada que deshacer', !store.canUndo());
+  ok('los ajustes de trabajo se quedan', st.snapTolerance === 17);
+}
+
 console.log('== nombre de archivo ==');
 {
   const f = projectFilename('Mapa Ñuble — Cerro Colorado');
