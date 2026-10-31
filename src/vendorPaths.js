@@ -27,7 +27,14 @@ export function loadVendorScript(file) {
       s.src = src;
       s.async = true;
       s.onload = () => resolve();
-      s.onerror = () => reject(new Error(`No se pudo cargar ${src}`));
+      s.onerror = () => {
+        // Se olvida el intento fallido —el <script> y la promesa— para que el
+        // siguiente vuelva a pedirlo: sin esto, un solo fallo con mala señal
+        // dejaba esa dependencia rota hasta recargar la app.
+        s.remove();
+        loaded.delete(file);
+        reject(new Error(`No se pudo cargar ${src}`));
+      };
       document.head.appendChild(s);
     });
     loaded.set(file, p);

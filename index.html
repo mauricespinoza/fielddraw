@@ -45,9 +45,13 @@
       existe. Los builds UMD sí son autocontenidos, y estos dos scripts clásicos
       corren antes que cualquier `type="module"` —que va diferido—, así que los
       puentes de vendor/esm/ encuentran el global ya definido.
+
+      Van con `defer`: el MB de MapLibre ya no detiene el análisis del HTML
+      mientras se lee y compila, y siguen corriendo ANTES que el módulo —los
+      diferidos y los `type="module"` se ejecutan en el orden del documento—.
     -->
-    <script src="./vendor/maplibre-gl.js"></script>
-    <script src="./vendor/maplibre-contour.js"></script>
+    <script src="./vendor/maplibre-gl.js" defer></script>
+    <script src="./vendor/maplibre-contour.js" defer></script>
     <script type="importmap">
       {
         "imports": {
@@ -59,6 +63,90 @@
 
     <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
     <link rel="stylesheet" href="./src/styles/app.css" />
+
+    <!--
+      Precarga de módulos: sin esto el navegador descubre los ~75 módulos de
+      src/ por niveles —app.js → ui.js → store.js → …, nueve de profundidad—
+      y cada nivel espera al anterior. Con la lista aquí se piden todos a la
+      vez desde el primer momento. `test/shell.test.mjs` comprueba que no
+      falte ni sobre ninguno.
+    -->
+    <link rel="modulepreload" href="./src/adopt.js" />
+    <link rel="modulepreload" href="./src/app.js" />
+    <link rel="modulepreload" href="./src/areaCache.js" />
+    <link rel="modulepreload" href="./src/attrs.js" />
+    <link rel="modulepreload" href="./src/average.js" />
+    <link rel="modulepreload" href="./src/basemaps.js" />
+    <link rel="modulepreload" href="./src/compassWidget.js" />
+    <link rel="modulepreload" href="./src/controlPointSymbols.js" />
+    <link rel="modulepreload" href="./src/controlPoints.js" />
+    <link rel="modulepreload" href="./src/dem.js" />
+    <link rel="modulepreload" href="./src/deviceOrientation.js" />
+    <link rel="modulepreload" href="./src/drawController.js" />
+    <link rel="modulepreload" href="./src/editOps.js" />
+    <link rel="modulepreload" href="./src/floating.js" />
+    <link rel="modulepreload" href="./src/geologyStyle.js" />
+    <link rel="modulepreload" href="./src/geom.js" />
+    <link rel="modulepreload" href="./src/geometryOps.js" />
+    <link rel="modulepreload" href="./src/geotiff.js" />
+    <link rel="modulepreload" href="./src/gpkg/index.js" />
+    <link rel="modulepreload" href="./src/gpkg/qml.js" />
+    <link rel="modulepreload" href="./src/gpkg/wkb.js" />
+    <link rel="modulepreload" href="./src/hiking.js" />
+    <link rel="modulepreload" href="./src/idb.js" />
+    <link rel="modulepreload" href="./src/importedFiles.js" />
+    <link rel="modulepreload" href="./src/importedStyle.js" />
+    <link rel="modulepreload" href="./src/mapExport.js" />
+    <link rel="modulepreload" href="./src/mapFrame.js" />
+    <link rel="modulepreload" href="./src/mapView.js" />
+    <link rel="modulepreload" href="./src/notation.js" />
+    <link rel="modulepreload" href="./src/ornaments.js" />
+    <link rel="modulepreload" href="./src/pdf.js" />
+    <link rel="modulepreload" href="./src/persistence.js" />
+    <link rel="modulepreload" href="./src/planeTrace.js" />
+    <link rel="modulepreload" href="./src/profile.js" />
+    <link rel="modulepreload" href="./src/profileWalk.js" />
+    <link rel="modulepreload" href="./src/project.js" />
+    <link rel="modulepreload" href="./src/reshape.js" />
+    <link rel="modulepreload" href="./src/scale.js" />
+    <link rel="modulepreload" href="./src/section.js" />
+    <link rel="modulepreload" href="./src/sectionExport.js" />
+    <link rel="modulepreload" href="./src/sectionInk.js" />
+    <link rel="modulepreload" href="./src/sectionPanel.js" />
+    <link rel="modulepreload" href="./src/sectionView.js" />
+    <link rel="modulepreload" href="./src/sectionWindow.js" />
+    <link rel="modulepreload" href="./src/sectionZoom.js" />
+    <link rel="modulepreload" href="./src/shapefile.js" />
+    <link rel="modulepreload" href="./src/shortcuts.js" />
+    <link rel="modulepreload" href="./src/simplify.js" />
+    <link rel="modulepreload" href="./src/sketcherLink.js" />
+    <link rel="modulepreload" href="./src/snapping.js" />
+    <link rel="modulepreload" href="./src/stereogram.js" />
+    <link rel="modulepreload" href="./src/stereogramPanel.js" />
+    <link rel="modulepreload" href="./src/stereogramView.js" />
+    <link rel="modulepreload" href="./src/store.js" />
+    <link rel="modulepreload" href="./src/strabo/adopt.js" />
+    <link rel="modulepreload" href="./src/strabo/api.js" />
+    <link rel="modulepreload" href="./src/strabo/layers.js" />
+    <link rel="modulepreload" href="./src/strabo/mapping.js" />
+    <link rel="modulepreload" href="./src/strabo/panel.js" />
+    <link rel="modulepreload" href="./src/strabo/push.js" />
+    <link rel="modulepreload" href="./src/strabo/spots.js" />
+    <link rel="modulepreload" href="./src/strabo/style.js" />
+    <link rel="modulepreload" href="./src/strabo/sync.js" />
+    <link rel="modulepreload" href="./src/strabo/upload.js" />
+    <link rel="modulepreload" href="./src/stroke.js" />
+    <link rel="modulepreload" href="./src/structure.js" />
+    <link rel="modulepreload" href="./src/structureSymbols.js" />
+    <link rel="modulepreload" href="./src/symbology.js" />
+    <link rel="modulepreload" href="./src/thickness.js" />
+    <link rel="modulepreload" href="./src/tiles.js" />
+    <link rel="modulepreload" href="./src/topology.js" />
+    <link rel="modulepreload" href="./src/ui.js" />
+    <link rel="modulepreload" href="./src/vendorPaths.js" />
+    <link rel="modulepreload" href="./src/version.js" />
+    <link rel="modulepreload" href="./src/vertexEdit.js" />
+    <link rel="modulepreload" href="./src/zip.js" />
   </head>
 
   <body>
@@ -1188,6 +1276,16 @@
           plain tick, foliation (S₁) a filled triangle, and a fault plane (Flt) its kinematics:
           a ball for normal, a tooth for inverse, offset half-arrows for strike-slip.
         </p>
+        <label class="field">
+          <span>Plane notation</span>
+          <select id="plane-notation">
+            <option value="rhr">Strike (RHR) / Dip — 045/32</option>
+            <option value="dipdir">Dip / Dip azimuth — 32/135</option>
+          </select>
+          <span class="sub">How planes are typed and read everywhere in the app. The data is
+            always stored as RHR strike, so projects and exports do not change. Saved on this
+            device.</span>
+        </label>
         <label class="field">
           <span>Symbol size</span>
           <span class="tol-row">

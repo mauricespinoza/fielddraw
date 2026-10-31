@@ -34,6 +34,7 @@
 import { READY_SPREAD_DEG } from './deviceOrientation.js';
 import { structureVariant } from './symbology.js';
 import { norm360 } from './structure.js';
+import { formatPlane, notationLabel } from './notation.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -215,7 +216,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     x: cx, y: size + 46, 'text-anchor': 'middle', 'font-size': 11.5,
     'font-weight': 600, fill: TENUE, 'letter-spacing': 0.4,
   });
-  notacion.textContent = style === 'needle' ? 'Strike · top of device from N' : 'Strike (RHR) / Dip';
+  notacion.textContent = style === 'needle' ? 'Strike · top of device from N' : notationLabel();
   svg.appendChild(notacion);
 
   const sub = el('text', {
@@ -273,8 +274,10 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     tickRight.setAttribute('visibility', variante === 'horizontal' ? 'hidden' : 'visible');
     tickLeft.setAttribute('visibility', variante === 'vertical' ? 'visible' : 'hidden');
     ring.setAttribute('visibility', variante === 'horizontal' ? 'visible' : 'hidden');
-    const strike = String(Math.round(reading.strike) % 360).padStart(3, '0');
-    label.textContent = `${strike}/${Math.round(reading.dip)}`;
+    // En la notación elegida (RHR o Dip/Azimuth), y el rótulo de debajo con
+    // ella: un «32/135» sin decir qué es sería tan ambiguo como un «120/45».
+    label.textContent = formatPlane(reading.strike, reading.dip);
+    notacion.textContent = notationLabel();
 
     const trozos = [];
     if (Number.isFinite(reading.strikeSd) && Number.isFinite(reading.dipSd)) {

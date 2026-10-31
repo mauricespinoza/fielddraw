@@ -24,6 +24,7 @@ import { renderSection, sectionPNG, sectionSVG } from './sectionView.js';
 import { sketcherDocument, structuralModellerZip } from './sectionExport.js';
 import { LINE_TYPE_BY_ID, STRUCTURE_TYPE_BY_ID } from './symbology.js';
 import { downloadBlob } from './persistence.js';
+import { formatPlane } from './notation.js';
 
 const $ = byId;
 
@@ -339,14 +340,14 @@ function renderDipList(section, colorByUnit = null) {
     const unit = colorByUnit && d.unitId ? colorByUnit.get(d.unitId) : null;
     const r = row(lista, {
       color: unit || (tipo ? tipo.color : '#2dd4bf'),
-      what: `${Math.round(d.strike)}/${Math.round(d.dip)}${tipo ? ` · ${tipo.short}` : ''}`,
+      what: `${formatPlane(d.strike, d.dip)}${tipo ? ` · ${tipo.short}` : ''}`,
       num: `${Math.round(d.apparent)}° ap · ${Math.round(d.offset)} m`,
       // Muy achatado: el corte va casi paralelo al rumbo y el aparente ya no
       // dice nada de la estructura.
       className: d.foreshortening < 0.35 ? 'faint' : '',
     });
     r.title =
-      `True ${Math.round(d.strike)}/${Math.round(d.dip)} · apparent ${d.apparent.toFixed(1)}° ` +
+      `True ${formatPlane(d.strike, d.dip)} · apparent ${d.apparent.toFixed(1)}° ` +
       `on a section trending ${Math.round(d.sectionAzimuth)}° · projected ${Math.round(d.offset)} m ` +
       `${d.side > 0 ? 'from the left' : 'from the right'}` +
       (Number.isFinite(d.z) ? ` · ${Math.round(d.z)} m a.s.l.` : ' · no elevation in the model');

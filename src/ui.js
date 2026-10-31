@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import { NOTATION_DIPDIR, NOTATION_RHR, dipDirFromStrike, strikeFromDipDir } from './notation.js';
 import {
   SCREEN_SIZES,
   STANDARD_PIXEL_MM,
@@ -260,6 +261,42 @@ function numberField(label, value, { min, max, step }, onInput) {
   });
   wrap.append(l, input);
   return wrap;
+}
+
+/**
+ * Los dos campos de un plano, en la notación elegida (ver `notation.js`).
+ *
+ * En RHR se teclea rumbo y manteo; en Dip/Azimuth, manteo y dirección de
+ * manteo, en ese orden. Lo que se guarda es SIEMPRE el rumbo RHR: la
+ * dirección tecleada se convierte aquí (rumbo = dirección − 90) antes de
+ * llegar al store, así que el resto de la app no se entera de la diferencia.
+ */
+function planeFields(strike, dip, { strike: onStrike, dip: onDip }) {
+  const dipField = numberField('Dip', dip, { min: 0, max: 90, step: 1 }, onDip);
+  if (store.getState().planeNotation === NOTATION_DIPDIR) {
+    const az = numberField('Dip azimuth', dipDirFromStrike(strike), { min: 0, max: 359.9, step: 1 }, (v) =>
+      onStrike(strikeFromDipDir(v)),
+    );
+    az.title = 'Direction the plane dips toward, 0–360° from north';
+    return [dipField, az];
+  }
+  const st = numberField('Strike', strike, { min: 0, max: 359.9, step: 1 }, onStrike);
+  st.title = 'Right-hand rule: the plane dips to the right of the strike direction';
+  return [st, dipField];
+}
+
+/** Botón para alternar RHR ↔ Dip/Azimuth sin salir de la paleta. */
+function notationChip() {
+  const dd = store.getState().planeNotation === NOTATION_DIPDIR;
+  return chip({
+    label: dd ? 'Dip/Az' : 'RHR',
+    title: dd
+      ? 'Typing dip / dip azimuth. Tap to switch to strike (RHR) / dip'
+      : 'Typing strike (RHR) / dip. Tap to switch to dip / dip azimuth',
+    glyph: '⇄',
+    active: false,
+    onClick: () => store.setPlaneNotation(dd ? NOTATION_RHR : NOTATION_DIPDIR),
+  });
 }
 
 /**
@@ -784,13 +821,12 @@ function buildPalette() {
 
     if (s.measureMethod === 'manual') {
       const nums = paletteGroup(scroll, 'Compass');
-      nums.appendChild(
-        numberField('Strike', s.manualStrike, { min: 0, max: 359.9, step: 1 }, (v) =>
-          store.setManualStrike(v),
-        ),
-      );
-      nums.appendChild(
-        numberField('Dip', s.manualDip, { min: 0, max: 90, step: 1 }, (v) => store.setManualDip(v)),
+      nums.append(
+        ...planeFields(s.manualStrike, s.manualDip, {
+          strike: (v) => store.setManualStrike(v),
+          dip: (v) => store.setManualDip(v),
+        }),
+        notationChip(),
       );
     }
 
@@ -4361,6 +4397,8 @@ function wireStructureControls() {
   $('structure-label-minzoom').addEventListener('input', (e) =>
     store.setStructureStyle({ labelMinzoom: Number(e.target.value) }),
   );
+  $('plane-notation').value = store.getState().planeNotation;
+  $('plane-notation').addEventListener('change', (e) => store.setPlaneNotation(e.target.value));
 }
 
 /**
@@ -5163,12 +5201,10 @@ function measurementSection(body, medida, reabrir) {
   const fila = document.createElement('div');
   fila.className = 'palette-row';
   fila.append(
-    numberField('Strike', p.strike ?? 0, { min: 0, max: 359.9, step: 1 }, (v) =>
-      store.updateMeasurement({ strike: v }),
-    ),
-    numberField('Dip', p.dip ?? 0, { min: 0, max: 90, step: 1 }, (v) =>
-      store.updateMeasurement({ dip: v }),
-    ),
+    ...planeFields(p.strike ?? 0, p.dip ?? 0, {
+      strike: (v) => store.updateMeasurement({ strike: v }),
+      dip: (v) => store.updateMeasurement({ dip: v }),
+    }),
   );
   sec.appendChild(fila);
 
@@ -6086,25 +6122,89 @@ export async function restoreImportedFiles() {
   }
   if (!records.length) return;
 
+  /*
+   * Lo barato primero y en paralelo —un PMTiles solo lee su cabecera—, y los
+   * MBTiles después y de a uno: sql.js tiene que cargarlos ENTEROS en memoria,
+   * y uno de cientos de MB delante de todo era lo que hacía que el mapa
+   * offline tardara en aparecer al abrir la app.
+   */
+  const esCaro = (r) => /\.mbtiles$/i.test(r.name || (r.file && r.file.name) || '');
+  const fallidos = [];
+
+  const abrir = (rec) =>
+    openTileFile(rec.file, rec.id).then(
+      (descriptor) => ({ descriptor }),
+      (error) => ({ error }),
+    );
+
+  /** Pone lo abierto en el store, o decide qué hacer con lo que falló. */
+  const aplicar = async (rec, { descriptor, error }) => {
+    if (descriptor) {
+      if (rec.role === 'dem') store.setDemSet(descriptor);
+      else store.addTileSet(descriptor);
+      return;
+    }
+    /*
+     * NO se olvida el archivo por un fallo al abrirlo.
+     *
+     * Antes sí, y era la forma en que la app "borraba lo descargado": con
+     * señal intermitente, el fallo casi nunca es del archivo sino de lo que
+     * hace falta para leerlo —el script de PMTiles o el wasm de sql.js, que
+     * vienen del shell—, y un fallo pasajero terminaba borrando para siempre
+     * un mapa de varios GB. Ahora `openTileFile` marca con `transient` lo que
+     * falló ANTES de tocar el archivo: eso queda guardado y se reintenta en el
+     * próximo arranque. Solo se olvida si el archivo mismo está mal (los
+     * lectores cargaron y aun así no se abre) o el navegador perdió sus bytes.
+     */
+    if (!error.transient || (await archivoPerdido(rec.file))) {
+      forgetImportedFile(rec.id).catch(() => {});
+      showBanner(
+        `${rec.name || 'An imported file'} is no longer readable on this device and was dropped: ${error.message}`,
+        'warn',
+      );
+    } else {
+      fallidos.push(rec.name || 'an imported file');
+      console.warn('[importados] no se pudo reabrir, se reintentará:', rec.name, error);
+    }
+  };
+
   setBusy(`Reopening ${records.length} imported file(s)…`);
   try {
+    // Lo barato —un PMTiles solo lee su cabecera— se abre todo a la vez desde
+    // ya; los MBTiles, de a uno y cuando les toca, porque sql.js tiene que
+    // cargarlos ENTEROS en memoria y uno de cientos de MB delante de todo era
+    // lo que retrasaba la aparición del resto. Se aplican en el orden en que
+    // se importaron, para que las capas queden donde estaban.
+    const enCurso = new Map(records.filter((r) => !esCaro(r)).map((r) => [r, abrir(r)]));
     for (const rec of records) {
-      try {
-        const descriptor = await openTileFile(rec.file, rec.id);
-        if (rec.role === 'dem') store.setDemSet(descriptor);
-        else store.addTileSet(descriptor);
-      } catch (err) {
-        // El archivo sigue ahí pero ya no se puede abrir: arrastrarlo a la
-        // siguiente sesión solo repetiría el fallo cada vez que se arranque.
-        forgetImportedFile(rec.id).catch(() => {});
-        showBanner(
-          `${rec.name || 'An imported file'} could not be reopened and was dropped: ${err.message}`,
-          'warn',
-        );
-      }
+      if (!enCurso.has(rec)) await new Promise((r) => setTimeout(r, 0)); // que el mapa pinte
+      await aplicar(rec, await (enCurso.get(rec) || abrir(rec)));
     }
   } finally {
     setBusy(null);
+  }
+  if (fallidos.length) {
+    showBanner(
+      `Could not reopen ${fallidos.join(', ')} right now. Nothing was deleted — it will be retried the next time the app opens.`,
+      'warn',
+    );
+  }
+}
+
+/**
+ * ¿El navegador perdió los bytes de un archivo guardado?
+ *
+ * Leer 16 bytes basta para saberlo: un `File` cuyo respaldo desapareció lanza
+ * `NotFoundError`/`NotReadableError` al leerse, mientras que uno sano los da
+ * al instante sin tocar la red. Es la única condición que justifica olvidarlo.
+ */
+async function archivoPerdido(file) {
+  if (!file || typeof file.slice !== 'function') return true;
+  try {
+    await file.slice(0, 16).arrayBuffer();
+    return false;
+  } catch {
+    return true;
   }
 }
 
@@ -7022,6 +7122,7 @@ export function initUI() {
       store.changed('measureType') ||
       store.changed('manualStrike') ||
       store.changed('manualDip') ||
+      store.changed('planeNotation') ||
       store.changed('deviceReading') ||
       store.changed('pendingControlPoint') ||
       store.changed('thicknessFrom')
@@ -7081,6 +7182,15 @@ export function initUI() {
       if (!$('scale-menu').classList.contains('hidden')) renderScaleMenu();
     }
     if (store.changed('structureStyle')) syncStructureControls();
+    if (store.changed('planeNotation')) {
+      $('plane-notation').value = store.getState().planeNotation;
+      buildPalette();
+      renderDevicePanel();
+      renderSectionPanel();
+      // El menú de una medida abierta muestra los números: se rehace con la
+      // notación nueva en el mismo sitio.
+      if (!$('props-menu').classList.contains('hidden') && lastPropsScreen) openPropsMenu(lastPropsScreen);
+    }
     if (store.changed('controlPointStyle')) syncControlPointStyleControls();
     if (store.changed('profile')) renderProfilePanel();
     if (store.changed('terrain3d')) {

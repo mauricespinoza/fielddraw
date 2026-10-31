@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff shell; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -82,11 +82,12 @@ en un hosting con HTTPS, el offline se activa solo.
 
 ### Publicar una versión nueva
 
-`sw.js` cachea el HTML en **red primero** —siempre pide la última— pero los
-módulos y el CSS en **caché primero**, con un refresco de fondo que solo se
-nota en la carga SIGUIENTE. Eso significa que el shell nuevo puede llegar a
-ejecutarse con los módulos VIEJOS durante toda una sesión, y en una PWA de
-pantalla de inicio esa sesión puede durar semanas.
+`sw.js` sirve el app shell entero —HTML, módulos, CSS, `vendor/`— en **caché
+primero y sin ir a la red**: la app abre al instante, con o sin señal, y nunca
+mezcla el HTML de una versión con módulos de otra. El shell es un bloque que
+solo cambia cuando un service worker nuevo se instala **completo** (ver más
+abajo). En `localhost` es al revés —red primero— para ver los cambios al
+recargar mientras se desarrolla.
 
 Lo único que fuerza a un navegador a siquiera comprobar si hay una versión
 nueva es que **los bytes de `sw.js` cambien**: el registro compara el script
@@ -105,7 +106,10 @@ entera corriendo `mapView.js` y `ui.js` de dos versiones atrás contra un
 "no hace nada": el HTML ya no tenía el elemento que el JS viejo buscaba.
 
 Al añadir un archivo a `src/` también hay que sumarlo a la lista `SHELL` de
-`sw.js`, o ese archivo nunca queda precacheado y falla en cuanto no hay señal.
+`sw.js` y a los `<link rel="modulepreload">` de `index.html`.
+`test/shell.test.mjs` falla si falta o sobra alguno: desde que la instalación
+es todo o nada, un archivo listado que no existe bloquearía TODAS las
+actualizaciones.
 
 `VERSION` solo debe entrar en el nombre de la caché del **app shell**
 (`PRECACHE`). La caché de **teselas** (`TILES`) tiene nombre fijo, sin
@@ -114,11 +118,17 @@ alguien precargó antes de salir a terreno, y meterle `VERSION` al nombre hace
 que `activate` la borre entera en cada publicación —se probó y fue exactamente
 eso lo que pasaba—. Ver **Qué funciona sin señal y qué no**, más abajo.
 
-Subida la versión, quien ya tenía la app abierta la recibe solo: `sw.js` toma
-el control con `skipWaiting` + `clients.claim`, y `app.js` escucha
-`controllerchange` y recarga la página una vez —comprobando que YA hubiera un
-controlador antes de registrar, para no recargar de más en la primera visita,
-donde no hace ninguna falta—.
+**La instalación es todo o nada.** Si con señal intermitente no llega un solo
+archivo del shell, la versión nueva no se instala y la vieja sigue al mando con
+su caché intacta; lo que sí llegó se reaprovecha en el siguiente intento. Antes
+se toleraban los fallos y `activate` borraba igual la caché vieja completa, así
+que una actualización a medias dejaba la app sin módulos —y sin poder reabrir
+los mapas offline guardados—.
+
+**Y se aplica al arrancar, no a media faena.** La versión nueva instalada queda
+esperando; `app.js` le pide tomar el control (`skipWaiting`) solo al abrir la
+app o en sus primeros 15 s, y entonces recarga una vez, desde caché. Si llega
+con la sesión en marcha, se avisa y se aplica la próxima vez que se abra.
 
 ### Dependencias en `vendor/`
 
@@ -157,12 +167,38 @@ ilimitadas. Lo que hace es guardar en una caché aparte —con tope de 6000
 teselas— todo lo que se haya mirado, así que la zona que revisaste antes de
 salir sigue ahí.
 
-Esa caché se sirve **primero**, antes que la red, y se refresca por detrás. Una
+Esa caché se sirve **primero**, antes que la red, y no se refresca. Una
 tesela z/x/y no cambia nunca, así que preguntarle a la red no aportaba nada y sí
 costaba: con media barra de señal el `fetch` no falla, se queda esperando, y
 mientras tanto no se pinta lo que ya estaba descargado. Ver
 [Por qué la app se quedaba colgada](#por-qué-la-app-se-quedaba-colgada). **Para cobertura garantizada en terreno, la respuesta es
 importar un PMTiles de la zona**, que es justo para lo que está esa función.
+
+### Señal intermitente
+
+Lo descargado no se borra ni deja de leerse porque la señal vaya y venga:
+
+- **Nada que falle toca lo guardado.** Una tesela que no llega no reemplaza a
+  la que había, y un MBTiles/PMTiles guardado que no se pudo reabrir al
+  arrancar —casi siempre porque faltó el lector, no el archivo— queda guardado
+  y se reintenta en el arranque siguiente. Solo se olvida si el archivo mismo
+  está dañado o el navegador perdió sus bytes. Antes un fallo pasajero ahí
+  borraba para siempre el mapa offline.
+- **Más allá del zoom descargado, la tesela padre ampliada.** Si un área se
+  bajó hasta z14 y se mira a z16 sin señal, en vez de un hueco se ve la de z14
+  recortada y ampliada (hasta seis niveles): borrosa, que es la verdad, pero
+  ahí. No se guarda: cuando vuelve la señal llega la real. Solo para imagen;
+  el DEM no, porque interpolar un PNG terrarium inventa cotas.
+- **Red mala conocida, espera corta.** Tras un fallo de red el service worker
+  recuerda 30 s que la red está mala: rellena con la padre al instante y prueba
+  la red por detrás, con plazo de 4 s en vez de 15.
+- **Los huecos se rellenan solos.** MapLibre no reintenta nunca una tesela
+  fallida; la app lo hace al volver la señal (`online`), al volver a la app y
+  cada 20 s mientras queden huecos (pocas veces por tesela, para no insistir
+  con las que no existen).
+- **Subdominios.** CARTO reparte las teselas entre `a.`/`b.`/`c.`/`d.`; un
+  área descargada se guarda con `a.` y ahora se encuentra la pida MapLibre por
+  el subdominio que sea.
 
 ### Descargar un área antes de salir
 
@@ -224,8 +260,8 @@ caché, con o sin red. El `manifest.webmanifest` le da nombre, icono y color; lo
 iconos se regeneran con `node tools/make-icons.mjs`.
 
 Al publicar una versión nueva hay que subir `VERSION` en `sw.js`: es lo que
-invalida la caché vieja y hace que las tablets se actualicen en la siguiente
-carga.
+invalida la caché vieja y hace que las tablets se actualicen al abrir la app
+la vez siguiente.
 
 #### Un solo icono para todo
 
@@ -1351,6 +1387,23 @@ paleta:
 | **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
 | **Device** | apoyar el dorso del teléfono contra la roca y pulsar *Add measurement* | los sensores del propio teléfono, promediados mientras está apoyado; la medida se ancla en la posición del GPS |
 | **Digitize** | UN arrastre dibuja la traza del rumbo, luego arrastrar —tantas veces como haga falta— hacia el lado del manteo | de un símbolo ya dibujado, p. ej. en una carta escaneada e importada |
+
+### Notación: Strike (RHR) o Dip/Azimuth
+
+En **Symbology → Strike and dip symbols → Plane notation** (o con el botón
+**RHR ⇄ Dip/Az** de la paleta, en el método manual) se elige cómo se teclean y
+se leen los planos en toda la app:
+
+| Notación | Se escribe | Ejemplo, el mismo plano |
+|---|---|---|
+| **Strike (RHR) / Dip** | rumbo de 3 cifras / manteo | `045/32` |
+| **Dip / Dip azimuth** | manteo de 2 cifras / dirección de manteo de 3 cifras | `32/135` |
+
+Los ceros a la izquierda hacen que el orden se lea sin ambigüedad: el número de
+tres cifras es siempre el acimut. Es una preferencia **del dispositivo**, no del
+proyecto: el dato guardado es siempre el rumbo RHR (y `dipAzimuth = rumbo + 90`),
+así que proyectos, GeoPackage, StraboSpot y el corte no cambian. En modo
+Dip/Azimuth el campo «Dip azimuth» se convierte a rumbo al escribirlo.
 
 ### Colocada la medida, la herramienta vuelve a Elegir
 

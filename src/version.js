@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.48.0';
+export const APP_VERSION = '0.49.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.49.0',
+    highlights: [
+      'Intermittent signal no longer deletes or hides what you downloaded: an offline map (MBTiles/PMTiles) that fails to reopen is kept and retried on the next launch instead of being dropped, and an app update that only half-downloads is discarded — the previous version keeps running, intact.',
+      'Zooming past the downloaded detail without signal shows the parent tile enlarged instead of a blank hole; tiles that failed during a signal drop are requested again when it comes back.',
+      'Much faster start: the app opens straight from the cache instead of waiting on a weak network, modules load in parallel, and offline maps reopen without the large MBTiles holding up the rest. Updates apply when the app opens, never mid-session.',
+      'Plane notation: choose Strike (RHR) / Dip (045/32) or Dip / Dip azimuth (32/135) in Symbology, or with the RHR ⇄ Dip/Az button in the palette. It changes how planes are typed and shown; the data is still stored as RHR strike.',
+    ],
+  },
   {
     version: '0.48.0',
     highlights: [

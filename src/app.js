@@ -159,9 +159,46 @@ document.addEventListener('visibilitychange', () => {
  * error, es que ese despliegue no puede ofrecerlo.
  */
 if ('serviceWorker' in navigator && window.isSecureContext) {
+  /*
+   * VERSIONES NUEVAS: SOLO AL ARRANCAR, Y SOLO SI LLEGARON ENTERAS.
+   *
+   * `sw.js` ya no se instala a medias (ver su `install`) ni toma el control
+   * por su cuenta. Una versión nueva queda esperando, y se aplica:
+   *
+   * - al abrir la app, si ya estaba esperando: es el único momento en que
+   *   recargar no interrumpe nada, y la recarga sale entera de caché, sin red;
+   * - en los primeros segundos de la sesión, si termina de bajar entonces;
+   * - si llega con la sesión ya en marcha, se avisa y se aplica la próxima
+   *   vez que se abra. Antes la página se recargaba sola en mitad del
+   *   trabajo, y con señal mala esa recarga era la que dejaba el mapa vacío.
+   */
+  const ARRANQUE_MS = 15000;
+  let pedida = false;
+  const aplicar = (worker) => {
+    if (!worker || pedida) return;
+    pedida = true;
+    worker.postMessage('skipWaiting');
+  };
+  const nueva = (reg) => {
+    const w = reg.waiting;
+    if (!w || !navigator.serviceWorker.controller) return;
+    if (performance.now() < ARRANQUE_MS) aplicar(w);
+    else showBanner('A new version of FieldDraw is ready. It will load the next time you open the app.', 'info');
+  };
+
   const registrar = () => {
     navigator.serviceWorker
       .register(new URL('../sw.js', import.meta.url), { scope: './' })
+      .then((reg) => {
+        nueva(reg);
+        reg.addEventListener('updatefound', () => {
+          const w = reg.installing;
+          if (!w) return;
+          w.addEventListener('statechange', () => {
+            if (w.state === 'installed') nueva(reg);
+          });
+        });
+      })
       .catch((err) => console.warn('[sw] no se pudo registrar:', err));
   };
   // Se espera a `load` para no competir por ancho de banda con el arranque del
@@ -170,34 +207,35 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   if (document.readyState === 'complete') registrar();
   else window.addEventListener('load', registrar, { once: true });
 
-  /*
-   * Se recarga una vez cuando un service worker NUEVO toma el control.
-   *
-   * Sin esto, publicar una versión no llegaba a quien ya tenía la app
-   * abierta o instalada: `sw.js` cachea el HTML en red-primero pero los
-   * módulos en caché-primero, así que el shell nuevo se ejecutaba con los
-   * módulos viejos hasta la SIGUIENTE navegación —y en una PWA de pantalla de
-   * inicio, "la siguiente navegación" puede no llegar nunca—. `skipWaiting` +
-   * `clients.claim` en el propio `sw.js` hacen que el nuevo worker tome el
-   * control sin esperar a que se cierren las pestañas; a esto solo le
-   * faltaba refrescar la página para que ese control se notara.
-   *
-   * `controllerchange` dispara igual la PRIMERA vez que se instala —pasar de
-   * «sin worker» a «con worker» también es un cambio—, y ahí no hace falta
-   * recargar nada: lo que ya está corriendo se pidió a la red tal cual,
-   * directo, así que no puede estar desactualizado. La distinción es de
-   * qué había ANTES de registrar: si ya existía un controlador, lo que
-   * llega después es una versión nueva reemplazando a una vieja.
-   */
-  const habiaControlador = !!navigator.serviceWorker.controller;
+  // Solo se recarga cuando ESTA página pidió el cambio: si lo pidió otra
+  // pestaña, esta sigue con lo que tiene en vez de recargarse a media faena.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!habiaControlador) return;
+    if (!pedida) return;
     // Lo dibujado ya está autoguardado: el aviso de «¿salir sin guardar?»
     // aquí solo estorbaría una recarga que nadie pidió a mano.
+    flushFeatures();
     allowUnload();
     location.reload();
   });
 }
+
+/*
+ * Huecos del mapa tras un corte de señal.
+ *
+ * MapLibre no reintenta una tesela fallida, así que lo que no llegó durante
+ * un corte seguía en blanco al volver la señal. Al volver (`online`), al
+ * volver a la app, y cada rato mientras queden huecos, se piden otra vez:
+ * lo que ya está en caché sale al instante y lo demás se intenta con la red
+ * que haya. Con `online` se recargan también las rellenadas con la tesela
+ * padre ampliada, para cambiarlas por la de verdad.
+ */
+addEventListener('online', () => view.retryFailedTiles({ all: true }));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') view.retryFailedTiles();
+});
+setInterval(() => {
+  if (document.visibilityState === 'visible') view.retryFailedTiles();
+}, 20000);
 
 /*
  * Pide almacenamiento persistente.

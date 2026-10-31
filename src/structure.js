@@ -1,4 +1,5 @@
 import { DEM_VERTICAL_SIGMA_M } from './dem.js';
+import { formatPlane } from './notation.js';
 
 /**
  * Rumbo y manteo a partir de puntos con cota.
@@ -465,10 +466,12 @@ export function planeFromPoints(points, opts = {}) {
   };
 }
 
-/** Rumbo/manteo formateados como se escriben en una libreta: `045/32`. */
-export function formatStrikeDip(strike, dip) {
-  if (!Number.isFinite(strike) || !Number.isFinite(dip)) return '—';
-  return `${String(Math.round(norm360(strike))).padStart(3, '0')}/${Math.round(dip)}`;
+/**
+ * Un plano formateado como se escribe en una libreta, en la notación que el
+ * usuario eligió: `045/32` (RHR) o `32/135` (Dip/Azimuth). Ver `notation.js`.
+ */
+export function formatStrikeDip(strike, dip, notation) {
+  return formatPlane(strike, dip, notation);
 }
 
 /** Cuadrante del acimut de manteo, que es como se dicta en terreno. */
