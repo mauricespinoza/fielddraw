@@ -1,4 +1,5 @@
 import { BASEMAPS } from './basemaps.js';
+import { getPlaneNotation, setPlaneNotation as guardarNotacion } from './notation.js';
 import { SectionTrace } from './section.js';
 import {
   LINE_KIND_BY_STRUCTURE,
@@ -287,6 +288,12 @@ let state = {
   /** Valores de partida del método manual, que se editan tras colocarlo. */
   manualStrike: 0,
   manualDip: 30,
+  /**
+   * Cómo se leen y teclean los planos: `'rhr'` (rumbo/manteo) o `'dipdir'`
+   * (manteo/dirección de manteo). Preferencia del dispositivo, no del
+   * proyecto: el dato guardado es siempre el rumbo RHR. Ver `notation.js`.
+   */
+  planeNotation: getPlaneNotation(),
   /**
    * Plano + línea: si la próxima medida de Flt o S₁ lleva además su estría o
    * su lineación, y con qué trend/plunge. Solo se aplica a las superficies
@@ -1450,6 +1457,7 @@ export const setMeasureUnit = (measureUnit) => set({ measureUnit });
 export const setDeviceReading = (deviceReading) => set({ deviceReading });
 export const setManualStrike = (manualStrike) => set({ manualStrike: norm360(manualStrike) });
 export const setManualDip = (manualDip) => set({ manualDip: clampDip(manualDip) });
+export const setPlaneNotation = (n) => set({ planeNotation: guardarNotacion(n) });
 export const setMeasureLine = (measureLine) => set({ measureLine: !!measureLine });
 export const setManualTrend = (manualTrend) => set({ manualTrend: norm360(Number(manualTrend) || 0) });
 export const setManualPlunge = (manualPlunge) => set({ manualPlunge: clampPlunge(manualPlunge) });

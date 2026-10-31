@@ -174,6 +174,22 @@ console.log('== formato ==');
 ok('formatStrikeDip rellena a tres dígitos', S.formatStrikeDip(45, 32) === '045/32');
 ok('formatStrikeDip normaliza el rumbo', S.formatStrikeDip(-10, 5) === '350/5');
 ok('formatStrikeDip sin dato', S.formatStrikeDip(null, 30) === '—');
+ok('formatStrikeDip: 359.6 sale 000 y no 360', S.formatStrikeDip(359.6, 20) === '000/20');
+
+console.log('== notación Dip/Azimuth ==');
+{
+  const N = await import(BASE + 'notation.js');
+  ok('por omisión RHR', N.getPlaneNotation() === 'rhr');
+  ok('Dip/Az: manteo/dirección', S.formatStrikeDip(45, 32, 'dipdir') === '32/135');
+  ok('Dip/Az: ceros a la izquierda', S.formatStrikeDip(300, 5, 'dipdir') === '05/030');
+  ok('Dip/Az: da la vuelta en 360', S.formatStrikeDip(270, 60, 'dipdir') === '60/000');
+  ok('dirección ↔ rumbo, ida y vuelta', N.strikeFromDipDir(N.dipDirFromStrike(123)) === 123);
+  ok('dirección 45 es rumbo 315', N.strikeFromDipDir(45) === 315);
+  N.setPlaneNotation('dipdir');
+  ok('la preferencia vale sin pasarla', S.formatStrikeDip(45, 32) === '32/135');
+  N.setPlaneNotation('cualquier cosa');
+  ok('un valor raro vuelve a RHR', N.getPlaneNotation() === 'rhr' && S.formatStrikeDip(45, 32) === '045/32');
+}
 ok('cuadrante norte', S.quadrant(0) === 'N');
 ok('cuadrante sureste', S.quadrant(135) === 'SE');
 ok('el cuadrante da la vuelta en 360', S.quadrant(359) === 'N');

@@ -4070,9 +4070,64 @@ export function createMapView({
     };
   }
 
+  /**
+   * Vuelve a pedir las teselas de red que fallaron (o todas, con `all`).
+   *
+   * MapLibre no reintenta nunca una tesela que falló: con señal intermitente,
+   * cada corte dejaba huecos que seguían ahí cuando la señal volvía, aunque
+   * la tesela ya estuviera en caché o se pudiera bajar. Esto recorre las
+   * fuentes raster y raster-dem de red —los mapas offline y el dibujo no
+   * fallan por señal— y recarga las fallidas; con `all`, también las que se
+   * rellenaron con la padre ampliada, para cambiarlas por la real.
+   *
+   * Usa la API interna de MapLibre (`tileManagers`), así que va envuelto: si
+   * una versión futura la cambia, no reintenta y ya, sin romper nada.
+   */
+  const reintentos = new WeakMap();
+  const MAX_REINTENTOS = 6;
+  function retryFailedTiles({ all = false } = {}) {
+    const style = map.style;
+    if (!style) return 0;
+    const managers = style.tileManagers || style.sourceCaches || {};
+    let n = 0;
+    for (const id of Object.keys(managers)) {
+      const tm = managers[id];
+      try {
+        const src = tm.getSource();
+        if (!src || (src.type !== 'raster' && src.type !== 'raster-dem')) continue;
+        const tiles = src.tiles || [];
+        if (!tiles.some((t) => /^https?:/.test(t))) continue;
+        if (all) {
+          tm.reload();
+          n++;
+          continue;
+        }
+        for (const key of tm.getIds()) {
+          const tile = tm.getTileByID ? tm.getTileByID(key) : null;
+          if (!tile || tile.state !== 'errored') continue;
+          // Un 404 de verdad (fuera de cobertura) también queda «errored»:
+          // se reintenta unas pocas veces y se deja, para no gastar señal
+          // pidiendo cada 20 s algo que no existe.
+          const veces = reintentos.get(tile) || 0;
+          if (veces >= MAX_REINTENTOS) continue;
+          reintentos.set(tile, veces + 1);
+          // 'loading' y no 'reloading': una fallida no tiene textura, y
+          // 'reloading' le dice al renderer que pinte la que tenía → excepción.
+          tm._reloadTile(key, 'loading');
+          n++;
+        }
+      } catch {
+        /* API interna distinta: no se reintenta */
+      }
+    }
+    if (n) map.triggerRepaint();
+    return n;
+  }
+
   return {
     map,
     locateMe,
+    retryFailedTiles,
     /** Última posición del GPS, o `null` si no está activo/actualizado. */
     getGpsFix,
     /** Si el control de seguimiento del GPS está encendido ahora mismo. */

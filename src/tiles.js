@@ -42,6 +42,10 @@ function loadPmtiles() {
       if (!globalThis.pmtiles) throw new Error('pmtiles no expuso el objeto global');
       return globalThis.pmtiles;
     });
+    // Un fallo no se queda pegado: el siguiente intento vuelve a cargarlo.
+    pmtilesPromise.catch(() => {
+      pmtilesPromise = null;
+    });
   }
   return pmtilesPromise;
 }
@@ -211,8 +215,21 @@ async function openPmtiles(file, id) {
 
 /** Abre un .mbtiles o .pmtiles y devuelve su descriptor. */
 export async function openTileFile(file, id) {
-  await registerProtocols();
   const name = file.name.toLowerCase();
+  /*
+   * Primero los LECTORES (PMTiles, y sql.js para MBTiles), aparte del
+   * archivo: si lo que falla es cargarlos —el shell a medias, una recarga con
+   * señal mala—, el error lleva `transient` y quien reabre lo guardado sabe
+   * que el archivo no tiene la culpa y no debe olvidarlo. Ver
+   * `restoreImportedFiles` en ui.js.
+   */
+  try {
+    await registerProtocols();
+    if (name.endsWith('.mbtiles')) await loadSql();
+  } catch (err) {
+    err.transient = true;
+    throw err;
+  }
   if (name.endsWith('.pmtiles')) return openPmtiles(file, id);
   if (name.endsWith('.mbtiles')) return openMbtiles(file, id);
   throw new Error('Formato no reconocido: se esperaba .mbtiles o .pmtiles');

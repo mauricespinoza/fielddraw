@@ -51,6 +51,11 @@ export function loadSql() {
       // El .wasm va al lado del .js, así que `locateFile` apunta a vendor/.
       return globalThis.initSqlJs({ locateFile: (f) => vendorUrl(f) });
     })();
+    // Si el wasm no llegó (sin señal y sin caché), el próximo intento vuelve a
+    // probar en vez de devolver para siempre la misma promesa rechazada.
+    sqlPromise.catch(() => {
+      sqlPromise = null;
+    });
   }
   return sqlPromise;
 }
@@ -61,6 +66,9 @@ function loadProj4() {
     proj4Promise = loadVendorScript('proj4.js').then(() => {
       if (!globalThis.proj4) throw new Error('proj4 no expuso el objeto global');
       return globalThis.proj4;
+    });
+    proj4Promise.catch(() => {
+      proj4Promise = null;
     });
   }
   return proj4Promise;
