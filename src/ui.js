@@ -4359,6 +4359,14 @@ function commitDeviceReading() {
   // La siguiente medida arranca en vivo: dejarla detenida guardaría dos veces
   // el mismo número sobre dos afloramientos distintos.
   deviceHeld = null;
+  /*
+   * `createMeasurement` devuelve la herramienta a Elegir, pero con Device se
+   * toman varios datos parecidos seguidos: se vuelve a armar la medida con el
+   * mismo tipo de superficie, unidad y línea (siguen en la paleta), lista para
+   * tocar la brújula otra vez. Para cambiar de tipo o unidad basta cerrar el
+   * panel (otra herramienta) y modificar la paleta.
+   */
+  store.setTool('measure');
   renderDevicePanel();
 }
 

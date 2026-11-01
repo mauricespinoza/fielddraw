@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.49.1';
+export const APP_VERSION = '0.49.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.49.2',
+    highlights: [
+      'Device mode: after adding a measurement the app goes straight back to reading with the same surface type, unit and line, ready to tap the compass — so several similar measurements can be taken quickly. To change type or unit, close the compass panel and edit the palette.',
+    ],
+  },
   {
     version: '0.49.1',
     highlights: [
