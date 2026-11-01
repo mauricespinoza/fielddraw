@@ -9,6 +9,67 @@ const STRABO_STYLE_KEY = 'fielddraw.strabo-style.v1';
 const STRABO_DATASETS_KEY = 'fielddraw.strabo-datasets.v1';
 const SECTIONS_KEY = 'fielddraw.sections.v1';
 const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
+const VIEW_KEY = 'fielddraw.view.v1';
+const LAYERS_KEY = 'fielddraw.layers.v1';
+
+/**
+ * Dónde se estaba mirando, validado.
+ *
+ * Devuelve `null` ante cualquier cosa que no sea una vista usable: un valor
+ * corrupto en localStorage no puede dejar el mapa en NaN. Es función pura para
+ * poder probarla sin navegador.
+ */
+export function sanitizeView(v) {
+  if (!v || typeof v !== 'object') return null;
+  const [lng, lat] = Array.isArray(v.center) ? v.center : [];
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  if (Math.abs(lng) > 180 || Math.abs(lat) > 85.06) return null;
+  if (!Number.isFinite(v.zoom) || v.zoom < 0 || v.zoom > 24) return null;
+  const bearing = Number.isFinite(v.bearing) ? ((((v.bearing + 180) % 360) + 360) % 360) - 180 : 0;
+  return { center: [lng, lat], zoom: v.zoom, bearing };
+}
+
+/**
+ * La vista se guarda por DISPOSITIVO, no en el proyecto: sin esto la app abría
+ * siempre en el centro por defecto, y el área que alguien acababa de descargar
+ * —o su zona de trabajo— quedaba a kilómetros de lo que se veía al abrir, con
+ * la pinta de "no se descargó nada".
+ */
+export function saveView(view) {
+  const v = sanitizeView(view);
+  if (!v) return;
+  try {
+    localStorage.setItem(VIEW_KEY, JSON.stringify(v));
+  } catch {
+    /* sin storage: se abre en el centro por defecto */
+  }
+}
+
+export function loadSavedView() {
+  try {
+    return sanitizeView(JSON.parse(localStorage.getItem(VIEW_KEY)));
+  } catch {
+    return null;
+  }
+}
+
+/** Visibilidad y opacidad de las capas propias, del dispositivo. */
+export function saveLayerState(list) {
+  try {
+    localStorage.setItem(LAYERS_KEY, JSON.stringify(list));
+  } catch {
+    /* sin storage: vuelven los valores por omisión */
+  }
+}
+
+export function loadSavedLayerState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAYERS_KEY));
+    return Array.isArray(raw) && raw.length ? raw : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Clave de OpenTopography.

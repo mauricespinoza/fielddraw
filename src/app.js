@@ -16,6 +16,10 @@ import {
 import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedControlPointStyle,
+  loadSavedLayerState,
+  loadSavedView,
+  saveLayerState,
+  saveView,
   loadNewerFeatures,
   loadSavedFeatures,
   loadSavedSections,
@@ -57,6 +61,30 @@ const view = createMapView({
   onScale: renderScale,
   onDigitizePreview: renderDigitizePreview,
 });
+
+/*
+ * La vista y las capas del dispositivo, ANTES de que el mapa pinte: así lo
+ * primero que se ve es donde se estaba trabajando, con el basemap que se
+ * estaba usando —que es justo lo que se descargó—, y no el centro por omisión.
+ */
+{
+  const v = loadSavedView();
+  if (v) view.map.jumpTo(v);
+  const capas = loadSavedLayerState();
+  if (capas) store.applyLayerState(capas);
+}
+let viewTimer = null;
+const guardarVista = () => {
+  clearTimeout(viewTimer);
+  viewTimer = null;
+  const c = view.map.getCenter();
+  saveView({ center: [c.lng, c.lat], zoom: view.map.getZoom(), bearing: view.map.getBearing() });
+};
+view.map.on('moveend', () => {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(guardarVista, 400);
+});
+addEventListener('pagehide', () => viewTimer !== null && guardarVista());
 
 wireLocate(() => view.locateMe());
 // La interfaz necesita el mapa para encuadrar la traza de un perfil pedido
@@ -119,6 +147,7 @@ store.subscribe(() => {
   if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
+  if (store.changed('layers')) saveLayerState(store.currentLayerState());
   if (store.changed('straboDatasets') || store.changed('layers')) {
     clearTimeout(straboSaveTimer);
     straboSaveTimer = setTimeout(() => saveStraboDatasets(store.currentStraboDatasets()), 500);

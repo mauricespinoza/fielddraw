@@ -159,6 +159,7 @@ export function planArea({ bbox, demZoom, basemapId, basemapZoom }) {
       const tiles = countTiles(bbox, 0, zmax);
       partes.push({
         kind: 'basemap',
+        basemapId: bm.id,
         label: bm.label,
         template: bm.tiles[0],
         attribution: bm.attribution,
@@ -239,7 +240,7 @@ export async function downloadArea({ id, name, bbox, partes }, { onProgress, sig
         const url = tileUrl(parte.template, z, x, y);
         try {
           const req = new Request(url, { mode: 'cors' });
-          if (await cache.match(req)) {
+          if (await cache.match(req, { ignoreVary: true })) {
             // Ya estaba de un área anterior que se solapa: no se vuelve a pedir,
             // pero sí se apunta, o borrar aquella se llevaría esta.
             urls.push(url);
@@ -272,7 +273,7 @@ export async function downloadArea({ id, name, bbox, partes }, { onProgress, sig
     id,
     name,
     bbox,
-    partes: usables.map((p) => ({ kind: p.kind, label: p.label, zmax: p.zmax, tiles: p.tiles })),
+    partes: usables.map((p) => ({ kind: p.kind, label: p.label, zmax: p.zmax, tiles: p.tiles, basemapId: p.basemapId })),
     urls,
     tiles: hechas,
     fallidas,

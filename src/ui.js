@@ -6003,6 +6003,11 @@ async function renderAreaList() {
       `${a.name} — ${a.tiles.toLocaleString()} tiles, ${fmtMB(a.bytes)} · ${que}` +
       (a.fallidas ? ` · ${a.fallidas} failed` : '') +
       (a.cancelada ? ' · cancelled' : '');
+    const ver = document.createElement('button');
+    ver.className = 'pill';
+    ver.textContent = 'Show';
+    ver.title = 'Go to this area and switch to the basemap that was downloaded with it';
+    ver.addEventListener('click', () => showDownloadedArea(a));
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '✕';
@@ -6019,9 +6024,44 @@ async function renderAreaList() {
       await renderAreaStorage();
     });
     fila.appendChild(txt);
+    fila.appendChild(ver);
     fila.appendChild(del);
     cont.appendChild(fila);
   }
+}
+
+/**
+ * Lleva el mapa a un área descargada y enciende su basemap.
+ *
+ * Lo descargado solo se ve si el mapa está AHÍ y con ESE basemap encendido:
+ * la lista de áreas no tenía forma de llegar, y quien volvía a abrir la app
+ * veía otra zona (o el satélite de siempre sobre un área de CARTO) y concluía
+ * que no se había guardado nada. Las áreas bajadas antes de guardar el id del
+ * basemap se reconocen por su rótulo.
+ */
+function showDownloadedArea(area) {
+  if (!mapBridge || !mapBridge.map || !Array.isArray(area.bbox)) return;
+  const parte = (area.partes || []).find((p) => p.kind === 'basemap');
+  const bm = parte && (BASEMAPS.find((b) => b.id === parte.basemapId) || BASEMAPS.find((b) => b.label === parte.label));
+  if (bm) {
+    // El rotulado de Esri es una capa superpuesta: se respeta como esté. Los
+    // demás basemaps se apagan para que ninguno tape al elegido.
+    const capas = store.getState().layers;
+    for (const l of capas) {
+      if (l.kind !== 'basemap' || l.id === 'esri-labels') continue;
+      const debe = l.id === bm.id;
+      if (l.visible !== debe) store.setLayerVisible(l.id, debe);
+    }
+  }
+  const [w, so, e, n] = area.bbox;
+  mapBridge.map.fitBounds([[w, so], [e, n]], { padding: 0, duration: 600 });
+  $('area-menu').classList.add('hidden');
+  showBanner(
+    bm
+      ? `${area.name}: showing ${bm.label}. Anything beyond the downloaded zoom is blank without signal.`
+      : `${area.name}: showing the area. Elevation, contours and hillshade use the downloaded data.`,
+    'info',
+  );
 }
 
 export function renderAreaMenu() {
