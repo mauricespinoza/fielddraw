@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v62';
+const VERSION = 'v63';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -256,10 +256,17 @@ function urlCanonica(href) {
 
 /** Busca en una caché por la URL tal cual y, si no, por la canónica. */
 async function buscar(cache, request) {
-  const hit = await cache.match(request);
+  /*
+   * `ignoreVary`: S3 (el DEM) contesta con `Vary: Origin`, y `match` compara
+   * esa cabecera entre la petición guardada —hecha desde la página— y la que
+   * llega ahora desde MapLibre o su worker. Una tesela z/x/y es la misma
+   * venga de donde venga; que no coincida una cabecera que no cambia el
+   * contenido dejaba lo descargado sin servirse.
+   */
+  const hit = await cache.match(request, { ignoreVary: true });
   if (hit) return hit;
   const canon = urlCanonica(request.url);
-  return canon !== request.url ? cache.match(canon) : undefined;
+  return canon !== request.url ? cache.match(canon, { ignoreVary: true }) : undefined;
 }
 
 /** Deja la caché de teselas por debajo del tope, tirando las más antiguas. */

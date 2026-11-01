@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff shell; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff shell view; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -199,6 +199,16 @@ Lo descargado no se borra ni deja de leerse porque la señal vaya y venga:
 - **Subdominios.** CARTO reparte las teselas entre `a.`/`b.`/`c.`/`d.`; un
   área descargada se guarda con `a.` y ahora se encuentra la pida MapLibre por
   el subdominio que sea.
+
+### La vista y el basemap se recuerdan
+
+Al abrir, la app vuelve a la **misma vista** (centro, zoom y giro) y a las
+**mismas capas** (qué basemap está encendido, y su opacidad) de la sesión
+anterior, guardadas en el dispositivo y no en el proyecto. Antes abría siempre
+en el centro por omisión con el satélite de Esri, así que un área descargada en
+otra zona —o de otro basemap— parecía no existir. En **Download this area** cada
+área tiene un botón **Show** que lleva el mapa a ella y enciende el basemap con
+el que se bajó.
 
 ### Descargar un área antes de salir
 

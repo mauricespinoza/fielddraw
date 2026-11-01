@@ -2344,6 +2344,27 @@ export function currentLayerState() {
 }
 
 /**
+ * Aplica visibilidad y opacidad guardadas a las capas que existen. Lo usan el
+ * arranque (lo recordado en el dispositivo) y el botón «Show» de un área
+ * descargada; una capa que ya no existe se ignora sin más.
+ */
+export function applyLayerState(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  const saved = new Map(list.map((l) => [l.id, l]));
+  set({
+    layers: state.layers.map((l) => {
+      const s = saved.get(l.id);
+      if (!s) return l;
+      return {
+        ...l,
+        visible: typeof s.visible === 'boolean' ? s.visible : l.visible,
+        opacity: Number.isFinite(s.opacity) ? s.opacity : l.opacity,
+      };
+    }),
+  });
+}
+
+/**
  * Carga un proyecto completo en un solo `set`, para que la UI y el mapa se
  * repinten una vez. El historial se corta: deshacer no debe llevar de vuelta al
  * proyecto anterior.

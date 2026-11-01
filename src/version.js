@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.49.0';
+export const APP_VERSION = '0.49.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.49.1',
+    highlights: [
+      'The app now reopens where you left off — same view and same basemap — instead of always starting at the default location. Before, a downloaded area looked missing on reopening simply because the map was looking somewhere else (or at a different basemap).',
+      'Import → Download this area: each downloaded area has a «Show» button that flies to it and switches to the basemap it was downloaded with.',
+      'Downloaded tiles are now matched regardless of the server\'s Vary header (the elevation server sends one), so they are served from the cache every time.',
+    ],
+  },
   {
     version: '0.49.0',
     highlights: [
