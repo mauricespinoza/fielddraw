@@ -107,6 +107,8 @@ import {
   rememberImportedFile,
 } from './importedFiles.js';
 import {
+  checkArea,
+  completeArea,
   deleteArea,
   downloadArea,
   listAreas,
@@ -114,7 +116,7 @@ import {
   planArea,
   storageUse,
 } from './areaCache.js';
-import { BASEMAPS, PREFETCH_BLOCKED } from './basemaps.js';
+import { BASEMAPS, PREFETCH_BLOCKED, sharpUntilZoom } from './basemaps.js';
 import {
   applyCut,
   applyLinesToPolygon,
@@ -5885,7 +5887,9 @@ let areaAbort = null;
 /** Tamaños legibles. Sube a GB porque la cuota del navegador llega ahí. */
 function fmtMB(bytes) {
   const mb = bytes / (1024 * 1024);
-  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  // Un área pequeña no pesa «0 MB»: se ve como que no se guardó nada.
+  return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`;
 }
 
 /** El recuadro que se está mirando, que es lo que se va a descargar. */
@@ -5898,9 +5902,12 @@ function currentBbox() {
 function areaPlanFromForm() {
   const bbox = currentBbox();
   if (!bbox) return null;
+  // DEM y basemap van por separado: «None» en cualquiera de los dos deja
+  // bajar solo el otro. `Number('')` es 0, no «nada», así que se mira antes.
+  const demVal = $('area-dem-zoom').value;
   return planArea({
     bbox,
-    demZoom: Number($('area-dem-zoom').value),
+    demZoom: demVal === '' ? null : Number(demVal),
     basemapId: $('area-basemap').value || null,
     basemapZoom: Number($('area-basemap-zoom').value),
   });
@@ -5941,13 +5948,28 @@ function renderAreaEstimate() {
     boton.disabled = true;
     return;
   }
+  if (!plan.partes.length) {
+    salida.textContent = 'Choose the elevation, a basemap, or both.';
+    boton.disabled = true;
+    return;
+  }
   if (!usables.length) {
     salida.textContent = `Nothing here can be downloaded.${coletilla}`;
     boton.disabled = true;
     return;
   }
 
-  const partes = usables.map((p) => `${p.label}: ${p.tiles.toLocaleString()} tiles to z${p.zmax}`);
+  const partes = usables.map((p) => {
+    let t = `${p.label}: ${p.tiles.toLocaleString()} tiles to z${p.zmax}`;
+    if (p.kind === 'basemap') {
+      const bm = BASEMAPS.find((b) => b.id === p.basemapId);
+      if (p.topado != null) t += ` (this basemap has nothing finer)`;
+      // Lo que de verdad se pregunta quien elige el zoom: hasta dónde podrá
+      // acercarse sin que se vea pixelado.
+      if (bm) t += `, sharp up to map zoom ${sharpUntilZoom(bm, p.zmax)}`;
+    }
+    return t;
+  });
   salida.textContent =
     `About ${anchoKm} km across · ${partes.join(' · ')} · ` +
     `roughly ${fmtMB(plan.bytes)}. Sizes are estimates; tiles already downloaded are not fetched again.` +
@@ -6016,6 +6038,18 @@ async function renderAreaList() {
     ver.textContent = 'Show';
     ver.title = 'Go to this area and switch to the basemap that was downloaded with it';
     ver.addEventListener('click', () => showDownloadedArea(a));
+    const comprobar = document.createElement('button');
+    comprobar.className = 'pill';
+    comprobar.textContent = 'Check';
+    comprobar.title = 'Count the tiles of this area that are stored right now, without using the network';
+    comprobar.addEventListener('click', () => doCheckArea(a, comprobar));
+    const completar = document.createElement('button');
+    completar.className = 'pill';
+    completar.textContent = 'Complete';
+    completar.title = 'Download only the tiles of this area that are missing';
+    completar.addEventListener('click', () => doCompleteArea(a));
+    // Lo que hay que completar se marca: es lo que se ve en blanco sin señal.
+    if (a.fallidas || a.cancelada) completar.textContent = 'Complete ⚠';
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '✕';
@@ -6033,6 +6067,8 @@ async function renderAreaList() {
     });
     fila.appendChild(txt);
     fila.appendChild(ver);
+    fila.appendChild(comprobar);
+    fila.appendChild(completar);
     fila.appendChild(del);
     cont.appendChild(fila);
   }
@@ -6098,16 +6134,90 @@ export function renderAreaMenu() {
   renderAreaStorage();
 }
 
+/**
+ * Cuenta lo que hay guardado de un área, sin red. Es la respuesta honesta a
+ * «¿lo tengo para mañana?»: lo que hay en el disco ahora, no lo que dijo la
+ * descarga hace una semana.
+ */
+async function doCheckArea(area, boton) {
+  boton.disabled = true;
+  const antes = boton.textContent;
+  boton.textContent = 'Checking…';
+  try {
+    const r = await checkArea(area);
+    const detalle = r.porParte
+      .map((p) => `${p.kind === 'dem' ? 'Elevation' : p.label}: ${p.presentes.toLocaleString()} of ${p.esperadas.toLocaleString()}`)
+      .join(' · ');
+    if (!r.faltan) {
+      showBanner(`${area.name}: complete — every tile is stored and will show with no signal. ${detalle}.`, 'info');
+    } else {
+      showBanner(
+        `${area.name}: ${r.faltan.toLocaleString()} of ${r.esperadas.toLocaleString()} tiles are missing and will show as gaps with no signal (${detalle}). ` +
+          'Press Complete while you still have signal.',
+        'warn',
+      );
+    }
+  } catch (err) {
+    showBanner(`Could not check the area: ${err.message}`);
+  } finally {
+    boton.disabled = false;
+    boton.textContent = antes;
+  }
+}
+
+/** Baja lo que le falta a un área ya guardada, con la misma barra y el mismo Cancel. */
+async function doCompleteArea(area) {
+  if (areaAbort) {
+    showBanner('A download is already running. Wait for it, or cancel it first.', 'warn');
+    return;
+  }
+  areaAbort = new AbortController();
+  $('area-cancel').classList.remove('hidden');
+  $('area-download').disabled = true;
+  try {
+    const res = await completeArea(area, {
+      signal: areaAbort.signal,
+      onProgress: ({ hechas, total, fallidas }) => {
+        $('area-estimate').textContent =
+          `Completing ${area.name}: ${hechas.toLocaleString()} of ${total.toLocaleString()}` +
+          (fallidas ? ` · ${fallidas} failed` : '') +
+          '. Tiles already stored are not fetched again.';
+      },
+    });
+    showBanner(
+      res.cancelada
+        ? `Stopped: ${res.tiles.toLocaleString()} tiles of ${area.name} are stored.`
+        : res.fallidas
+          ? `${area.name}: ${res.tiles.toLocaleString()} tiles stored, ${res.fallidas} still failed. Try Complete again with a better signal.`
+          : `${area.name} is complete: ${res.tiles.toLocaleString()} tiles, all of them usable with no signal.`,
+      res.fallidas || res.cancelada ? 'warn' : 'info',
+    );
+  } catch (err) {
+    showBanner(`Could not complete the area: ${err.message}`);
+  } finally {
+    areaAbort = null;
+    $('area-cancel').classList.add('hidden');
+    $('area-download').disabled = false;
+    renderAreaEstimate();
+    await renderAreaList();
+    await renderAreaStorage();
+  }
+}
+
 async function doDownloadArea() {
   const plan = areaPlanFromForm();
   if (!plan) return;
   const usables = plan.partes.filter((p) => !p.blocked);
   if (!usables.length || plan.excede.length) return;
 
+  if (areaAbort) return;
   const bbox = currentBbox();
   const id = `area-${Date.now().toString(36)}`;
   const centro = `${Math.abs((bbox[1] + bbox[3]) / 2).toFixed(2)}°${(bbox[1] + bbox[3]) / 2 < 0 ? 'S' : 'N'}`;
-  const name = `Area ${centro} · ${new Date().toISOString().slice(0, 10)}`;
+  // Con DEM y basemap por separado, la lista se llena de áreas parecidas:
+  // el nombre dice qué lleva cada una.
+  const que = usables.map((p) => (p.kind === 'dem' ? 'Elevation' : p.label.replace(/^Esri — /, ''))).join(' + ');
+  const name = `${que} · ${centro} · ${new Date().toISOString().slice(0, 10)}`;
 
   areaAbort = new AbortController();
   $('area-cancel').classList.remove('hidden');
@@ -6130,9 +6240,11 @@ async function doDownloadArea() {
       res.cancelada
         ? `Stopped: ${res.tiles.toLocaleString()} tiles kept. What was downloaded works offline.`
         : `${name}: ${res.tiles.toLocaleString()} tiles downloaded` +
-            (res.fallidas ? `, ${res.fallidas} failed and will show as gaps` : '') +
+            (res.fallidas
+              ? `, ${res.fallidas} failed even after retrying and will show as gaps — press Complete on it while you have signal`
+              : '') +
             '. This area now works with no signal.',
-      'info',
+      res.fallidas ? 'warn' : 'info',
     );
   } catch (err) {
     showBanner(`The download failed: ${err.message}`);

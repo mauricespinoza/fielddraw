@@ -43,7 +43,13 @@ export const AREA_CACHE = 'fielddraw-areas';
  * medio país", que es justo lo que ningún proveedor quiere.
  */
 export const MAX_DEM_TILES = 8000;
-export const MAX_BASEMAP_TILES = 1500;
+/*
+ * Era 1500, y con eso z17 alcanzaba para unos 8 × 8 km y z18 para apenas
+ * 4 × 4: pedir más detalle obligaba a encoger el área hasta que dejaba de ser
+ * una zona de trabajo. 5000 (~140 MB de imagen) da unos 15 × 15 km a z17 y
+ * 7 × 7 km a z18, que es una campaña, no un país.
+ */
+export const MAX_BASEMAP_TILES = 5000;
 
 /** Peso típico por tesela, para estimar antes de bajar nada. */
 const BYTES_PER_DEM_TILE = 10 * 1024;
@@ -54,6 +60,14 @@ const CONCURRENCY = 4;
 
 /** Plazo por tesela. Una que no llega no puede parar la descarga entera. */
 const TILE_TIMEOUT_MS = 20000;
+
+/**
+ * Intentos por tesela. Con señal de terreno un fallo suelto es lo normal, y
+ * una tesela que falla queda como un cuadro en blanco que solo se ve después,
+ * sin señal. Un 404 no se reintenta: es que no hay tesela, no que no llegó.
+ */
+const INTENTOS = 3;
+const ESPERA_REINTENTO_MS = [1000, 3000];
 
 /* ------------------------------------------------ matemática de teselas */
 
@@ -165,6 +179,9 @@ export function planArea({ bbox, demZoom, basemapId, basemapZoom }) {
         attribution: bm.attribution,
         zmin: 0,
         zmax,
+        // Se pidió más detalle del que el proveedor tiene: la interfaz lo
+        // dice, en vez de dejar creer que se bajó z18 de un mapa que acaba en z13.
+        topado: basemapZoom > bm.maxzoom ? bm.maxzoom : null,
         tiles,
         bytes: tiles * BYTES_PER_IMAGE_TILE,
         limit: MAX_BASEMAP_TILES,
@@ -189,10 +206,53 @@ export function planArea({ bbox, demZoom, basemapId, basemapZoom }) {
 
 /* ----------------------------------------------------------- descarga */
 
-function conPlazo(url, ms) {
+function conPlazo(url, ms, signal) {
   const abort = new AbortController();
   const corte = setTimeout(() => abort.abort(), ms);
-  return fetch(url, { mode: 'cors', signal: abort.signal }).finally(() => clearTimeout(corte));
+  const cancelar = () => abort.abort();
+  if (signal) signal.addEventListener('abort', cancelar, { once: true });
+  return fetch(url, { mode: 'cors', signal: abort.signal }).finally(() => {
+    clearTimeout(corte);
+    if (signal) signal.removeEventListener('abort', cancelar);
+  });
+}
+
+const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Pide una tesela con reintentos. Devuelve la respuesta buena, o null si no
+ * hay forma: 4xx (no existe), o se agotaron los intentos.
+ */
+async function pedirTesela(url, signal) {
+  for (let i = 0; i < INTENTOS; i++) {
+    if (signal && signal.aborted) return null;
+    try {
+      const res = await conPlazo(url, TILE_TIMEOUT_MS, signal);
+      if (res.ok) return res;
+      // 404/403/400: no hay tesela; insistir solo gasta datos.
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) return null;
+    } catch {
+      /* sin red o plazo agotado: se reintenta */
+    }
+    if (i < INTENTOS - 1) await dormir(ESPERA_REINTENTO_MS[i] || 3000);
+  }
+  return null;
+}
+
+/**
+ * La plantilla de una parte de un área ya guardada.
+ *
+ * Las áreas nuevas la llevan dentro; las bajadas antes de 0.50 no, y se
+ * deduce del basemap (o es el DEM). Sin esto no se podrían comprobar ni
+ * completar las áreas viejas, que son justo las que alguien tiene en el
+ * teléfono ahora mismo.
+ */
+export function templateOf(parte) {
+  if (parte.template) return parte.template;
+  if (parte.kind === 'dem') return TERRARIUM_URL;
+  const bm =
+    BASEMAPS.find((b) => b.id === parte.basemapId) || BASEMAPS.find((b) => b.label === parte.label);
+  return bm ? bm.tiles[0] : null;
 }
 
 /**
@@ -204,7 +264,20 @@ function conPlazo(url, ms) {
  * que se cayó al primer 503 no sirve de nada. Las fallidas se cuentan y se
  * informan.
  */
-export async function downloadArea({ id, name, bbox, partes }, { onProgress, signal } = {}) {
+export async function downloadArea({ id, name, bbox, partes, savedAt }, { onProgress, signal } = {}) {
+  /*
+   * Pedir almacenamiento persistente justo aquí, con el gesto de descargar:
+   * sin él el navegador puede tirar la caché cuando le falta espacio (y
+   * Safari, si la web no está instalada en la pantalla de inicio, a los siete
+   * días sin abrirla). `app.js` ya lo pide al arrancar, pero Chrome lo
+   * concede según el uso, y tras una descarga a propósito es cuando más
+   * probable es que diga que sí.
+   */
+  try {
+    if (navigator.storage && navigator.storage.persist) await navigator.storage.persist();
+  } catch {
+    /* sin persist() la caché funciona igual, solo con menos garantías */
+  }
   const cache = await caches.open(AREA_CACHE);
   const usables = partes.filter((p) => !p.blocked);
   const total = usables.reduce((a, p) => a + p.tiles, 0);
@@ -228,7 +301,10 @@ export async function downloadArea({ id, name, bbox, partes }, { onProgress, sig
   const avisar = () => onProgress && onProgress({ hechas, total, fallidas });
 
   for (const parte of usables) {
-    const cola = tilesOf(bbox, parte.zmin, parte.zmax);
+    const template = templateOf(parte);
+    if (!template) continue;
+    const cola = tilesOf(bbox, parte.zmin ?? 0, parte.zmax);
+    const pesoTipico = parte.kind === 'dem' ? BYTES_PER_DEM_TILE : BYTES_PER_IMAGE_TILE;
     // Un pool de N trabajadores sobre el mismo iterador: cada uno toma la
     // siguiente en cuanto termina, sin montar un array de miles de promesas.
     const trabajador = async () => {
@@ -237,30 +313,38 @@ export async function downloadArea({ id, name, bbox, partes }, { onProgress, sig
         const siguiente = cola.next();
         if (siguiente.done) return;
         const { z, x, y } = siguiente.value;
-        const url = tileUrl(parte.template, z, x, y);
+        const url = tileUrl(template, z, x, y);
         try {
           const req = new Request(url, { mode: 'cors' });
-          if (await cache.match(req, { ignoreVary: true })) {
+          const ya = await cache.match(req, { ignoreVary: true });
+          if (ya) {
             // Ya estaba de un área anterior que se solapa: no se vuelve a pedir,
             // pero sí se apunta, o borrar aquella se llevaría esta.
+            bytes += Number(ya.headers.get('content-length')) || pesoTipico;
             urls.push(url);
             hechas++;
             avisar();
             continue;
           }
-          const res = await conPlazo(url, TILE_TIMEOUT_MS);
-          if (res.ok || res.type === 'opaque') {
-            const copia = res.clone();
-            await cache.put(req, res);
-            bytes += Number(copia.headers.get('content-length')) || 0;
+          const res = await pedirTesela(url, signal);
+          if (res) {
+            // Se lee entera ANTES de guardarla: una respuesta cortada a medio
+            // cuerpo con señal mala haría fallar `put` o, peor, dejaría una
+            // imagen truncada que sin señal se ve como un cuadro gris.
+            const blob = await res.blob();
+            if (!blob.size) throw new Error('vacía');
+            const headers = new Headers(res.headers);
+            headers.set('Content-Length', String(blob.size));
+            await cache.put(req, new Response(blob, { status: 200, headers }));
+            bytes += blob.size;
             urls.push(url);
             hechas++;
-          } else {
+          } else if (!(signal && signal.aborted)) {
             fallidas++;
           }
         } catch {
-          // Sin red, plazo agotado o cancelada: se cuenta y se sigue.
-          fallidas++;
+          // Sin red, cuerpo cortado o cuota llena: se cuenta y se sigue.
+          if (!(signal && signal.aborted)) fallidas++;
         }
         avisar();
       }
@@ -273,14 +357,23 @@ export async function downloadArea({ id, name, bbox, partes }, { onProgress, sig
     id,
     name,
     bbox,
-    partes: usables.map((p) => ({ kind: p.kind, label: p.label, zmax: p.zmax, tiles: p.tiles, basemapId: p.basemapId })),
+    partes: usables.map((p) => ({
+      kind: p.kind,
+      label: p.label,
+      zmin: p.zmin ?? 0,
+      zmax: p.zmax,
+      tiles: p.tiles,
+      basemapId: p.basemapId,
+      template: templateOf(p),
+    })),
     urls,
     tiles: hechas,
     fallidas,
     // El `content-length` no viene en respuestas opacas, así que cuando no hay
     // dato se cae a la estimación en vez de decir "0 MB", que sería mentira.
     bytes: bytes || usables.reduce((a, p) => a + p.bytes, 0),
-    savedAt: Date.now(),
+    savedAt: savedAt || Date.now(),
+    checkedAt: Date.now(),
     cancelada: !!(signal && signal.aborted),
   };
   await put(STORE_AREAS, registro);
@@ -320,6 +413,58 @@ export async function deleteArea(id) {
     if (await cache.delete(url)) borradas++;
   }
   return { borradas };
+}
+
+/**
+ * Cuántas teselas de un área están de verdad en la caché, sin usar la red.
+ *
+ * Es la prueba que vale antes de salir a terreno: no lo que dijo la descarga
+ * en su momento, sino lo que hay AHORA en el disco —el navegador puede haber
+ * desalojado algo, o la descarga pudo cortarse—. Se recorre la rejilla
+ * esperada a partir del bbox, no la lista de URLs guardadas, para que una
+ * tesela que nunca llegó cuente como hueco.
+ */
+export async function checkArea(area, { signal } = {}) {
+  const cache = await caches.open(AREA_CACHE);
+  let esperadas = 0;
+  let presentes = 0;
+  const porParte = [];
+  for (const parte of area.partes || []) {
+    const template = templateOf(parte);
+    if (!template) continue;
+    let e = 0;
+    let p = 0;
+    for (const { z, x, y } of tilesOf(area.bbox, parte.zmin ?? 0, parte.zmax)) {
+      if (signal && signal.aborted) break;
+      e++;
+      if (await cache.match(tileUrl(template, z, x, y), { ignoreVary: true })) p++;
+    }
+    esperadas += e;
+    presentes += p;
+    porParte.push({ label: parte.label, kind: parte.kind, esperadas: e, presentes: p });
+  }
+  return { esperadas, presentes, faltan: esperadas - presentes, porParte };
+}
+
+/**
+ * Completa un área ya guardada: baja solo lo que falta y rehace su registro.
+ *
+ * Sirve para una descarga cancelada, una que dejó teselas fallidas por la
+ * señal, o una que el navegador desalojó en parte. Lo que ya está no se pide
+ * otra vez, así que sobre un área completa solo cuesta recorrer la caché.
+ */
+export function completeArea(area, opts) {
+  const partes = (area.partes || []).map((p) => ({
+    ...p,
+    zmin: p.zmin ?? 0,
+    template: templateOf(p),
+    tiles: countTiles(area.bbox, p.zmin ?? 0, p.zmax),
+    blocked: null,
+  }));
+  return downloadArea(
+    { id: area.id, name: area.name, bbox: area.bbox, partes, savedAt: area.savedAt },
+    opts,
+  );
 }
 
 /** Cuánto ocupa lo descargado y cuánto deja el navegador, en bytes. */

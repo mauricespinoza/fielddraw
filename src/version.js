@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.49.2';
+export const APP_VERSION = '0.50.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,16 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.50.0',
+    highlights: [
+      'Downloaded satellite imagery now shows with no signal. Esri tiles (Imagery, Topographic, Terrain, Hillshade, place names) have no file extension in their address, and the offline layer was not recognising them as map tiles: they were downloaded and stored, but never served from storage. Any Esri area downloaded before this version starts working as it is — nothing to download again.',
+      'Elevation and basemap download separately: set either one to «None». Typical use: the elevation of a wide area, then the satellite image of a smaller zone at full detail.',
+      'Basemaps can be downloaded to z18 (~0.6 m/px) and z19 (~0.3 m/px), and the per-area cap went from 1500 to 5000 tiles, enough for about 15 × 15 km at z17 or 7 × 7 km at z18. The estimate says up to what map zoom the area will look sharp.',
+      'Satellite imagery looks sharp on iPad and phone screens: it is now requested at the screen\'s real resolution instead of being stretched to double size. Maps with text (topographic, place names) are unchanged, so their labels keep their size.',
+      'Each downloaded area has «Check» (counts, with no network, how many of its tiles are really stored) and «Complete» (downloads only what is missing). Every tile is retried up to three times before it counts as failed, and the app asks the browser to keep the storage persistent.',
+    ],
+  },
   {
     version: '0.49.2',
     highlights: [

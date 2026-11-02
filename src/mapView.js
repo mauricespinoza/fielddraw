@@ -2,7 +2,7 @@ import maplibregl from 'maplibre-gl';
 import { LEVELS, walkPathLngLat } from './hiking.js';
 import mlcontour from 'maplibre-contour';
 
-import { BASEMAPS, TERRARIUM_URL } from './basemaps.js';
+import { BASEMAPS, TERRARIUM_URL, rasterTileSize } from './basemaps.js';
 import { haversine } from './dem.js';
 import { destinationPoint, geoAzimuth, geoDistance, resolveDipSide } from './structure.js';
 import { vendorBase } from './vendorPaths.js';
@@ -537,7 +537,7 @@ export function createMapView({
       map.addSource(`bm-src-${b.id}`, {
         type: 'raster',
         tiles: b.tiles,
-        tileSize: 256,
+        tileSize: rasterTileSize(b),
         maxzoom: b.maxzoom,
         attribution: b.attribution,
       });

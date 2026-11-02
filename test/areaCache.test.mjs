@@ -7,10 +7,12 @@ import {
   lngToTileX,
   metresPerTile,
   planArea,
+  templateOf,
   tileRange,
   tileUrl,
   tilesOf,
 } from '../src/areaCache.js';
+import { BASEMAPS, TERRARIUM_URL, rasterTileSize, sharpUntilZoom } from '../src/basemaps.js';
 
 /*
  * Lo que se prueba aquí es la aritmética de teselas, y no por gusto: un error
@@ -134,4 +136,56 @@ test('el DEM se topa en su zoom real aunque se pida más', () => {
   // Terrarium llega a z15; pedir z18 no añade dato, solo teselas interpoladas.
   const plan = planArea({ bbox: [-71.5, -37.4, -71.4, -37.3], demZoom: 18 });
   assert.ok(plan.partes[0].zmax <= 15, `zmax=${plan.partes[0].zmax}`);
+});
+
+test('DEM y basemap se pueden bajar por separado', () => {
+  const bbox = [-71.45, -37.35, -71.4, -37.3];
+  const soloImagen = planArea({ bbox, demZoom: null, basemapId: 'esri-imagery', basemapZoom: 17 });
+  assert.deepEqual(soloImagen.partes.map((p) => p.kind), ['basemap']);
+  assert.equal(soloImagen.tiles, soloImagen.partes[0].tiles);
+  const soloDem = planArea({ bbox, demZoom: 13, basemapId: null, basemapZoom: 17 });
+  assert.deepEqual(soloDem.partes.map((p) => p.kind), ['dem']);
+  const nada = planArea({ bbox, demZoom: null, basemapId: null, basemapZoom: 17 });
+  assert.equal(nada.partes.length, 0);
+  assert.equal(nada.tiles, 0);
+});
+
+test('z18 y z19 se pueden pedir, y se topan donde el basemap acaba', () => {
+  const bbox = [-71.41, -37.31, -71.4, -37.3]; // ~1 km
+  const z19 = planArea({ bbox, demZoom: null, basemapId: 'esri-imagery', basemapZoom: 19 });
+  assert.equal(z19.partes[0].zmax, 19);
+  assert.equal(z19.partes[0].topado, null);
+  assert.equal(z19.excede.length, 0, 'un kilómetro a z19 tiene que caber');
+  // Esri Terrain acaba en z13: pedir z18 baja z13 y lo dice.
+  const terreno = planArea({ bbox, demZoom: null, basemapId: 'esri-terrain', basemapZoom: 18 });
+  assert.equal(terreno.partes[0].zmax, 13);
+  assert.equal(terreno.partes[0].topado, 13);
+});
+
+test('una zona de trabajo cabe a z17 sin encogerla hasta lo inútil', () => {
+  // ~10 × 10 km a 37°S: con el tope viejo (1500) no cabía.
+  const plan = planArea({ bbox: [-71.5, -37.4, -71.39, -37.31], demZoom: null, basemapId: 'esri-imagery', basemapZoom: 17 });
+  assert.equal(plan.excede.length, 0, `teselas=${plan.tiles}`);
+});
+
+test('la plantilla de un área vieja se deduce para poder comprobarla y completarla', () => {
+  assert.equal(templateOf({ kind: 'dem', label: 'Elevation' }), TERRARIUM_URL);
+  const esri = BASEMAPS.find((b) => b.id === 'esri-imagery');
+  assert.equal(templateOf({ kind: 'basemap', basemapId: 'esri-imagery' }), esri.tiles[0]);
+  // Las primeras áreas no guardaban el id, solo el rótulo.
+  assert.equal(templateOf({ kind: 'basemap', label: esri.label }), esri.tiles[0]);
+  assert.equal(templateOf({ kind: 'basemap', template: 'http://x/{z}/{x}/{y}.png' }), 'http://x/{z}/{x}/{y}.png');
+  assert.equal(templateOf({ kind: 'basemap', label: 'No existe' }), null);
+});
+
+test('la imagen satelital se pide a la resolución real de una pantalla retina', () => {
+  const imagen = BASEMAPS.find((b) => b.id === 'esri-imagery');
+  const topo = BASEMAPS.find((b) => b.id === 'esri-topo');
+  assert.equal(rasterTileSize(imagen, 2), 128);
+  assert.equal(rasterTileSize(imagen, 1), 256);
+  // Un mapa con rótulos no: los nombres saldrían a la mitad de tamaño.
+  assert.equal(rasterTileSize(topo, 2), 256);
+  assert.equal(sharpUntilZoom(topo, 17, 2), 16);
+  assert.equal(sharpUntilZoom(imagen, 17, 2), 15);
+  assert.equal(sharpUntilZoom(imagen, 17, 1), 16);
 });

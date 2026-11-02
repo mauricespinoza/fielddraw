@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v64';
+const VERSION = 'v65';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -234,11 +234,25 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-/** Teselas y demás datos que se piden a servidores externos. */
+/**
+ * Teselas y demás datos que se piden a servidores externos.
+ *
+ * OJO con Esri: sus URLs son `…/MapServer/tile/{z}/{y}/{x}`, SIN extensión y
+ * en `server.arcgisonline.com`, que no dice «tile» en el nombre. Antes solo se
+ * miraba la extensión y el host, así que ninguna tesela de Esri —la imagen
+ * satelital, el topográfico, el sombreado— pasaba por aquí: no se servían
+ * desde las áreas descargadas ni se guardaban al mirarlas. Con señal no se
+ * notaba; sin señal, el satélite descargado salía en blanco aunque estuviera
+ * entero en la caché. Ahora se reconoce también por la FORMA de la ruta.
+ */
 function esTesela(url) {
   return (
     /\.(png|jpg|jpeg|webp|pbf|mvt)(\?|$)/i.test(url.pathname) ||
-    /tile|terrarium|elevation/i.test(url.hostname)
+    /tile|terrarium|elevation|arcgisonline/i.test(url.hostname) ||
+    // ArcGIS MapServer/ImageServer: …/tile/{z}/{y}/{x}
+    /\/tile\/\d+\/\d+\/\d+\/?$/i.test(url.pathname) ||
+    // XYZ sin extensión: …/{z}/{x}/{y}
+    /\/\d{1,2}\/\d+\/\d+(@2x)?$/.test(url.pathname)
   );
 }
 

@@ -228,7 +228,7 @@ cambia, y el ancho de banda de terreno no está para confirmarlo.
 | | Tope por área | Por qué |
 |---|---|---|
 | Modelo de elevación (AWS Terrain Tiles) | 8000 teselas | Dominio público, ~10 KB cada una |
-| Basemap | 1500 teselas | Son servidores de un tercero que la app no paga |
+| Basemap | 5000 teselas | Son servidores de un tercero que la app no paga |
 
 **El DEM primero, porque es la mejor compra.** Un área de 10 × 10 km hasta z13
 son unas 180 teselas, ~5 MB, y con eso quedan offline las curvas de nivel, el
@@ -236,6 +236,52 @@ sombreado, el relieve 3D, los perfiles y los ajustes de plano. La misma área de
 imagen satelital hasta z17 son ~2000 teselas y decenas de MB. Por eso el panel
 abre con el basemap en «None»: el DEM solo casi siempre cabe, y añadir imagen
 es una decisión aparte.
+
+**DEM y basemap van por separado.** Cualquiera de los dos puede quedar en
+«None»: lo habitual es bajar el DEM de una zona amplia y después, encuadrando
+más cerca, la imagen satelital de la zona de trabajo con todo su detalle. Cada
+descarga es un área propia en la lista, con un nombre que dice qué lleva
+(«Elevation · 37.30°S · …», «Imagery · 37.30°S · …»).
+
+**Hasta z19.** El basemap se puede pedir a z14–z19 (z18 ≈ 0,6 m/px, z19 ≈
+0,3 m/px), topado al zoom máximo real de cada proveedor —Esri Terrain acaba en
+z13, Hillshade en z16— y la estimación lo dice. También dice **hasta qué zoom
+del mapa se verá nítida**: MapLibre pide teselas un zoom por encima del zoom
+del mapa, así que un área bajada a z17 se ve con todo su detalle hasta el zoom
+16; más allá, sin señal, se amplía la última tesela y se ve pixelada. Con el
+tope de 5000 teselas caben ~15 × 15 km a z17 o ~7 × 7 km a z18.
+
+**Comprobar y completar.** Cada área tiene **Check**, que cuenta sin red cuántas
+de sus teselas están de verdad en el disco ahora —no lo que dijo la descarga
+hace una semana—, y **Complete**, que baja solo lo que falta: tras una descarga
+cancelada, teselas que fallaron por la señal o algo que el navegador desalojó.
+Cada tesela se reintenta tres veces antes de darse por fallida (un 404 no: es
+que no existe), se lee entera antes de guardarse para no dejar imágenes
+cortadas, y al descargar se pide almacenamiento persistente
+(`navigator.storage.persist()`).
+
+#### Por qué el satélite descargado no se veía sin señal (hasta 0.49)
+
+El service worker decide qué es una tesela mirando la URL: extensión de imagen
+(`.png`, `.jpg`…) o un host con «tile» en el nombre. Las de Esri son
+`server.arcgisonline.com/…/MapServer/tile/{z}/{y}/{x}`: **sin extensión y en un
+host que no dice «tile»**. Ninguna pasaba por el service worker, así que no se
+servían desde las áreas descargadas —que sí estaban guardadas— ni se
+guardaban al mirarlas. Con señal no se notaba nada; sin ella, la imagen
+satelital salía en blanco. Ahora también se reconoce por la forma de la ruta
+(`/tile/z/y/x`, `/z/x/y`), y las áreas de Esri ya bajadas empiezan a verse sin
+volver a descargarlas. `test/shell.test.mjs` lo comprueba.
+
+#### Imagen nítida en pantallas retina
+
+MapLibre elige el zoom de las teselas por píxeles CSS, no físicos: en un iPad o
+un teléfono (devicePixelRatio 2–3) cada tesela de 256 px se estira al doble y la
+imagen se ve pixelada aunque el proveedor tenga más detalle. La imagen
+satelital se declara ahora con `tileSize: 128` en esas pantallas, de modo que
+MapLibre pide un zoom más y cada píxel de la tesela cae en uno de la pantalla
+(`rasterTileSize` en `src/basemaps.js`). Solo para basemaps sin texto: en el
+topográfico o los rótulos, los nombres saldrían a la mitad de tamaño. Cuesta
+unas cuatro veces más teselas por pantalla.
 
 #### Qué proveedores se pueden bajar y cuáles no
 

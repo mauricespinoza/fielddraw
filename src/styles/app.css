@@ -1199,6 +1199,18 @@ input[type='radio'] {
   flex: 1;
 }
 
+/* Cada área descargada: el texto arriba y los botones (Show, Check, Complete,
+   ✕) debajo, que en un teléfono no caben en la misma línea que la descripción. */
+#area-list .export-row {
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+#area-list .export-row > .hint {
+  flex-basis: 100%;
+}
+
 .tol-row {
   display: flex;
   align-items: center;
