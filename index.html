@@ -818,8 +818,10 @@
 
         <p class="hint">
           Downloads what is <strong>currently on screen</strong>, so frame your working area
-          first. What is downloaded stays until you delete it: it survives reloads, app updates
-          and panning elsewhere.
+          first. Elevation and basemap are independent: set either one to <em>None</em> to
+          download only the other — for example the elevation of a wide region, then the
+          satellite image of a smaller zone at full detail. What is downloaded stays until you
+          delete it: it survives reloads, app updates and panning elsewhere.
         </p>
 
         <span class="palette-label">Elevation model</span>
@@ -830,6 +832,7 @@
         <label class="field">
           <span>Detail</span>
           <select id="area-dem-zoom">
+            <option value="">None — basemap only</option>
             <option value="11">~75 m/px — z11</option>
             <option value="12">~38 m/px — z12</option>
             <option value="13" selected>~19 m/px — z13 (the data's own limit)</option>
@@ -851,8 +854,10 @@
           <select id="area-basemap-zoom">
             <option value="14">~10 m/px — z14</option>
             <option value="15">~5 m/px — z15</option>
-            <option value="16" selected>~2.4 m/px — z16</option>
-            <option value="17">~1.2 m/px — z17</option>
+            <option value="16">~2.4 m/px — z16</option>
+            <option value="17" selected>~1.2 m/px — z17</option>
+            <option value="18">~0.6 m/px — z18 (outcrop detail)</option>
+            <option value="19">~0.3 m/px — z19 (best available)</option>
           </select>
         </label>
         <p class="hint footnote" id="area-tos"></p>
@@ -869,6 +874,12 @@
         <hr class="sep" />
 
         <span class="palette-label">Downloaded areas</span>
+        <p class="hint footnote">
+          <strong>Check</strong> counts, without using the network, how many tiles of the area are
+          really stored right now. <strong>Complete</strong> fetches only what is missing — after a
+          cancelled download, tiles that failed on a weak signal, or anything the browser evicted.
+          Do both before leaving for the field.
+        </p>
         <div id="area-list"></div>
       </div>
 

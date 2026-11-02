@@ -55,6 +55,9 @@ export const BASEMAPS = [
     maxzoom: 19,
     // Esri ArcGIS Online: CDN comercial; se permite con tope.
     prefetch: PREFETCH_CAPPED,
+    // Sin texto: se puede pedir a la resolución real de la pantalla. Ver
+    // `rasterTileSize`.
+    hidpi: true,
   },
   {
     id: 'esri-topo',
@@ -118,3 +121,31 @@ export const BASEMAPS = [
 /** Terrain-RGB de dominio público (AWS Open Data) para curvas en el cliente. */
 export const TERRARIUM_URL =
   'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
+/**
+ * El `tileSize` con que se declara un basemap ráster a MapLibre.
+ *
+ * MapLibre elige el zoom de tesela por píxeles CSS, no físicos: en un iPad o
+ * un teléfono (devicePixelRatio 2–3) cada tesela de 256 px se estira al doble
+ * o al triple, y la imagen satelital se ve pixelada aunque el proveedor tenga
+ * más detalle. Declarándola de 128 px, MapLibre pide un zoom más y cada
+ * píxel de la tesela cae en un píxel de la pantalla.
+ *
+ * Solo para basemaps sin texto (`hidpi`): en un mapa con rótulos, los nombres
+ * saldrían a la mitad de tamaño. Cuesta unas cuatro veces más teselas por
+ * pantalla, así que en pantallas normales se queda en 256.
+ */
+export function rasterTileSize(bm, dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1) {
+  return bm.hidpi && dpr >= 1.5 ? 128 : 256;
+}
+
+/**
+ * Zoom del mapa hasta el que un área bajada a `zmax` se ve nítida.
+ *
+ * MapLibre pide teselas de 256 px un zoom por encima del zoom del mapa (y de
+ * 128 px, dos): un área bajada a z17 se ve con todo su detalle hasta el zoom
+ * 16 del mapa (o el 15 con `hidpi`), y más allá se amplía la última tesela.
+ */
+export function sharpUntilZoom(bm, zmax, dpr) {
+  return zmax - (rasterTileSize(bm, dpr) === 128 ? 2 : 1);
+}

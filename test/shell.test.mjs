@@ -81,7 +81,7 @@ function cargarSW({ fetchImpl, host = 'example.org' } = {}) {
     URL, AbortController, setTimeout, clearTimeout, console: { warn() {}, log() {} }, Date,
   };
   vm.createContext(ctx);
-  vm.runInContext(readFileSync(join(ROOT, 'sw.js'), 'utf8') + '\n;globalThis.__sw = { parsearTesela, urlCanonica, PRECACHE };', ctx);
+  vm.runInContext(readFileSync(join(ROOT, 'sw.js'), 'utf8') + '\n;globalThis.__sw = { parsearTesela, urlCanonica, esTesela, PRECACHE };', ctx);
   return { handlers, almacenes, self, sw: ctx.__sw };
 }
 
@@ -117,6 +117,40 @@ console.log('== sw.js: teselas ==');
   ok('el DEM no se amplía', sw.parsearTesela('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/12/1/2.png') === null);
   ok('subdominio canónico', sw.urlCanonica('https://c.basemaps.cartocdn.com/rastertiles/voyager/3/1/2.png') === 'https://a.basemaps.cartocdn.com/rastertiles/voyager/3/1/2.png');
   ok('sin subdominio no cambia', sw.urlCanonica('https://tile.openstreetmap.org/1/0/0.png') === 'https://tile.openstreetmap.org/1/0/0.png');
+}
+
+console.log('== sw.js: las teselas de Esri se reconocen y se sirven sin señal ==');
+{
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/17/80000/38000';
+  const env = cargarSW({ fetchImpl: async () => { throw new Error('sin red'); } });
+  const { sw } = env;
+  // La regresión: sin extensión y en un host sin «tile», la imagen satelital
+  // no pasaba por el service worker y lo descargado no se servía nunca.
+  ok('Esri imagery es tesela', sw.esTesela(new URL(ESRI)));
+  ok('Esri topo es tesela', sw.esTesela(new URL('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/12/1/2')));
+  ok('XYZ con extensión sigue siéndolo', sw.esTesela(new URL('https://a.basemaps.cartocdn.com/rastertiles/voyager/3/1/2.png')));
+  ok('una API no es tesela', !sw.esTesela(new URL('https://strabospot.org/db/datasets')));
+
+  // Sin red, una tesela de Esri guardada en el área se sirve.
+  const tesela = { body: 'jpg', status: 200, ok: true, type: 'cors', clone() { return this; } };
+  let respuesta;
+  const evento = (url) => ({
+    request: { url, method: 'GET', mode: 'cors', headers: new Map() },
+    respondWith: (p) => { respuesta = p; },
+    waitUntil: () => {},
+  });
+  // Primero se abre (y se llena) la caché de áreas a través del propio sandbox.
+  env.handlers.fetch(evento('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/0/0/0'));
+  ok('el SW toma las teselas de Esri (respondWith)', !!respuesta);
+  await respuesta;
+  const almacen = env.almacenes.get('fielddraw-areas');
+  ok('consulta la caché de áreas', !!almacen);
+  respuesta = null;
+  if (almacen) {
+    almacen.m.set(ESRI, tesela);
+    env.handlers.fetch(evento(ESRI));
+  }
+  ok('sin señal, la tesela descargada sale de la caché de áreas', !!respuesta && (await respuesta) === tesela);
 }
 
 console.log(fails ? `\n${fails} FALLOS` : '\ntodo bien');
