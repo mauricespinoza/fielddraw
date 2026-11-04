@@ -1642,6 +1642,7 @@
           <div class="sv-tabs" role="tablist">
             <button class="sv-tab active" id="stereo-tab-plot" role="tab">Plot</button>
             <button class="sv-tab" id="stereo-tab-compass" role="tab">Compass</button>
+            <button class="sv-tab" id="stereo-tab-position" role="tab">Position</button>
           </div>
           <span class="sv-spacer"></span>
           <button class="pill" id="btn-stereo-png" title="Save as a picture">PNG</button>
@@ -1711,9 +1712,14 @@
           <div class="sv-chart-wrap stereo-compass-wrap">
             <svg id="stereo-compass" class="compass-svg" aria-label="Live compass reading"></svg>
             <p class="hint footnote" id="stereo-compass-note"></p>
-            <!-- Posición del GPS junto al rumbo: lo que se anota en la libreta al
-                 llegar a un afloramiento. Lo llena stereogramPanel.js mientras
-                 esta pestaña está abierta. -->
+          </div>
+        </div>
+
+        <!-- Posición del GPS en su propia pestaña: junto a la brújula le quitaba
+             tamaño al disco, que es lo que se lee al sol. Lo llena
+             stereogramPanel.js mientras esta pestaña está abierta. -->
+        <div class="sv-body hidden" id="stereo-panel-position">
+          <div class="sv-chart-wrap stereo-position-wrap">
             <dl class="stereo-position" id="stereo-position" aria-label="GPS position">
               <div><dt>Latitude</dt><dd id="pos-lat">—</dd><button class="pos-copy" type="button" data-copy="pos-lat-raw">Copy</button></div>
               <div><dt>Longitude</dt><dd id="pos-lon">—</dd><button class="pos-copy" type="button" data-copy="pos-lon-raw">Copy</button></div>
@@ -1721,6 +1727,7 @@
               <div><dt>Accuracy</dt><dd id="pos-acc">—</dd><span></span></div>
               <div><dt>Elevation</dt><dd id="pos-alt">—</dd><span></span></div>
             </dl>
+            <p class="hint footnote" id="stereo-position-note">Waiting for a GPS fix…</p>
           </div>
         </div>
       </div>

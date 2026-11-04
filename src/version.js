@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.52.0';
+export const APP_VERSION = '0.52.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.52.1',
+    highlights: [
+      'GPS position (latitude, longitude, UTM) moved to its own Position tab in the Stereogram, so the compass keeps its full size. The coordinates are now dark and larger on a light background: they could not be read before.',
+    ],
+  },
   {
     version: '0.52.0',
     highlights: [

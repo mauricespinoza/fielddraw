@@ -50,6 +50,7 @@ export function initStereogramPanel({ message } = {}) {
 
   $('stereo-tab-plot').addEventListener('click', () => showTab('plot'));
   $('stereo-tab-compass').addEventListener('click', () => showTab('compass'));
+  $('stereo-tab-position').addEventListener('click', () => showTab('position'));
   for (const b of document.querySelectorAll('.pos-copy')) {
     b.addEventListener('click', () => {
       const text = posRaw[b.dataset.copy];
@@ -115,6 +116,7 @@ export function closeStereogram() {
   panelOpen = false;
   $('stereo-view').classList.add('hidden');
   stopCompass();
+  stopPosition();
   clearHighlight();
 }
 
@@ -129,8 +131,12 @@ function showTab(tab) {
   $('stereo-tab-compass').classList.toggle('active', tab === 'compass');
   $('stereo-panel-plot').classList.toggle('hidden', tab !== 'plot');
   $('stereo-panel-compass').classList.toggle('hidden', tab !== 'compass');
+  $('stereo-tab-position').classList.toggle('active', tab === 'position');
+  $('stereo-panel-position').classList.toggle('hidden', tab !== 'position');
   if (tab === 'compass') startCompass();
   else stopCompass();
+  if (tab === 'position') startPosition();
+  else stopPosition();
   if (tab === 'plot') renderPlot();
 }
 
@@ -383,15 +389,26 @@ function showPosition(coords) {
 
 function startPosition() {
   if (gpsWatchId !== null) return;
-  if (!('geolocation' in navigator)) return;
-  if (!window.isSecureContext) {
-    $('pos-utm').textContent = 'needs HTTPS';
+  const note = $('stereo-position-note');
+  if (!('geolocation' in navigator)) {
+    note.textContent = 'This device or browser has no geolocation available.';
     return;
   }
+  if (!window.isSecureContext) {
+    note.textContent = 'Location needs HTTPS. It works on the published site, not over a local IP address.';
+    return;
+  }
+  note.textContent = 'Waiting for a GPS fix…';
   gpsWatchId = navigator.geolocation.watchPosition(
-    (pos) => showPosition(pos.coords),
+    (pos) => {
+      showPosition(pos.coords);
+      note.textContent = 'Live GPS position. Hold still for a steadier reading.';
+    },
     (err) => {
-      $('pos-utm').textContent = err && err.code === 1 ? 'location denied' : 'no GPS fix';
+      note.textContent =
+        err && err.code === 1
+          ? 'Location permission denied. Allow it in the browser settings to read your position.'
+          : 'Could not get a GPS fix. WiFi-only iPads have no GPS receiver.';
     },
     { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 },
   );
@@ -406,7 +423,6 @@ function stopPosition() {
 }
 
 function startCompass() {
-  startPosition();
   if (stopCompassCapture) return;
   if (!compassWidget) compassWidget = buildCompass($('stereo-compass'));
 
@@ -441,7 +457,6 @@ function startCompass() {
 }
 
 function stopCompass() {
-  stopPosition();
   if (stopCompassCapture) {
     stopCompassCapture();
     stopCompassCapture = null;
