@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Brújula UTM</title>
+<style>
+html{-webkit-text-size-adjust:100%}
+/* Layout: instrumento de campo de una columna; dial de brújula arriba, lecturas de coordenadas debajo en filas label/valor. */
+:root{
+  --bg:#eef0ea; --panel:#e2e6dc; --fg:#1d241c; --muted:#5d6a5b; --line:#c3cabb;
+  --accent:#c8501e; --ok:#2f7d4a; --warn:#a8741a;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12160f;--panel:#1c2219;--fg:#e5ead9;--muted:#8d9a88;--line:#2f382b;--accent:#ff7a3d;--ok:#6fcf8e;--warn:#e0b04a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12160f;--panel:#1c2219;--fg:#e5ead9;--muted:#8d9a88;--line:#2f382b;--accent:#ff7a3d;--ok:#6fcf8e;--warn:#e0b04a;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);margin:0;
+  padding-block:20px 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--display);font-weight:600;font-size:1.6rem;letter-spacing:.08em;text-transform:uppercase;margin:0;text-wrap:balance}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.status{font-family:var(--mono);font-size:.72rem;color:var(--muted);text-align:right}
+.status b{color:var(--warn);font-weight:500}.status b.ok{color:var(--ok)}
+.dial{position:relative;width:min(100%,320px);aspect-ratio:1;margin:0 auto}
+.dial svg{width:100%;height:100%;display:block}
+.ring{transform-origin:160px 160px;transition:transform .12s linear}
+.dial text{font-family:var(--display);font-weight:600;fill:var(--fg)}
+.readout{text-align:center;display:flex;flex-direction:column;gap:2px}
+.az{font-family:var(--display);font-weight:600;font-size:4rem;line-height:1;font-variant-numeric:tabular-nums}
+.az small{font-size:1.6rem;color:var(--accent)}
+.sub{font-family:var(--mono);font-size:.85rem;color:var(--muted);display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.sub span b{color:var(--fg);font-weight:500}
+.rows{background:var(--panel);border:1px solid var(--line);border-radius:6px;display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:7.5rem 1fr auto;gap:10px;align-items:baseline;padding:12px 14px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row dt{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.row dd{margin:0;font-family:var(--mono);font-size:1.02rem;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}
+button{font:inherit;cursor:pointer;border-radius:4px}
+.copy{background:none;border:1px solid var(--line);color:var(--muted);font-size:.7rem;padding:3px 8px;font-family:var(--mono)}
+.copy:hover{color:var(--fg);border-color:var(--muted)}
+.go{background:var(--accent);color:#fff;border:0;padding:14px;font-family:var(--display);font-weight:600;font-size:1.15rem;letter-spacing:.1em;text-transform:uppercase;width:100%}
+.go:disabled{opacity:.6;cursor:default}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.manual{border:1px dashed var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.manual p{margin:0;font-size:.82rem;color:var(--muted);line-height:1.45}
+.manual .f{display:flex;gap:8px;flex-wrap:wrap}
+.manual label{display:flex;flex-direction:column;gap:3px;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);flex:1 1 130px;min-width:0}
+input{font-family:var(--mono);font-size:1rem;padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);width:100%;min-width:0}
+.note{font-size:.78rem;color:var(--muted);line-height:1.5;margin:0}
+@media (prefers-reduced-motion:reduce){.ring{transition:none}}
+</style>
+
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1>Brújula UTM</h1>
+    <div class="status" id="status" aria-live="polite">Sensores apagados</div>
+  </div>
+
+  <div class="dial" aria-hidden="true">
+    <svg viewBox="0 0 320 320">
+      <g class="ring" id="ring">
+        <circle cx="160" cy="160" r="150" fill="var(--panel)" stroke="var(--line)" stroke-width="2"/>
+        <g id="ticks" stroke="var(--muted)"></g>
+        <text x="160" y="58" text-anchor="middle" font-size="30" style="fill:var(--accent)">N</text>
+        <text x="270" y="171" text-anchor="middle" font-size="24">E</text>
+        <text x="160" y="283" text-anchor="middle" font-size="24">S</text>
+        <text x="50" y="171" text-anchor="middle" font-size="24">O</text>
+      </g>
+      <polygon points="160,6 150,30 170,30" fill="var(--accent)"/>
+      <line x1="160" y1="110" x2="160" y2="210" stroke="var(--fg)" stroke-width="2" opacity=".25"/>
+      <circle cx="160" cy="160" r="4" fill="var(--fg)"/>
+    </svg>
+  </div>
+
+  <div class="readout">
+    <div class="az"><span id="az">---</span><small>°</small></div>
+    <div class="sub"><span>Cuadrante <b id="quad">--</b></span><span>Dir. buzamiento <b id="dip">---</b></span></div>
+  </div>
+
+  <button class="go" id="go" type="button">Activar GPS y brújula</button>
+
+  <dl class="rows">
+    <div class="row"><dt>Latitud</dt><dd id="lat">--</dd><button class="copy" data-c="lat" type="button">copiar</button></div>
+    <div class="row"><dt>Longitud</dt><dd id="lon">--</dd><button class="copy" data-c="lon" type="button">copiar</button></div>
+    <div class="row"><dt>UTM</dt><dd id="utm">--</dd><button class="copy" data-c="utm" type="button">copiar</button></div>
+    <div class="row"><dt>Huso / datum</dt><dd id="zone">-- · WGS84</dd><span></span></div>
+    <div class="row"><dt>Precisión</dt><dd id="acc">--</dd><span></span></div>
+    <div class="row"><dt>Altitud</dt><dd id="alt">--</dd><span></span></div>
+  </dl>
+
+  <section class="manual">
+    <p id="manualMsg">Si el GPS no responde, escribe latitud y longitud en grados decimales (S y O con signo negativo) y se convierten a UTM.</p>
+    <div class="f">
+      <label>Latitud<input id="mlat" inputmode="decimal" placeholder="-36.8270"></label>
+      <label>Longitud<input id="mlon" inputmode="decimal" placeholder="-73.0503"></label>
+    </div>
+  </section>
+
+  <p class="note">El rumbo es magnético, medido con el sensor del teléfono (eje superior del equipo si está horizontal, eje trasero si lo sostienes vertical). No incluye declinación magnética. Calibra el teléfono moviéndolo en ocho y aléjalo de metales e imanes.</p>
+</main>
+
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var vals={lat:"",lon:"",utm:""};
+
+  // ticks
+  var g=$("ticks"),s="";
+  for(var i=0;i<72;i++){
+    var a=i*5*Math.PI/180,major=i%9===0,len=major?16:(i%2===0?9:5);
+    var x1=160+Math.sin(a)*146,y1=160-Math.cos(a)*146,x2=160+Math.sin(a)*(146-len),y2=160-Math.cos(a)*(146-len);
+    s+='<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke-width="'+(major?2:1)+'"/>';
+  }
+  g.innerHTML=s;
+
+  // ---------- UTM (WGS84) ----------
+  function toUTM(lat,lon){
+    var a=6378137,f=1/298.257223563,k0=0.9996,e2=f*(2-f),ep2=e2/(1-e2);
+    var zone=Math.floor((lon+180)/6)+1;
+    if(lat>=56&&lat<64&&lon>=3&&lon<12)zone=32;
+    if(lat>=72&&lat<84){if(lon>=0&&lon<9)zone=31;else if(lon>=9&&lon<21)zone=33;else if(lon>=21&&lon<33)zone=35;else if(lon>=33&&lon<42)zone=37;}
+    var lon0=((zone-1)*6-180+3)*Math.PI/180,p=lat*Math.PI/180,l=lon*Math.PI/180;
+    var sp=Math.sin(p),cp=Math.cos(p),tp=Math.tan(p);
+    var N=a/Math.sqrt(1-e2*sp*sp),T=tp*tp,C=ep2*cp*cp,A=(l-lon0)*cp;
+    var e4=e2*e2,e6=e4*e2;
+    var M=a*((1-e2/4-3*e4/64-5*e6/256)*p-(3*e2/8+3*e4/32+45*e6/1024)*Math.sin(2*p)+(15*e4/256+45*e6/1024)*Math.sin(4*p)-(35*e6/3072)*Math.sin(6*p));
+    var x=k0*N*(A+(1-T+C)*Math.pow(A,3)/6+(5-18*T+T*T+72*C-58*ep2)*Math.pow(A,5)/120)+500000;
+    var y=k0*(M+N*tp*(A*A/2+(5-T+9*C+4*C*C)*Math.pow(A,4)/24+(61-58*T+T*T+600*C-330*ep2)*Math.pow(A,6)/720));
+    var south=lat<0; if(south)y+=10000000;
+    var band="CDEFGHJKLMNPQRSTUVWXX".charAt(Math.max(0,Math.min(20,Math.floor((lat+80)/8))));
+    return {zone:zone,band:band,south:south,e:x,n:y};
+  }
+
+  function fmtCoord(v,pos,neg){return Math.abs(v).toFixed(6)+"° "+(v>=0?pos:neg)}
+  function showPosition(lat,lon){
+    if(!isFinite(lat)||!isFinite(lon)||Math.abs(lat)>84||Math.abs(lon)>180){return}
+    var u=toUTM(lat,lon);
+    var e=Math.round(u.e),n=Math.round(u.n);
+    $("lat").textContent=fmtCoord(lat,"N","S");
+    $("lon").textContent=fmtCoord(lon,"E","O");
+    var t=e+" mE  "+n+" mN";
+    $("utm").textContent=t;
+    $("zone").textContent=u.zone+u.band+" · "+(u.south?"Sur":"Norte")+" · WGS84";
+    vals.lat=lat.toFixed(6);vals.lon=lon.toFixed(6);
+    vals.utm=u.zone+u.band+" "+e+" "+n;
+  }
+
+  // ---------- GPS ----------
+  var watching=false;
+  function startGPS(){
+    if(!navigator.geolocation){gpsFail("Este navegador no ofrece geolocalización.");return}
+    if(watching)return; watching=true;
+    navigator.geolocation.watchPosition(function(p){
+      var c=p.coords;
+      showPosition(c.latitude,c.longitude);
+      $("acc").textContent="± "+Math.round(c.accuracy)+" m";
+      $("alt").textContent=c.altitude!=null?Math.round(c.altitude)+" m s.n.m.":"--";
+      setStatus("gps",true);
+    },function(err){
+      watching=false;
+      gpsFail(err.code===1?"Permiso de ubicación denegado o bloqueado en esta vista.":"No se pudo obtener la posición.");
+    },{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+  }
+  function gpsFail(m){setStatus("gps",false);$("manualMsg").textContent=m+" Escribe latitud y longitud en grados decimales (S y O con signo negativo) para convertir a UTM."}
+
+  // ---------- Brújula ----------
+  var heading=null,last=0,gotEvent=false;
+  var QUAD=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"];
+  function quadrant(h){
+    var ns=(h<=90||h>=270)?"N":"S",ew=h<180?"E":"O",ang;
+    if(h<=90)ang=h;else if(h<=180)ang=180-h;else if(h<=270)ang=h-180;else ang=360-h;
+    return ns+" "+Math.round(ang)+"° "+ew;
+  }
+  function setHeading(h){
+    h=((h%360)+360)%360;
+    if(heading===null)heading=h;
+    else{var d=((h-heading+540)%360)-180;heading=((heading+d*0.35)%360+360)%360}
+    var now=Date.now();if(now-last<60)return;last=now;
+    var r=Math.round(heading)%360;
+    $("az").textContent=String(r).padStart(3,"0");
+    $("quad").textContent=quadrant(heading);
+    $("dip").textContent=String((r+90)%360).padStart(3,"0")+"°";
+    $("ring").style.transform="rotate("+(-heading).toFixed(1)+"deg)";
+    $("ring").setAttribute("aria-label","Rumbo "+r+" grados "+QUAD[Math.round(heading/22.5)%16]);
+    if(!gotEvent){gotEvent=true;setStatus("compass",true)}
+  }
+  function onOrient(e){
+    if(typeof e.webkitCompassHeading==="number"&&!isNaN(e.webkitCompassHeading)){setHeading(e.webkitCompassHeading);return}
+    if(e.alpha==null)return;
+    if(e.type==="deviceorientation"&&e.absolute!==true&&!absSeen)return; // evita alpha relativo
+    var al=e.alpha*Math.PI/180,be=(e.beta||0)*Math.PI/180,ga=(e.gamma||0)*Math.PI/180;
+    var h;
+    if(e.beta>45&&e.beta<135){
+      var vx=-Math.cos(al)*Math.sin(ga)-Math.sin(al)*Math.sin(be)*Math.cos(ga);
+      var vy=-Math.sin(al)*Math.sin(ga)+Math.cos(al)*Math.sin(be)*Math.cos(ga);
+      h=Math.atan2(vx,vy)*180/Math.PI;
+    }else h=360-e.alpha;
+    setHeading(h);
+  }
+  var absSeen=false;
+  function onAbs(e){absSeen=true;onOrient(e)}
+  var compassOn=false;
+  function startCompass(){
+    if(compassOn)return;
+    var DOE=window.DeviceOrientationEvent;
+    if(!DOE){setStatus("compass",false);return}
+    function attach(){
+      compassOn=true;
+      window.addEventListener("deviceorientationabsolute",onAbs,true);
+      window.addEventListener("deviceorientation",onOrient,true);
+      setTimeout(function(){if(!gotEvent)setStatus("compass",false)},2500);
+    }
+    if(typeof DOE.requestPermission==="function"){
+      DOE.requestPermission().then(function(r){if(r==="granted")attach();else setStatus("compass",false)}).catch(function(){setStatus("compass",false)});
+    }else attach();
+  }
+
+  // ---------- estado ----------
+  var st={gps:null,compass:null};
+  function setStatus(k,v){
+    st[k]=v;
+    var g=st.gps===null?"GPS …":(st.gps?'<b class="ok">GPS ok</b>':"<b>GPS sin señal</b>");
+    var c=st.compass===null?"brújula …":(st.compass?'<b class="ok">brújula ok</b>':"<b>brújula sin datos</b>");
+    $("status").innerHTML=g+"<br>"+c;
+  }
+
+  $("go").addEventListener("click",function(){
+    $("go").disabled=true;$("go").textContent="Sensores activos";
+    setStatus("gps",null);setStatus("compass",null);
+    startCompass();startGPS();
+  });
+
+  function manual(){
+    var la=parseFloat($("mlat").value.replace(",",".")),lo=parseFloat($("mlon").value.replace(",","."));
+    if(isFinite(la)&&isFinite(lo)&&Math.abs(la)<=84&&Math.abs(lo)<=180){showPosition(la,lo);$("acc").textContent="manual";$("alt").textContent="--"}
+  }
+  $("mlat").addEventListener("input",manual);$("mlon").addEventListener("input",manual);
+
+  document.querySelectorAll(".copy").forEach(function(b){
+    b.addEventListener("click",function(){
+      var key=b.getAttribute("data-c"),txt=key==="utm"?vals.utm:vals[key];
+      if(!txt)return;
+      function done(){var o=b.textContent;b.textContent="listo";setTimeout(function(){b.textContent=o},1000)}
+      try{navigator.clipboard.writeText(txt).then(done,function(){})}catch(e){}
+    });
+  });
+})();
+</script>
+</body>
+</html>
