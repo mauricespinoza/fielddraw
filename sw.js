@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v67';
+const VERSION = 'v68';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
