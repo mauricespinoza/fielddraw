@@ -17,13 +17,14 @@ const DB_NAME = 'fielddraw';
 
 /**
  * Sube con cada almacén nuevo. v1 traía solo los archivos importados; v2
- * añade el manifiesto de áreas descargadas; v3, la copia del dibujo.
+ * añade el manifiesto de áreas descargadas; v3, la copia del dibujo; v4, las capas importadas (GeoPackage).
  */
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORE_FILES = 'imported-files';
 export const STORE_AREAS = 'offline-areas';
 export const STORE_DRAWING = 'drawing';
+export const STORE_LAYERS = 'imported-layers';
 
 let dbPromise = null;
 
@@ -47,6 +48,9 @@ function openDb() {
         }
         if (!db.objectStoreNames.contains(STORE_DRAWING)) {
           db.createObjectStore(STORE_DRAWING, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_LAYERS)) {
+          db.createObjectStore(STORE_LAYERS, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);

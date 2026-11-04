@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.50.0';
+export const APP_VERSION = '0.51.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.51.0',
+    highlights: [
+      'Imported GeoPackage layers now stay on the device: they are still there when you reopen the app, with no signal and without picking the file again. Their eye and opacity are remembered too.',
+      'Every restored layer keeps its ✎ button, so it can be moved into the drawing and edited with all the tools (vertices, split, merge, reshape, holes). Once edited, it is saved with the rest of the drawing.',
+    ],
+  },
   {
     version: '0.50.0',
     highlights: [

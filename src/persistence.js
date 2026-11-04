@@ -1,4 +1,4 @@
-import { STORE_DRAWING, get, put } from './idb.js';
+import { STORE_DRAWING, STORE_LAYERS, del, get, getAll, put } from './idb.js';
 
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
@@ -358,5 +358,45 @@ export function loadSavedSections() {
     return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Capas importadas (GeoPackage) que sobreviven a cerrar la app.
+ *
+ * Antes vivían solo en memoria: al reabrir sin señal para volver a elegir el
+ * archivo, el trabajo de referencia había desaparecido. Se guardan en
+ * IndexedDB —no en localStorage, que tiene ~5 MB— una fila por capa, ya
+ * convertidas a GeoJSON con su estilo, así que reabrirlas no necesita red ni
+ * el lector de SQLite. Guardar es idempotente: se reescribe lo que cambió de
+ * conjunto (altas y bajas), nunca se acumula basura.
+ *
+ * `order` conserva el orden de importación. Devuelve `true` si quedó al día.
+ */
+export async function saveImportedLayers(layers) {
+  try {
+    const guardadas = await getAll(STORE_LAYERS);
+    const ids = new Set(layers.map((l) => l.id));
+    for (const rec of guardadas) {
+      if (!ids.has(rec.id)) await del(STORE_LAYERS, rec.id);
+    }
+    let order = 0;
+    for (const l of layers) await put(STORE_LAYERS, { ...l, order: order++, savedAt: Date.now() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Las capas guardadas, en el orden en que se importaron. Nunca falla. */
+export async function loadSavedImportedLayers() {
+  try {
+    const all = await getAll(STORE_LAYERS);
+    return all
+      .filter((r) => r && r.id && r.geojson && Array.isArray(r.geojson.features))
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map(({ order, savedAt, ...capa }) => capa);
+  } catch {
+    return [];
   }
 }
