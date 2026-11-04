@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff shell view; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation profile mapFrame zip geotiff utm shell view; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
