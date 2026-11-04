@@ -33,6 +33,8 @@ import {
   loadSavedUnits,
   saveControlPointStyle,
   saveFeatures,
+  saveImportedLayers,
+  loadSavedImportedLayers,
   saveImportStyle,
   saveOrnaments,
   saveStraboDatasets,
@@ -137,6 +139,31 @@ if (savedStraboDatasets) store.loadStraboDatasets(savedStraboDatasets);
  */
 restoreImportedFiles();
 
+/*
+ * Las capas de GeoPackage importadas. Ya están convertidas, así que reabrirlas
+ * no necesita red. Se restauran ANTES de empezar a guardar: si el autosave
+ * arrancara con la lista vacía, borraría lo guardado antes de leerlo.
+ */
+let importedRestored = false;
+loadSavedImportedLayers().then((capas) => {
+  if (capas.length) {
+    store.restoreImportedLayers(capas);
+    const guardado = loadSavedLayerState();
+    if (guardado) store.applyLayerState(guardado);
+  }
+  importedRestored = true;
+  guardarCapasImportadas();
+});
+let importedTimer = null;
+function guardarCapasImportadas() {
+  clearTimeout(importedTimer);
+  importedTimer = null;
+  if (!importedRestored) return;
+  saveImportedLayers(store.getState().imported).then((ok) => {
+    if (!ok) showBanner('Imported layers could not be saved on this device; they will be gone when the app closes.', 'warn');
+  });
+}
+
 // Autosave con debounce: dibujar genera muchos cambios seguidos.
 let saveTimer = null;
 let straboSaveTimer = null;
@@ -147,7 +174,12 @@ store.subscribe(() => {
   if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
-  if (store.changed('layers')) saveLayerState(store.currentLayerState());
+  // No antes de restaurar las importadas: se pisaría el estado guardado de sus filas.
+  if (store.changed('layers') && importedRestored) saveLayerState(store.currentLayerState());
+  if (store.changed('imported') && importedRestored) {
+    clearTimeout(importedTimer);
+    importedTimer = setTimeout(guardarCapasImportadas, 300);
+  }
   if (store.changed('straboDatasets') || store.changed('layers')) {
     clearTimeout(straboSaveTimer);
     straboSaveTimer = setTimeout(() => saveStraboDatasets(store.currentStraboDatasets()), 500);
@@ -173,7 +205,10 @@ function flushFeatures() {
 
 // Al pasar a segundo plano o cerrar: en iOS no hay `beforeunload` y lo de los
 // últimos 500 ms se perdía. `pagehide` y `visibilitychange` sí llegan.
-addEventListener('pagehide', flushFeatures);
+addEventListener('pagehide', () => {
+  flushFeatures();
+  if (importedTimer !== null) guardarCapasImportadas();
+});
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushFeatures();
 });

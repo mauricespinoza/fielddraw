@@ -2335,9 +2335,9 @@ export function currentSettings() {
   return out;
 }
 
-/** Visibilidad y opacidad de las capas propias, sin lo importado en la sesión. */
+/** Visibilidad y opacidad de las capas propias y de las importadas (GeoPackage). */
 export function currentLayerState() {
-  const propias = new Set([...DRAWING_KINDS, 'contours', 'hillshade', 'basemap']);
+  const propias = new Set([...DRAWING_KINDS, 'contours', 'hillshade', 'basemap', 'imported']);
   return state.layers
     .filter((l) => propias.has(l.kind))
     .map((l) => ({ id: l.id, visible: l.visible, opacity: l.opacity }));
@@ -3066,6 +3066,26 @@ export function adoptImported(id) {
     selection: [],
   });
   return r;
+}
+
+/**
+ * Vuelve a poner capas importadas guardadas en una sesión anterior, con su id
+ * original (la visibilidad y opacidad guardadas se aplican con
+ * `applyLayerState`). No toca el historial: es restaurar, no editar.
+ */
+export function restoreImportedLayers(list) {
+  const nuevas = list.filter((l) => !state.imported.some((x) => x.id === l.id));
+  if (!nuevas.length) return;
+  const entries = nuevas.map((l) => ({
+    id: l.id,
+    kind: 'imported',
+    label: l.label,
+    visible: true,
+    opacity: 1,
+  }));
+  const layers = state.layers.slice();
+  layers.splice(belowDrawing(layers), 0, ...entries);
+  set({ imported: [...state.imported, ...nuevas], layers });
 }
 
 export function removeImported(id) {
