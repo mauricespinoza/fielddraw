@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v66';
+const VERSION = 'v67';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -131,6 +131,7 @@ const SHELL = [
   './src/tiles.js',
   './src/topology.js',
   './src/ui.js',
+  './src/utm.js',
   './src/vendorPaths.js',
   './src/version.js',
   './src/vertexEdit.js',

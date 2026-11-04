@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.51.0';
+export const APP_VERSION = '0.52.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.52.0',
+    highlights: [
+      'The Compass tab of the Stereogram now shows your GPS position under the compass: latitude, longitude and UTM (WGS84, zone and band, easting and northing), with the accuracy and elevation of the fix. Each coordinate has a Copy button. The heading is the same live reading as before. The position uses the phone GPS and needs HTTPS, like the rest of the location features.',
+    ],
+  },
   {
     version: '0.51.0',
     highlights: [

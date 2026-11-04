@@ -19,6 +19,7 @@ import {
 } from './deviceOrientation.js';
 import { downloadBlob } from './persistence.js';
 import { averageMeasurements } from './average.js';
+import { formatLat, formatLon, formatUTM, toUTM } from './utm.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -49,6 +50,16 @@ export function initStereogramPanel({ message } = {}) {
 
   $('stereo-tab-plot').addEventListener('click', () => showTab('plot'));
   $('stereo-tab-compass').addEventListener('click', () => showTab('compass'));
+  for (const b of document.querySelectorAll('.pos-copy')) {
+    b.addEventListener('click', () => {
+      const text = posRaw[b.dataset.copy];
+      if (!text) return;
+      navigator.clipboard?.writeText(text).then(
+        () => onMessage(`Copied ${text}`, 'info'),
+        () => onMessage('Could not copy — select the value and copy it by hand.', 'warn'),
+      );
+    });
+  }
 
   $('btn-stereo-svg').addEventListener('click', exportSVG);
   $('btn-stereo-png').addEventListener('click', exportPNG);
@@ -347,8 +358,55 @@ function wireLasso() {
 
 let stopCompassCapture = null;
 let compassWidget = null;
+/** Id de `watchPosition` mientras la pestaña está abierta. */
+let gpsWatchId = null;
+/** Texto plano de cada campo de posición, para el botón Copy. */
+const posRaw = { 'pos-lat-raw': '', 'pos-lon-raw': '', 'pos-utm-raw': '' };
+
+function clearPosition() {
+  for (const id of ['pos-lat', 'pos-lon', 'pos-utm', 'pos-acc', 'pos-alt']) $(id).textContent = '—';
+  for (const k of Object.keys(posRaw)) posRaw[k] = '';
+}
+
+function showPosition(coords) {
+  const { latitude: lat, longitude: lon, accuracy, altitude } = coords;
+  const u = toUTM(lat, lon);
+  $('pos-lat').textContent = formatLat(lat);
+  $('pos-lon').textContent = formatLon(lon);
+  $('pos-utm').textContent = u ? formatUTM(u) : 'outside UTM range';
+  $('pos-acc').textContent = Number.isFinite(accuracy) ? `± ${Math.round(accuracy)} m` : '—';
+  $('pos-alt').textContent = Number.isFinite(altitude) ? `${Math.round(altitude)} m a.s.l.` : '—';
+  posRaw['pos-lat-raw'] = lat.toFixed(6);
+  posRaw['pos-lon-raw'] = lon.toFixed(6);
+  posRaw['pos-utm-raw'] = u ? formatUTM(u) : '';
+}
+
+function startPosition() {
+  if (gpsWatchId !== null) return;
+  if (!('geolocation' in navigator)) return;
+  if (!window.isSecureContext) {
+    $('pos-utm').textContent = 'needs HTTPS';
+    return;
+  }
+  gpsWatchId = navigator.geolocation.watchPosition(
+    (pos) => showPosition(pos.coords),
+    (err) => {
+      $('pos-utm').textContent = err && err.code === 1 ? 'location denied' : 'no GPS fix';
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 },
+  );
+}
+
+function stopPosition() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  clearPosition();
+}
 
 function startCompass() {
+  startPosition();
   if (stopCompassCapture) return;
   if (!compassWidget) compassWidget = buildCompass($('stereo-compass'));
 
@@ -383,6 +441,7 @@ function startCompass() {
 }
 
 function stopCompass() {
+  stopPosition();
   if (stopCompassCapture) {
     stopCompassCapture();
     stopCompassCapture = null;
