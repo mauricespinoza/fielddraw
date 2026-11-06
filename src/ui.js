@@ -870,18 +870,44 @@ function buildPalette() {
     scroll.appendChild(where);
 
     const punto = paletteGroup(scroll, 'Point');
-    punto.appendChild(
-      textField(
-        'Name',
-        s.controlPointName,
-        {
-          placeholder: 'e.g. DCR02',
-          title:
-            'The station or outcrop — not the sample. Goes to StraboSpot as the spot’s own name, which is what it needs when there is no sample to name it by. Cleared after each point',
-        },
-        (v) => store.setControlPointField({ name: v }),
-      ),
+    /*
+     * Prefijo + Name: con prefijo, el Name llega escrito con el siguiente
+     * correlativo (DCR01, DCR02…). Cambiar el prefijo reescribe el Name solo
+     * si sigue siendo el código automático o está vacío: lo escrito a mano no
+     * se pisa.
+     */
+    let autoCode = s.controlPointName && s.controlPointName === store.nextControlPointName()
+      ? s.controlPointName
+      : '';
+    const prefijo = textField(
+      'Code prefix',
+      s.controlPointPrefix,
+      {
+        placeholder: 'e.g. DCR',
+        title:
+          'Prefix for consecutive point codes: with “DCR”, each new point is named DCR01, DCR02… (the next number after the highest already on the map). Kept between points and sessions; leave empty to name points by hand',
+      },
+      (v) => {
+        store.setControlPointField({ prefix: v });
+        const input = nombre.querySelector('input');
+        const actual = input.value.trim();
+        if (actual && actual !== autoCode) return;
+        autoCode = store.nextControlPointName();
+        input.value = autoCode;
+        store.setControlPointField({ name: autoCode });
+      },
     );
+    const nombre = textField(
+      'Name',
+      s.controlPointName,
+      {
+        placeholder: s.controlPointPrefix ? store.nextControlPointName() : 'e.g. DCR02',
+        title:
+          'The station or outcrop — not the sample. Goes to StraboSpot as the spot’s own name, which is what it needs when there is no sample to name it by. Filled with the next consecutive code when a prefix is set; cleared after each point',
+      },
+      (v) => store.setControlPointField({ name: v }),
+    );
+    punto.append(prefijo, nombre);
 
     const muestra = paletteGroup(scroll, 'Sample');
     muestra.appendChild(

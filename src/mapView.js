@@ -1121,8 +1121,14 @@ export function createMapView({
      * que habría que hacer es buscarlo. Sin animación: es la vista de
      * partida, no un salto.
      */
-    const restaurado = store.getState().features;
-    if (restaurado.length) fitToGeoJSON({ features: restaurado }, 60, 0);
+    /*
+     * Las capas de GeoPackage restauradas de la sesión anterior pueden haber
+     * llegado antes que el estilo, y `syncImported` no hace nada hasta `ready`:
+     * sin esta llamada quedarían en el store y en el panel de capas sin nada
+     * pintado. El encuadre incluye sus elementos (ver `fitRestored`).
+     */
+    syncImported();
+    fitRestored();
     syncUnitLabels();
     syncStrabo({ fit: false });
     syncDraft();
@@ -1861,6 +1867,7 @@ export function createMapView({
     }
 
     let added = null;
+    let restoredNow = false;
     for (const l of list) {
       if (importedLayerIds.has(l.id)) continue;
       /*
@@ -1885,11 +1892,27 @@ export function createMapView({
         l.id,
         layers.map((s) => s.id),
       );
-      if (!added) added = l;
+      if (store.isRestoredImported(l.id)) restoredNow = true;
+      else if (!added) added = l;
     }
 
     applyLayerStack(map, store.getState().layers);
     if (added) fitToGeoJSON(added.geojson);
+    else if (restoredNow) fitRestored();
+  }
+
+  /**
+   * Encuadre de arranque: el dibujo restaurado MÁS las capas de GeoPackage
+   * restauradas. La cámara no se guarda entre sesiones y arranca en un centro
+   * fijo; encuadrando solo el dibujo, un GeoPackage de puntos sin dibujo propio
+   * —o en otra zona— quedaba fuera de pantalla al reabrir, y los puntos
+   * parecían haberse perdido aunque estaban cargados. Sin animación: es la
+   * vista de partida, no un salto.
+   */
+  function fitRestored() {
+    const st = store.getState();
+    const features = [...st.features, ...st.imported.flatMap((l) => l.geojson.features)];
+    if (features.length) fitToGeoJSON({ features }, 60, 0);
   }
 
   /**

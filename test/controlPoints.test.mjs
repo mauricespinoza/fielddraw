@@ -355,5 +355,32 @@ console.log('== icono y colocación en dos pasos ==');
      St.getState().pendingControlPoint === null && St.getState().features.length === 1);
 }
 
+{
+  console.log('código correlativo con prefijo');
+  ok('sin prefijo no hay código', CP.nextControlPointCode([], '') === '');
+  ok('el primero es 01', CP.nextControlPointCode([], 'DCR') === 'DCR01');
+  const fs = [punto({ name: 'DCR01' }), punto({ name: 'dcr07' }), punto({ name: 'DCR03b' }), punto({ name: 'XX99' })];
+  ok('sigue al mayor, sin distinguir mayúsculas', CP.nextControlPointCode(fs, 'DCR') === 'DCR08');
+  ok('respeta el ancho ya usado', CP.nextControlPointCode([punto({ name: 'P-0042' })], 'P-') === 'P-0043');
+  ok('un prefijo con símbolos no rompe la búsqueda', CP.nextControlPointCode([punto({ name: 'A.1' })], 'A.') === 'A.02');
+
+  St.loadFeatures([]);
+  St.setControlPointField({ prefix: 'DCR', name: '' });
+  St.setTool('control-point');
+  St.addVertex([-70.5, -33.7]);
+  ok('al tocar, el Name llega con el código', St.getState().controlPointName === 'DCR01');
+  St.createControlPoint({ lngLat: St.getState().pendingControlPoint.lngLat });
+  St.setTool('control-point');
+  St.setPendingControlPoint({ lngLat: [-70.6, -33.8], via: 'gps' });
+  ok('el siguiente punto toma el correlativo', St.getState().controlPointName === 'DCR02');
+  St.setControlPointField({ name: 'ESPECIAL' });
+  St.createControlPoint({ lngLat: [-70.6, -33.8] });
+  ok('un nombre escrito a mano se respeta', St.getState().features.at(-1).properties.name === 'ESPECIAL');
+  St.createControlPoint({ lngLat: [-70.61, -33.81] });
+  ok('con el Name vacío, guardar usa el correlativo', St.getState().features.at(-1).properties.name === 'DCR02');
+  ok('el prefijo se queda puesto', St.getState().controlPointPrefix === 'DCR');
+  St.setControlPointField({ prefix: '' });
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);
