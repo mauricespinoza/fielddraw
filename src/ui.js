@@ -456,6 +456,17 @@ function unitChips(container, units, activeId, onPick, { allowNone = true } = {}
  * es tocar rápido, no ver el color de un vistazo — ese color ya se ve en el
  * chip de la medida una vez puesta.
  */
+/**
+ * Crea una unidad desde la paleta (opción «New unit…» del desplegable) sin ir
+ * a la pestaña de unidades. Pide nombre y código; devuelve la unidad o `null`.
+ */
+function nuevaUnidad() {
+  const name = (window.prompt('New unit name') || '').trim();
+  if (!name) return null;
+  const code = (window.prompt('Unit code (upper/lower case allowed)', '') || '').trim();
+  return store.addUnit({ name, code });
+}
+
 function unitSelect(container, units, activeId, onPick, onAdd) {
   const select = document.createElement('select');
   select.className = 'palette-select';
@@ -472,7 +483,7 @@ function unitSelect(container, units, activeId, onPick, onAdd) {
   if (onAdd) {
     const add = document.createElement('option');
     add.value = '__add__';
-    add.textContent = '+ Add unit…';
+    add.textContent = '+ New unit…';
     select.appendChild(add);
   }
   select.value = activeId || '';
@@ -804,7 +815,16 @@ function buildPalette() {
     );
 
     const unidades = paletteGroup(scroll, 'Unit');
-    unitSelect(unidades, s.units, s.measureUnit, (id) => store.setMeasureUnit(id));
+    unitSelect(
+      unidades,
+      s.units,
+      s.measureUnit,
+      (id) => store.setMeasureUnit(id),
+      () => {
+        const unit = nuevaUnidad();
+        if (unit) store.setMeasureUnit(unit.id);
+      },
+    );
 
     // Invertido solo aplica a la estratificación: una foliación o una diaclasa
     // no tienen techo y muro que se puedan haber dado vuelta.
@@ -931,8 +951,15 @@ function buildPalette() {
     );
 
     const unidades = paletteGroup(scroll, 'Unit');
-    unitSelect(unidades, s.units, s.controlPointUnit, (id) =>
-      store.setControlPointField({ unit: id }),
+    unitSelect(
+      unidades,
+      s.units,
+      s.controlPointUnit,
+      (id) => store.setControlPointField({ unit: id }),
+      () => {
+        const unit = nuevaUnidad();
+        if (unit) store.setControlPointField({ unit: unit.id });
+      },
     );
 
     const proposito = paletteGroup(scroll, 'Purpose');
@@ -1956,10 +1983,8 @@ export function openPropsMenu(screen) {
         : null;
     // Basta la unidad de arriba; la de abajo es opcional.
     const crearUnidad = (campo) => {
-      const name = (window.prompt('New unit name') || '').trim();
-      if (!name) return;
-      const code = (window.prompt('Unit code (upper/lower case allowed)', '') || '').trim();
-      const unit = store.addUnit({ name, code });
+      const unit = nuevaUnidad();
+      if (!unit) return;
       store.setSelectedContactUnits({ [campo]: unit.id });
       openPropsMenu(screen);
     };

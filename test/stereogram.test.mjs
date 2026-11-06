@@ -325,6 +325,8 @@ console.log('== línea y flecha del colgante ==');
   const dex = S.lineOf({ strike: 0, dip: 80, type: 'fault-plane', lineTrend: 0, linePlunge: 0, faultSense: 'right-lateral' });
   ok('dextral: flecha al S, tangente al primitivo', dex.arrow && cerca(dex.arrow.dy, 1, 1e-6), JSON.stringify(dex.arrow));
   ok('sin línea no hay nada', S.lineOf({ strike: 0, dip: 30 }) === null);
+  const und = S.lineOf({ ...base, faultSense: 'undetermined' });
+  ok('sentido UND: hay estría pero ninguna flecha de movimiento', und && und.arrow === null);
   const lin = S.lineOf({ strike: 0, dip: 30, type: 'foliation', lineTrend: 90, linePlunge: 30, faultSense: 'normal' });
   ok('una lineación no lleva flecha', lin.arrow === null);
 }
