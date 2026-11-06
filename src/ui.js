@@ -55,7 +55,17 @@ import {
   needsOrientationPermission,
   requestOrientationPermission,
   startOrientationCapture,
+  lastCompassCheck,
 } from './deviceOrientation.js';
+import { openCompassCheck } from './compassCheck.js';
+import {
+  WMM_NAME,
+  activeDeclination,
+  declinationHere,
+  formatDeclination,
+  getTrueNorth,
+  setTrueNorth,
+} from './geomag.js';
 import { buildCompass, compassHint } from './compassWidget.js';
 import {
   CONTROL_POINT_ICONS,
@@ -4291,6 +4301,8 @@ function syncDeviceCapture() {
     const st = store.getState();
     if (st.tool !== 'measure' || st.measureMethod !== 'device') return;
     stopDeviceCapture = startOrientationCapture({
+      // Norte verdadero: la declinación del WMM en la última posición del GPS.
+      getDeclination: activeDeclination,
       // Con la medida detenida los sensores siguen escuchando —reanudar es
       // instantáneo—, pero la lectura mostrada no se toca.
       onReading: (r) => {
@@ -4333,6 +4345,11 @@ function renderDevicePanel() {
   $('device-compass').classList.toggle('held', !!deviceHeld);
 
   const fix = mapBridge && mapBridge.getGpsFix();
+  const dHere = declinationHere();
+  $('device-true-north').checked = getTrueNorth();
+  $('device-decl').textContent = Number.isFinite(dHere)
+    ? `· declination ${formatDeclination(dHere)} (${WMM_NAME})`
+    : '· declination: waiting for a GPS position';
   const note = $('device-gps-note');
   if (!fix) {
     note.textContent = 'Waiting for a GPS fix…';
@@ -4390,6 +4407,7 @@ function commitDeviceReading() {
     showBanner('The phone edge has not been read yet — hold it a moment longer along the line.', 'warn');
     return;
   }
+  const chequeo = lastCompassCheck();
   store.createMeasurement({
     lngLat: fix.lngLat,
     strike: r.strike,
@@ -4407,6 +4425,15 @@ function commitDeviceReading() {
       n: r.n,
       gpsAccuracy: Math.round(fix.accuracy),
       ...(conLinea && Number.isFinite(r.lineSpread) ? { lineSd: round1(r.lineSpread) } : {}),
+      // El estado de la brújula al medir: una dispersión chica no dice nada
+      // de un magnetómetro descalibrado, que sesga el rumbo sin hacerlo
+      // temblar. Viaja con el dato para poder descartarlo después.
+      ...(Number.isFinite(r.compassAccuracy) ? { compassAccuracy: Math.round(r.compassAccuracy) } : {}),
+      ...(chequeo ? { compassCheckDeg: round1(chequeo.errorDeg) } : {}),
+      // A qué norte va referido el rumbo, y con qué declinación: sin esto un
+      // dato de hace un año no se puede volver a llevar al otro norte.
+      north: r.declination ? 'true' : 'magnetic',
+      ...(r.declination ? { declination: round1(r.declination), declinationModel: WMM_NAME } : {}),
     },
   });
   // La siguiente medida arranca en vivo: dejarla detenida guardaría dos veces
@@ -5499,6 +5526,22 @@ function measurementSection(body, medida, reabrir) {
     measureRow(cal, 'Samples', `${p.n ?? '—'}`);
     if (Number.isFinite(p.lineSd)) {
       measureRow(cal, 'Line spread', `±${p.lineSd}°`, 'Angular spread of the phone long edge across the samples');
+    }
+    if (p.north === 'true' || p.north === 'magnetic') {
+      measureRow(
+        cal,
+        'North',
+        p.north === 'true'
+          ? `true · declination ${formatDeclination(p.declination)}${p.declinationModel ? ` (${p.declinationModel})` : ''}`
+          : 'magnetic (no declination applied)',
+        'Reference of the strike and dip direction read from the phone compass',
+      );
+    }
+    if (Number.isFinite(p.compassCheckDeg)) {
+      measureRow(cal, 'Compass check', `±${p.compassCheckDeg}°`, 'Heading error found by the last “Check compass” before this measurement');
+    }
+    if (Number.isFinite(p.compassAccuracy)) {
+      measureRow(cal, 'Compass accuracy', `±${p.compassAccuracy}°`, 'Heading accuracy reported by iOS when the measurement was taken');
     }
     if (Number.isFinite(p.gpsAccuracy)) {
       measureRow(cal, 'GPS accuracy', `±${p.gpsAccuracy} m`, 'The point was placed at the GPS position, not a tapped location');
@@ -6914,6 +6957,14 @@ export function initUI() {
   $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
   $('btn-close-device').addEventListener('click', () => store.setMeasureMethod('manual'));
   $('btn-device-done').addEventListener('click', commitDeviceReading);
+  // La prueba de calibración, a mano desde el mismo panel en que se mide: el
+  // consejo de la lectura lleva aquí cuando la brújula falla (ver `compassHint`).
+  $('btn-device-check-compass').addEventListener('click', () => openCompassCheck({ onClose: renderDevicePanel }));
+  $('device-true-north').addEventListener('change', (e) => {
+    setTrueNorth(e.target.checked);
+    window.dispatchEvent(new Event('fielddraw:truenorth'));
+  });
+  window.addEventListener('fielddraw:truenorth', renderDevicePanel);
   $('btn-close-selection-picker').addEventListener('click', () => {
     pickerDismissedFor = selectionKey(store.getState().selection);
     renderSelectionPicker();

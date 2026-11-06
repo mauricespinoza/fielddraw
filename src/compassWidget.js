@@ -31,7 +31,7 @@
  * 90°: el rótulo no es decoración.
  */
 
-import { READY_SPREAD_DEG } from './deviceOrientation.js';
+import { COMPASS_ACCURACY_WARN_DEG, READY_SPREAD_DEG, lastCompassCheck } from './deviceOrientation.js';
 import { structureVariant } from './symbology.js';
 import { norm360 } from './structure.js';
 import { formatPlane, notationLabel } from './notation.js';
@@ -309,6 +309,34 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
  */
 export function compassHint(reading) {
   if (!reading || !(reading.n >= 2)) return 'Reading the sensors…';
+  const salud = compassHealthNote(reading);
+  return salud ? `⚠ ${salud} · ${compassHintBase(reading)}` : compassHintBase(reading);
+}
+
+/**
+ * Aviso sobre la CALIBRACIÓN de la brújula, o `''` si no hay nada que decir.
+ *
+ * Tres fuentes, de la más directa a la más indirecta: el error que declara
+ * iOS (`webkitCompassAccuracy`), el aviso `compassneedscalibration` del
+ * navegador, y el resultado de la última prueba «Check compass» de esta
+ * media hora (ver `startCompassCheck`). Una brújula descalibrada sesga el
+ * RUMBO —no el manteo, que sale del acelerómetro—, y lo sesga distinto según
+ * hacia dónde apunte el teléfono, así que no se nota mirando la dispersión:
+ * hay que decirlo aparte.
+ */
+export function compassHealthNote(reading) {
+  if (reading && Number.isFinite(reading.compassAccuracy) && reading.compassAccuracy > COMPASS_ACCURACY_WARN_DEG) {
+    return `compass accuracy only ±${Math.round(reading.compassAccuracy)}° — calibrate it (Check compass)`;
+  }
+  if (reading && reading.compassUncalibrated) return 'the phone reports its compass needs calibration (Check compass)';
+  const ultima = lastCompassCheck();
+  if (ultima && ultima.verdict === 'poor') {
+    return `last compass check: off by up to ±${Math.round(ultima.errorDeg)}° — calibrate and check again`;
+  }
+  return '';
+}
+
+function compassHintBase(reading) {
   if (reading.needsHeading) {
     return 'Hold the phone level, screen up, for a moment so the compass can find north — then press it flat against the surface.';
   }

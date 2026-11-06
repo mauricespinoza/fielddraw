@@ -77,6 +77,8 @@
     <link rel="modulepreload" href="./src/attrs.js" />
     <link rel="modulepreload" href="./src/average.js" />
     <link rel="modulepreload" href="./src/basemaps.js" />
+    <link rel="modulepreload" href="./src/compassCheck.js" />
+    <link rel="modulepreload" href="./src/geomag.js" />
     <link rel="modulepreload" href="./src/compassWidget.js" />
     <link rel="modulepreload" href="./src/controlPointSymbols.js" />
     <link rel="modulepreload" href="./src/controlPoints.js" />
@@ -1053,6 +1055,10 @@
         <p class="hint footnote" id="device-read-note"></p>
         <p class="hint footnote hidden" id="device-line-note"></p>
         <p class="hint footnote" id="device-gps-note"></p>
+        <label class="row decl-row"><input type="checkbox" class="true-north-toggle" id="device-true-north" checked />
+          <span>True north <span class="sub" id="device-decl"></span></span></label>
+        <button class="pill wide" id="btn-device-check-compass" type="button"
+          title="Turn the phone one full circle, level, to test whether the compass is calibrated">Check compass</button>
         <button class="pill accent wide" id="btn-device-done" disabled>Add measurement</button>
       </div>
 
@@ -1712,6 +1718,8 @@
           <div class="sv-chart-wrap stereo-compass-wrap">
             <svg id="stereo-compass" class="compass-svg" aria-label="Live compass reading"></svg>
             <p class="hint footnote" id="stereo-compass-note"></p>
+            <button class="pill compass-check-link" id="btn-stereo-check-compass" type="button"
+              title="Turn the phone one full circle, level, to test whether the compass is calibrated">Check compass</button>
           </div>
         </div>
 
@@ -1726,7 +1734,11 @@
               <div><dt>UTM (WGS84)</dt><dd id="pos-utm">—</dd><button class="pos-copy" type="button" data-copy="pos-utm-raw">Copy</button></div>
               <div><dt>Accuracy</dt><dd id="pos-acc">—</dd><span></span></div>
               <div><dt>Elevation</dt><dd id="pos-alt">—</dd><span></span></div>
+              <div><dt>Mag. declination</dt><dd id="pos-decl">—</dd><button class="pos-copy" type="button" data-copy="pos-decl-raw">Copy</button></div>
             </dl>
+            <label class="row decl-row"><input type="checkbox" class="true-north-toggle" id="pos-true-north" checked />
+              <span>Correct phone compass readings to true north</span></label>
+            <p class="hint footnote" id="pos-decl-note"></p>
             <p class="hint footnote" id="stereo-position-note">Waiting for a GPS fix…</p>
           </div>
         </div>

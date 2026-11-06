@@ -247,6 +247,79 @@ export function alphaFromHeading(heading, beta) {
   return cb > 0 ? norm360(360 - heading) : norm360(180 - heading);
 }
 
+/** Lleva un ángulo a (−180°, 180°]. */
+export function wrap180(grados) {
+  const r = norm360(grados);
+  return r > 180 ? r - 360 : r;
+}
+
+/** Media circular de ángulos en grados, en [0°, 360°); `NaN` si no hay datos. */
+export function circularMeanDeg(angulos) {
+  let x = 0;
+  let y = 0;
+  for (const a of angulos) {
+    x += Math.cos(a * RAD);
+    y += Math.sin(a * RAD);
+  }
+  if (!(Math.hypot(x, y) > 1e-12)) return NaN;
+  return norm360(Math.atan2(y, x) * DEG);
+}
+
+/**
+ * Matriz de rotación Z-X'-Y'' del estándar (filas = Este, Norte, Arriba;
+ * columnas = ejes X, Y, Z del teléfono). Sus columnas 2 y 3 son las de
+ * `edgeFromOrientation` y `normalFromOrientation`.
+ */
+export function orientationMatrix(alpha, beta, gamma) {
+  const ca = Math.cos(alpha * RAD);
+  const sa = Math.sin(alpha * RAD);
+  const cb = Math.cos(beta * RAD);
+  const sb = Math.sin(beta * RAD);
+  const cg = Math.cos(gamma * RAD);
+  const sg = Math.sin(gamma * RAD);
+  return [
+    [ca * cg - sa * sb * sg, -sa * cb, ca * sg + cg * sa * sb],
+    [sa * cg + ca * sb * sg, ca * cb, sa * sg - ca * cg * sb],
+    [-cb * sg, sb, cb * cg],
+  ];
+}
+
+/**
+ * Giro alrededor de la vertical que lleva una orientación RELATIVA (solo
+ * giroscopio y acelerómetro) a la ABSOLUTA (con magnetómetro): el `d` de
+ * `Rabs = Rz(d) · Rrel`, el mismo que aplica `rotateYaw`.
+ *
+ * Se saca de `M = Rabs · Rrelᵀ`, que tiene que ser una rotación pura en
+ * planta, en vez de restar `alpha`: con el teléfono de pie, `alpha` y `gamma`
+ * se confunden (cardán) y la resta no significaría nada; la matriz no tiene
+ * esa singularidad en ninguna postura.
+ */
+export function yawOffsetBetween(abs, rel) {
+  const A = orientationMatrix(abs.alpha, abs.beta, abs.gamma);
+  const B = orientationMatrix(rel.alpha, rel.beta, rel.gamma);
+  const fila = (i, j) => A[i][0] * B[j][0] + A[i][1] * B[j][1] + A[i][2] * B[j][2];
+  return norm360(Math.atan2(fila(1, 0), fila(0, 0)) * DEG);
+}
+
+/**
+ * Por encima de este error estimado (grados) el rumbo no da para medir: es
+ * más de lo que separa a dos medidas de la misma estructura en la libreta.
+ */
+export const COMPASS_ACCURACY_WARN_DEG = 10;
+
+/**
+ * Lo que la lectura dice de la salud de la brújula: el error que declara iOS
+ * (`webkitCompassAccuracy`), si lo hay, y si el sistema pidió calibrar.
+ */
+function compassStatus(accuracy, needsCalibration) {
+  const out = {};
+  if (Number.isFinite(accuracy) && accuracy >= 0) out.compassAccuracy = accuracy;
+  if (needsCalibration || (Number.isFinite(accuracy) && accuracy > COMPASS_ACCURACY_WARN_DEG)) {
+    out.compassUncalibrated = true;
+  }
+  return out;
+}
+
 /* ---------- promedio de orientaciones ---------- */
 
 /**
@@ -388,15 +461,28 @@ const TRIM_FACTOR = 2.5;
 const TRIM_FLOOR_DEG = 1.5;
 /** A partir de aquí el norte anclado ya tiene edad como para avisar. */
 export const HEADING_STALE_MS = 45000;
+/**
+ * iOS: inclinación máxima de la normal (respecto de la vertical) con la que
+ * se acepta fijar el norte. Ver la nota del anclaje en `onEvent`.
+ */
+const ANCHOR_MAX_TILT_DEG = 30;
+/** iOS: giro máximo del teléfono, en °/s, para aceptar un candidato de norte. */
+const ANCHOR_MAX_RATE_DEG_S = 15;
+/** iOS: ventana sobre la que se promedian los candidatos de norte. */
+const ANCHOR_WINDOW_MS = 800;
 
 /**
  * Arranca la escucha de los sensores y llama a `onReading` con la lectura
  * acumulada en la ventana móvil cada vez que llega una muestra nueva.
  * Devuelve una función que corta la escucha.
  *
- * @param {{onReading: (r: object) => void, onError?: (msg: string) => void}} handlers
+ * `getDeclination()`, si se da, devuelve la declinación magnética (grados,
+ * Este positivo) que se suma a rumbos y direcciones: con ella la lectura
+ * sale referida al norte VERDADERO. Sin ella, o con 0, al magnético.
+ *
+ * @param {{onReading: (r: object) => void, onError?: (msg: string) => void, getDeclination?: () => number}} handlers
  */
-export function startOrientationCapture({ onReading, onError }) {
+export function startOrientationCapture({ onReading, onError, getDeclination }) {
   if (!deviceOrientationSupported()) {
     onError?.('This device or browser has no orientation sensor available.');
     return () => {};
@@ -419,6 +505,17 @@ export function startOrientationCapture({ onReading, onError }) {
    */
   let yawOffset = null;
   let yawOffsetAt = 0;
+  /** Desfases candidatos recientes, tomados con el teléfono nivelado y quieto. */
+  let anchors = [];
+  /** Última muestra nivelada, para medir a qué velocidad gira el teléfono. */
+  let prevLevel = null;
+  /** iOS: error estimado de la brújula, en grados (`webkitCompassAccuracy`). */
+  let compassAccuracy = NaN;
+  /** El navegador avisó (`compassneedscalibration`) de que hay que calibrar. */
+  let needsCalibration = false;
+  const onNeedsCalibration = () => {
+    needsCalibration = true;
+  };
 
   function report(extra = {}) {
     if (samples.length < 2) {
@@ -455,12 +552,20 @@ export function startOrientationCapture({ onReading, onError }) {
       return;
     }
 
-    const { strike, dip, dipAzimuth } = strikeDipFromNormal(media);
-    // `strikeDipFromNormal` ya la llevó al hemisferio de arriba; la dispersión
-    // tiene que medirse contra ESA, o el signo de cada muestra se alinearía
-    // contra una media que apunta al revés que el resultado que se reporta.
+    // `strikeDipFromNormal` lleva la normal al hemisferio de arriba; la
+    // dispersión tiene que medirse contra ESA, o el signo de cada muestra se
+    // alinearía contra una media que apunta al revés que el resultado.
     const arriba = media.z < 0 ? { x: -media.x, y: -media.y, z: -media.z } : media;
     const { spread, strikeSd, dipSd } = orientationSpread(normales, arriba);
+    /*
+     * NORTE VERDADERO: todo lo de arriba está en el marco magnético de la
+     * brújula. La declinación se aplica al final, girando la normal y el
+     * canto medios alrededor de la vertical (acimut + D = `rotateYaw(−D)`):
+     * no toca el manteo ni la dispersión, solo desplaza las direcciones.
+     */
+    const decl = Number(getDeclination?.()) || 0;
+    const arribaV = decl ? rotateYaw(arriba, -decl) : arriba;
+    const { strike, dip, dipAzimuth } = strikeDipFromNormal(arribaV);
 
     /*
      * LA LÍNEA, DEL CANTO LARGO DEL TELÉFONO: su eje medio, llevado al plano
@@ -468,7 +573,7 @@ export function startOrientationCapture({ onReading, onError }) {
      * la del polo.
      */
     const cantoMedio = cantos.every(Boolean) ? meanNormal(cantos) : null;
-    const linea = cantoMedio ? lineFromAxis(cantoMedio, arriba) : null;
+    const linea = cantoMedio ? lineFromAxis(decl ? rotateYaw(cantoMedio, -decl) : cantoMedio, arribaV) : null;
     const lineSpread = cantoMedio
       ? Math.sqrt(cantos.reduce((acc, e) => acc + angleBetween(e, cantoMedio) ** 2, 0) / cantos.length)
       : NaN;
@@ -476,12 +581,14 @@ export function startOrientationCapture({ onReading, onError }) {
     onReading({
       ready: samples.length >= MIN_SAMPLES && spread <= READY_SPREAD_DEG,
       n: samples.length,
+      ...compassStatus(compassAccuracy, needsCalibration),
       strike,
       dip,
       dipAzimuth,
       spread,
       strikeSd,
       dipSd,
+      declination: decl,
       ...(linea ? { lineTrend: linea.trend, linePlunge: linea.plunge, lineSpread } : {}),
       ...extra,
     });
@@ -505,11 +612,47 @@ export function startOrientationCapture({ onReading, onError }) {
 
     if (heading !== undefined) {
       const alphaRel = Number.isFinite(e.alpha) ? e.alpha : 0;
+      const acc = e.webkitCompassAccuracy;
+      compassAccuracy = Number.isFinite(acc) ? acc : NaN;
       // -1 es el valor que da iOS cuando el compás todavía no calibró.
-      const valido = heading >= 0 && (e.webkitCompassAccuracy ?? 0) >= 0;
-      const alphaAbs = valido ? alphaFromHeading(heading, beta) : null;
-      if (alphaAbs !== null) {
-        yawOffset = norm360(alphaAbs - alphaRel);
+      const valido = heading >= 0 && (acc ?? 0) >= 0;
+      /*
+       * EL NORTE SOLO SE FIJA CON EL TELÉFONO NIVELADO Y QUIETO.
+       *
+       * Antes se fijaba en cualquier postura con |cos β| ≥ 0,34 —hasta unos
+       * 70° de inclinación—, y eso volvía a escribir el desfase justo en el
+       * tramo que se recorre al llevar el teléfono de la mano a una pared
+       * subvertical. Ahí `webkitCompassHeading` deja de ser fiable aunque la
+       * fórmula de `alphaFromHeading` siga teniendo solución: iOS pasa a
+       * referir el rumbo a la cámara trasera (−Z) cuando el teléfono se
+       * levanta, y con el teléfono además girado de lado (γ ≠ 0) esos dos
+       * ejes ya no apuntan al mismo acimut — un error de varios a decenas de
+       * grados en el rumbo, SOLO en planos de alto ángulo. Nivelado (normal a
+       * menos de `ANCHOR_MAX_TILT_DEG` de la vertical) no hay ambigüedad.
+       *
+       * Y quieto, porque el rumbo de iOS va filtrado y llega con retraso
+       * respecto del giroscopio: fijar el desfase mientras el teléfono gira
+       * guarda la diferencia entre un dato viejo y uno nuevo. Los candidatos
+       * de la última fracción de segundo se promedian sobre el círculo.
+       */
+      const nRel = normalFromOrientation(alphaRel, beta, gamma);
+      let quieto = false;
+      const nivelado = nRel.z >= Math.cos(ANCHOR_MAX_TILT_DEG * RAD);
+      if (nivelado) {
+        if (prevLevel && now > prevLevel.t) {
+          const giro = Math.abs(wrap180(alphaRel - prevLevel.alpha));
+          quieto = (giro / (now - prevLevel.t)) * 1000 <= ANCHOR_MAX_RATE_DEG_S;
+        }
+        prevLevel = { t: now, alpha: alphaRel };
+      } else {
+        prevLevel = null;
+      }
+      const alphaAbs = valido && nivelado ? alphaFromHeading(heading, beta) : null;
+      const anclaAhora = alphaAbs !== null && quieto;
+      if (anclaAhora) {
+        anchors.push({ t: now, d: norm360(alphaAbs - alphaRel) });
+        anchors = anchors.filter((a) => now - a.t <= ANCHOR_WINDOW_MS);
+        yawOffset = circularMeanDeg(anchors.map((a) => a.d));
         yawOffsetAt = now;
       }
       if (yawOffset === null) {
@@ -518,6 +661,7 @@ export function startOrientationCapture({ onReading, onError }) {
         report({
           needsHeading: true,
           headingHeld: false,
+          ...compassStatus(compassAccuracy, needsCalibration),
         });
         return;
       }
@@ -528,9 +672,9 @@ export function startOrientationCapture({ onReading, onError }) {
         rotateYaw(edgeFromOrientation(alphaRel, beta, gamma), yawOffset),
       );
       report({
-        headingHeld: alphaAbs === null,
-        headingAge: alphaAbs === null ? now - yawOffsetAt : 0,
-        headingStale: alphaAbs === null && now - yawOffsetAt > HEADING_STALE_MS,
+        headingHeld: !anclaAhora,
+        headingAge: anclaAhora ? 0 : now - yawOffsetAt,
+        headingStale: !anclaAhora && now - yawOffsetAt > HEADING_STALE_MS,
       });
       return;
     }
@@ -543,6 +687,7 @@ export function startOrientationCapture({ onReading, onError }) {
 
   window.addEventListener('deviceorientationabsolute', onEvent);
   window.addEventListener('deviceorientation', onEvent);
+  window.addEventListener('compassneedscalibration', onNeedsCalibration);
 
   // Si nada referenciado al norte llegó en un par de segundos, este teléfono
   // o este navegador no expone magnetómetro, y conviene decirlo en vez de
@@ -558,6 +703,7 @@ export function startOrientationCapture({ onReading, onError }) {
   return function stop() {
     window.removeEventListener('deviceorientationabsolute', onEvent);
     window.removeEventListener('deviceorientation', onEvent);
+    window.removeEventListener('compassneedscalibration', onNeedsCalibration);
     clearTimeout(fallbackTimer);
   };
 }
@@ -593,7 +739,7 @@ export function startOrientationCapture({ onReading, onError }) {
  *
  * @param {{onReading: (r: {heading: number}) => void, onError?: (msg: string) => void}} handlers
  */
-export function startHeadingCapture({ onReading, onError }) {
+export function startHeadingCapture({ onReading, onError, getDeclination }) {
   if (!deviceOrientationSupported()) {
     onError?.('This device or browser has no orientation sensor available.');
     return () => {};
@@ -622,16 +768,31 @@ export function startHeadingCapture({ onReading, onError }) {
       // -1 es el valor que da iOS cuando el compás todavía no calibró.
       if (heading < 0 || (e.webkitCompassAccuracy ?? 0) < 0) return;
       referenced = true;
-      onReading({ heading: suavizar(norm360(heading)) });
+      const decl = Number(getDeclination?.()) || 0;
+      onReading({
+        heading: norm360(suavizar(norm360(heading)) + decl),
+        declination: decl,
+        ...compassStatus(e.webkitCompassAccuracy, needsCalibration),
+      });
       return;
     }
     if (e.absolute !== true || !Number.isFinite(e.alpha)) return;
     referenced = true;
-    onReading({ heading: suavizar(norm360(360 - e.alpha)) });
+    const decl = Number(getDeclination?.()) || 0;
+    onReading({
+      heading: norm360(suavizar(norm360(360 - e.alpha)) + decl),
+      declination: decl,
+      ...compassStatus(NaN, needsCalibration),
+    });
   }
 
+  let needsCalibration = false;
+  const onNeedsCalibration = () => {
+    needsCalibration = true;
+  };
   window.addEventListener('deviceorientationabsolute', onEvent);
   window.addEventListener('deviceorientation', onEvent);
+  window.addEventListener('compassneedscalibration', onNeedsCalibration);
 
   // Igual que en `startOrientationCapture`: si nada referenciado al norte
   // llegó en un par de segundos, este teléfono o este navegador no expone
@@ -648,6 +809,203 @@ export function startHeadingCapture({ onReading, onError }) {
   return function stop() {
     window.removeEventListener('deviceorientationabsolute', onEvent);
     window.removeEventListener('deviceorientation', onEvent);
+    window.removeEventListener('compassneedscalibration', onNeedsCalibration);
     clearTimeout(fallbackTimer);
   };
+}
+
+/* ---------- prueba de la brújula: ¿está calibrada? ---------- */
+
+/*
+ * EL MÉTODO. La web no expone el magnetómetro crudo ni su estado de
+ * calibración (salvo la cifra de iOS), pero sí DOS orientaciones del mismo
+ * teléfono:
+ *
+ * - una ABSOLUTA, que usa el magnetómetro para saber dónde está el norte
+ *   (`deviceorientationabsolute` en Android, `webkitCompassHeading` en iOS);
+ * - una RELATIVA, solo giroscopio y acelerómetro, con un origen arbitrario
+ *   (`deviceorientation` con `absolute: false` en Android, `alpha` en iOS).
+ *
+ * El giro entre las dos (`yawOffsetBetween`) es una CONSTANTE si el
+ * magnetómetro está bien: el giroscopio no sabe dónde está el norte, pero sí
+ * cuánto giró el teléfono, y no se equivoca en una vuelta. Un magnetómetro
+ * descalibrado (imanación del propio teléfono, la funda con imán, el error
+ * de "hierro duro" y "hierro blando") produce un error de rumbo que DEPENDE
+ * de hacia dónde apunta el teléfono — típicamente una onda de una o dos
+ * vueltas por giro completo. Dando una vuelta entera con el teléfono a nivel,
+ * la variación de ese desfase según el rumbo ES el error de la brújula, sin
+ * necesitar ninguna referencia externa.
+ *
+ * Lo que la prueba NO ve: una desviación uniforme (la declinación magnética,
+ * o un cuerpo magnético grande a un lado, como un vehículo o un afloramiento
+ * con magnetita) desplaza todos los rumbos por igual y deja el desfase
+ * constante. Esa hay que controlarla como con cualquier brújula: alejándose.
+ */
+
+/** Sectores de rumbo de la prueba: una vuelta en octavos. */
+export const CHECK_SECTORS = 8;
+/** Muestras mínimas por sector para que cuente como recorrido. */
+const CHECK_MIN_PER_SECTOR = 4;
+/** Sectores recorridos para dar un veredicto. */
+export const CHECK_MIN_SECTORS = 7;
+/** Veredicto: hasta aquí la brújula está bien; hasta `FAIR`, usable. */
+export const CHECK_GOOD_DEG = 3;
+export const CHECK_FAIR_DEG = 8;
+/** Prueba: inclinación máxima del teléfono y giro máximo para contar una muestra. */
+const CHECK_MAX_TILT_DEG = 30;
+const CHECK_MAX_RATE_DEG_S = 25;
+
+/**
+ * Evalúa una tanda de `{heading, offset}`: el rumbo (absoluto) al que
+ * apuntaba el teléfono y el desfase absoluto − relativo en ese instante.
+ *
+ * Se promedia el desfase dentro de cada octavo de rumbo —así pesa igual un
+ * sector en el que se quedó mucho rato que uno que se pasó deprisa— y el
+ * error es la mayor desviación de un sector respecto de la media de todos.
+ */
+export function evaluateCompassCheck(samples) {
+  const porSector = Array.from({ length: CHECK_SECTORS }, () => []);
+  for (const { heading, offset } of samples) {
+    if (!Number.isFinite(heading) || !Number.isFinite(offset)) continue;
+    const i = Math.floor(norm360(heading) / (360 / CHECK_SECTORS)) % CHECK_SECTORS;
+    porSector[i].push(offset);
+  }
+  const medias = porSector.map((xs) => (xs.length >= CHECK_MIN_PER_SECTOR ? circularMeanDeg(xs) : NaN));
+  const covered = medias.map(Number.isFinite);
+  const nCubiertos = covered.filter(Boolean).length;
+  if (nCubiertos < 2) {
+    return { covered, sectors: nCubiertos, errorDeg: NaN, rmsDeg: NaN, verdict: 'incomplete' };
+  }
+  const validas = medias.filter(Number.isFinite);
+  const centro = circularMeanDeg(validas);
+  const desv = validas.map((m) => wrap180(m - centro));
+  const errorDeg = Math.max(...desv.map(Math.abs));
+  const rmsDeg = Math.sqrt(desv.reduce((a, d) => a + d * d, 0) / desv.length);
+  let verdict = 'incomplete';
+  if (nCubiertos >= CHECK_MIN_SECTORS) {
+    verdict = errorDeg <= CHECK_GOOD_DEG ? 'good' : errorDeg <= CHECK_FAIR_DEG ? 'fair' : 'poor';
+  }
+  return { covered, sectors: nCubiertos, errorDeg, rmsDeg, verdict };
+}
+
+/**
+ * Corre la prueba en vivo. `onProgress` recibe el resultado de
+ * `evaluateCompassCheck` cada vez que entra una muestra útil, más
+ * `compassAccuracy` (iOS), `level` (si el teléfono está a nivel ahora) y
+ * `tooFast` (si está girando demasiado rápido para contar).
+ *
+ * @param {{onProgress: (r: object) => void, onError?: (msg: string) => void}} handlers
+ * @returns {() => void} corta la prueba
+ */
+export function startCompassCheck({ onProgress, onError }) {
+  if (!deviceOrientationSupported()) {
+    onError?.('This device or browser has no orientation sensor available.');
+    return () => {};
+  }
+  const muestras = [];
+  let ultimaRel = null; // Android: última orientación relativa {t, alpha, beta, gamma}
+  let prev = null; // {t, heading}: para medir la velocidad de giro
+  let tooFast = false;
+  let paired = false;
+  let accuracy = NaN;
+
+  function muestra(heading, offset, now, beta, gamma) {
+    const nz = Math.cos(beta * RAD) * Math.cos(gamma * RAD);
+    const level = nz >= Math.cos(CHECK_MAX_TILT_DEG * RAD);
+    // La velocidad se mide sobre una base de ~200 ms y no muestra a muestra:
+    // a 60 Hz, medio grado de ruido del magnetómetro entre dos muestras ya
+    // parecería un giro de 30°/s.
+    if (!level) prev = null;
+    else if (!prev) prev = { t: now, heading };
+    else if (now - prev.t >= 200) {
+      tooFast = (Math.abs(wrap180(heading - prev.heading)) / (now - prev.t)) * 1000 > CHECK_MAX_RATE_DEG_S;
+      prev = { t: now, heading };
+    }
+    if (level && !tooFast) muestras.push({ heading, offset });
+    onProgress({
+      ...evaluateCompassCheck(muestras),
+      level,
+      tooFast,
+      ...(Number.isFinite(accuracy) ? { compassAccuracy: accuracy } : {}),
+    });
+  }
+
+  function onEvent(e) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (![e.alpha, e.beta, e.gamma].every(Number.isFinite)) return;
+
+    // iOS: el rumbo y la orientación relativa llegan en el MISMO evento.
+    if (e.webkitCompassHeading !== undefined) {
+      const h = e.webkitCompassHeading;
+      if (!(h >= 0) || (e.webkitCompassAccuracy ?? 0) < 0) return;
+      accuracy = Number.isFinite(e.webkitCompassAccuracy) ? e.webkitCompassAccuracy : NaN;
+      if (Math.cos(e.beta * RAD) <= 0) return; // boca abajo: no es la postura de la prueba
+      paired = true;
+      muestra(norm360(h), norm360(360 - h - e.alpha), now, e.beta, e.gamma);
+      return;
+    }
+
+    // Android: dos eventos distintos, que se emparejan por tiempo.
+    if (e.absolute === true) {
+      if (!ultimaRel || now - ultimaRel.t > 150) return;
+      paired = true;
+      const offset = yawOffsetBetween(e, ultimaRel);
+      // Rumbo del lado superior del teléfono, como en `startHeadingCapture`.
+      muestra(norm360(360 - e.alpha), offset, now, e.beta, e.gamma);
+    } else {
+      ultimaRel = { t: now, alpha: e.alpha, beta: e.beta, gamma: e.gamma };
+    }
+  }
+
+  window.addEventListener('deviceorientationabsolute', onEvent);
+  window.addEventListener('deviceorientation', onEvent);
+  const timer = setTimeout(() => {
+    if (!paired) {
+      onError?.(
+        'This browser does not expose both the compass and the gyroscope-only orientation, so the check cannot run here. Calibrate with the figure-8 motion anyway, and compare a few strikes against a reference compass.',
+      );
+    }
+  }, 3000);
+
+  return function stop() {
+    window.removeEventListener('deviceorientationabsolute', onEvent);
+    window.removeEventListener('deviceorientation', onEvent);
+    clearTimeout(timer);
+  };
+}
+
+/* ---------- el último resultado de la prueba ---------- */
+
+const HEALTH_KEY = 'fielddraw.compassCheck';
+/**
+ * Pasado este tiempo el resultado de la prueba ya no dice nada del estado
+ * actual: la calibración se pierde al acercar el teléfono a un imán, a un
+ * martillo o a un vehículo, y se rehace sola con el uso.
+ */
+export const CHECK_VALID_MS = 30 * 60 * 1000;
+
+let lastCheck = null;
+
+/** Guarda el resultado de una prueba terminada: `{errorDeg, verdict}`. */
+export function recordCompassCheck({ errorDeg, verdict }) {
+  lastCheck = { errorDeg, verdict, at: Date.now() };
+  try {
+    localStorage.setItem(HEALTH_KEY, JSON.stringify(lastCheck));
+  } catch {
+    /* sin almacenamiento: vale para esta sesión */
+  }
+}
+
+/** El último resultado vigente (menos de `CHECK_VALID_MS`), o `null`. */
+export function lastCompassCheck(now = Date.now()) {
+  if (!lastCheck) {
+    try {
+      const raw = localStorage.getItem(HEALTH_KEY);
+      if (raw) lastCheck = JSON.parse(raw);
+    } catch {
+      /* nada guardado o almacenamiento bloqueado */
+    }
+  }
+  if (!lastCheck || !(now - lastCheck.at <= CHECK_VALID_MS)) return null;
+  return { ...lastCheck, ageMs: now - lastCheck.at };
 }

@@ -9,7 +9,18 @@ import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
 import { betaAxis, countsByType, meanPole, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
-import { buildCompass } from './compassWidget.js';
+import { buildCompass, compassHealthNote } from './compassWidget.js';
+import { openCompassCheck } from './compassCheck.js';
+import {
+  WMM_NAME,
+  activeDeclination,
+  formatDeclination,
+  geomagneticField,
+  declinationHere,
+  getTrueNorth,
+  noteDeclinationPosition,
+  setTrueNorth,
+} from './geomag.js';
 import { formatStrikeDip, quadrant } from './structure.js';
 import {
   deviceOrientationSupported,
@@ -51,6 +62,21 @@ export function initStereogramPanel({ message } = {}) {
   $('stereo-tab-plot').addEventListener('click', () => showTab('plot'));
   $('stereo-tab-compass').addEventListener('click', () => showTab('compass'));
   $('stereo-tab-position').addEventListener('click', () => showTab('position'));
+  $('btn-stereo-check-compass').addEventListener('click', () => openCompassCheck());
+  /*
+   * Norte verdadero o magnético: una sola preferencia, con su casilla aquí y
+   * en el panel Device. Cambiarla en una refresca las dos (evento
+   * `fielddraw:truenorth`, que también escucha ui.js).
+   */
+  $('pos-true-north').checked = getTrueNorth();
+  $('pos-true-north').addEventListener('change', (e) => {
+    setTrueNorth(e.target.checked);
+    window.dispatchEvent(new Event('fielddraw:truenorth'));
+  });
+  window.addEventListener('fielddraw:truenorth', () => {
+    $('pos-true-north').checked = getTrueNorth();
+    renderDeclinationNote();
+  });
   for (const b of document.querySelectorAll('.pos-copy')) {
     b.addEventListener('click', () => {
       const text = posRaw[b.dataset.copy];
@@ -367,10 +393,10 @@ let compassWidget = null;
 /** Id de `watchPosition` mientras la pestaña está abierta. */
 let gpsWatchId = null;
 /** Texto plano de cada campo de posición, para el botón Copy. */
-const posRaw = { 'pos-lat-raw': '', 'pos-lon-raw': '', 'pos-utm-raw': '' };
+const posRaw = { 'pos-lat-raw': '', 'pos-lon-raw': '', 'pos-utm-raw': '', 'pos-decl-raw': '' };
 
 function clearPosition() {
-  for (const id of ['pos-lat', 'pos-lon', 'pos-utm', 'pos-acc', 'pos-alt']) $(id).textContent = '—';
+  for (const id of ['pos-lat', 'pos-lon', 'pos-utm', 'pos-acc', 'pos-alt', 'pos-decl']) $(id).textContent = '—';
   for (const k of Object.keys(posRaw)) posRaw[k] = '';
 }
 
@@ -385,6 +411,44 @@ function showPosition(coords) {
   posRaw['pos-lat-raw'] = lat.toFixed(6);
   posRaw['pos-lon-raw'] = lon.toFixed(6);
   posRaw['pos-utm-raw'] = u ? formatUTM(u) : '';
+  // Declinación del WMM en este punto, a la altura del GPS si la hay.
+  const altKm = Number.isFinite(altitude) ? altitude / 1000 : 0;
+  const campo = geomagneticField(lat, lon, altKm, new Date());
+  ultimaDecl = campo;
+  $('pos-decl').textContent = formatDeclination(campo.declination);
+  posRaw['pos-decl-raw'] = campo.declination.toFixed(2);
+  noteDeclinationPosition(lat, lon);
+  renderDeclinationNote();
+}
+
+/** Último campo calculado en la pestaña Position, para la nota. */
+let ultimaDecl = null;
+
+/** A qué norte va referida una lectura de la brújula, en una frase. */
+export function northLabel(declination) {
+  if (declination) return `True north (declination ${formatDeclination(declination)}).`;
+  if (getTrueNorth() && !Number.isFinite(declinationHere())) {
+    return 'Magnetic north — true north needs one GPS position to compute the declination.';
+  }
+  return 'Magnetic north.';
+}
+
+function renderDeclinationNote() {
+  const note = $('pos-decl-note');
+  if (!note) return;
+  if (!ultimaDecl) {
+    note.textContent = `Magnetic declination from the ${WMM_NAME} model, computed on the device once there is a position.`;
+    return;
+  }
+  const d = formatDeclination(ultimaDecl.declination);
+  const partes = [
+    `${WMM_NAME}: true north = magnetic + declination (${d}, inclination ${Math.round(ultimaDecl.inclination)}°).`,
+    getTrueNorth()
+      ? 'Device and Compass readings are corrected to true north.'
+      : 'Device and Compass readings stay referred to magnetic north.',
+  ];
+  if (!ultimaDecl.valid) partes.push(`Outside the ${WMM_NAME} validity period — the value is less accurate.`);
+  note.textContent = partes.join(' ');
 }
 
 function startPosition() {
@@ -432,9 +496,19 @@ function startCompass() {
     // Esta pestaña es una brújula de referencia, no una medida: solo el
     // ángulo desde el norte al que apunta el teléfono, sostenido como
     // cualquier brújula — a ras, no contra una roca.
-    note.textContent = 'Hold the phone flat, screen up, pointing the way you want to read.';
+    const instr = 'Hold the phone flat, screen up, pointing the way you want to read.';
+    note.textContent = instr;
     stopCompassCapture = startHeadingCapture({
-      onReading: (r) => compassWidget.update(r),
+      getDeclination: activeDeclination,
+      onReading: (r) => {
+        const base = `${instr} ${northLabel(r.declination)}`;
+        compassWidget.update(r);
+        // Si la brújula está descalibrada se dice aquí también, con la misma
+        // frase que en el panel Device (ver `compassHealthNote`).
+        const aviso = compassHealthNote(r);
+        const texto = aviso ? `${base} ⚠ ${aviso}` : base;
+        if (note.textContent !== texto) note.textContent = texto;
+      },
       onError: (msg) => {
         note.textContent = msg;
       },
