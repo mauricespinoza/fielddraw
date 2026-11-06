@@ -72,6 +72,7 @@ import {
   controlPointLayers,
 } from './controlPointSymbols.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
+import { noteDeclinationPosition } from './geomag.js';
 import {
   addStraboImages,
   applyStraboFilter,
@@ -469,6 +470,8 @@ export function createMapView({
   let lastGpsFix = null;
   let gpsActive = false;
   geolocate.on('geolocate', (pos) => {
+    // La declinación magnética se calcula en la última posición conocida.
+    noteDeclinationPosition(pos.coords.latitude, pos.coords.longitude);
     lastGpsFix = {
       lngLat: [pos.coords.longitude, pos.coords.latitude],
       accuracy: pos.coords.accuracy,

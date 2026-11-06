@@ -301,5 +301,37 @@ console.log('== iOS: el norte solo se fija nivelado ==');
   delete globalThis.window;
 }
 
+console.log('== norte verdadero ==');
+{
+  const oyentes = {};
+  globalThis.window = {
+    DeviceOrientationEvent: function () {},
+    addEventListener: (t, f) => ((oyentes[t] ||= []).push(f)),
+    removeEventListener: (t, f) => (oyentes[t] = (oyentes[t] || []).filter((g) => g !== f)),
+  };
+  let t0 = 5000;
+  const realNow = performance.now.bind(performance);
+  performance.now = () => t0;
+  const disparar = (e) => (oyentes.deviceorientationabsolute || []).forEach((f) => f(e));
+  const leer = (decl) => {
+    let r = null;
+    const stop = D.startOrientationCapture({ onReading: (x) => (r = x), getDeclination: () => decl });
+    for (let i = 0; i < 20; i++) {
+      t0 += 16;
+      disparar({ alpha: 40, beta: 70, gamma: 15, absolute: true });
+    }
+    stop();
+    return r;
+  };
+  const mag = leer(0);
+  const ver = leer(12.5);
+  const dif = ((ver.strike - mag.strike + 540) % 360) - 180;
+  ok('rumbo verdadero = magnético + declinación', Math.abs(dif - 12.5) < 1e-6, `${dif}`);
+  ok('la declinación no toca el manteo', Math.abs(ver.dip - mag.dip) < 1e-9);
+  ok('la lectura lleva la declinación aplicada', ver.declination === 12.5 && mag.declination === 0);
+  performance.now = realNow;
+  delete globalThis.window;
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

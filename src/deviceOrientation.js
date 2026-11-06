@@ -476,9 +476,13 @@ const ANCHOR_WINDOW_MS = 800;
  * acumulada en la ventana móvil cada vez que llega una muestra nueva.
  * Devuelve una función que corta la escucha.
  *
- * @param {{onReading: (r: object) => void, onError?: (msg: string) => void}} handlers
+ * `getDeclination()`, si se da, devuelve la declinación magnética (grados,
+ * Este positivo) que se suma a rumbos y direcciones: con ella la lectura
+ * sale referida al norte VERDADERO. Sin ella, o con 0, al magnético.
+ *
+ * @param {{onReading: (r: object) => void, onError?: (msg: string) => void, getDeclination?: () => number}} handlers
  */
-export function startOrientationCapture({ onReading, onError }) {
+export function startOrientationCapture({ onReading, onError, getDeclination }) {
   if (!deviceOrientationSupported()) {
     onError?.('This device or browser has no orientation sensor available.');
     return () => {};
@@ -548,12 +552,20 @@ export function startOrientationCapture({ onReading, onError }) {
       return;
     }
 
-    const { strike, dip, dipAzimuth } = strikeDipFromNormal(media);
-    // `strikeDipFromNormal` ya la llevó al hemisferio de arriba; la dispersión
-    // tiene que medirse contra ESA, o el signo de cada muestra se alinearía
-    // contra una media que apunta al revés que el resultado que se reporta.
+    // `strikeDipFromNormal` lleva la normal al hemisferio de arriba; la
+    // dispersión tiene que medirse contra ESA, o el signo de cada muestra se
+    // alinearía contra una media que apunta al revés que el resultado.
     const arriba = media.z < 0 ? { x: -media.x, y: -media.y, z: -media.z } : media;
     const { spread, strikeSd, dipSd } = orientationSpread(normales, arriba);
+    /*
+     * NORTE VERDADERO: todo lo de arriba está en el marco magnético de la
+     * brújula. La declinación se aplica al final, girando la normal y el
+     * canto medios alrededor de la vertical (acimut + D = `rotateYaw(−D)`):
+     * no toca el manteo ni la dispersión, solo desplaza las direcciones.
+     */
+    const decl = Number(getDeclination?.()) || 0;
+    const arribaV = decl ? rotateYaw(arriba, -decl) : arriba;
+    const { strike, dip, dipAzimuth } = strikeDipFromNormal(arribaV);
 
     /*
      * LA LÍNEA, DEL CANTO LARGO DEL TELÉFONO: su eje medio, llevado al plano
@@ -561,7 +573,7 @@ export function startOrientationCapture({ onReading, onError }) {
      * la del polo.
      */
     const cantoMedio = cantos.every(Boolean) ? meanNormal(cantos) : null;
-    const linea = cantoMedio ? lineFromAxis(cantoMedio, arriba) : null;
+    const linea = cantoMedio ? lineFromAxis(decl ? rotateYaw(cantoMedio, -decl) : cantoMedio, arribaV) : null;
     const lineSpread = cantoMedio
       ? Math.sqrt(cantos.reduce((acc, e) => acc + angleBetween(e, cantoMedio) ** 2, 0) / cantos.length)
       : NaN;
@@ -576,6 +588,7 @@ export function startOrientationCapture({ onReading, onError }) {
       spread,
       strikeSd,
       dipSd,
+      declination: decl,
       ...(linea ? { lineTrend: linea.trend, linePlunge: linea.plunge, lineSpread } : {}),
       ...extra,
     });
@@ -726,7 +739,7 @@ export function startOrientationCapture({ onReading, onError }) {
  *
  * @param {{onReading: (r: {heading: number}) => void, onError?: (msg: string) => void}} handlers
  */
-export function startHeadingCapture({ onReading, onError }) {
+export function startHeadingCapture({ onReading, onError, getDeclination }) {
   if (!deviceOrientationSupported()) {
     onError?.('This device or browser has no orientation sensor available.');
     return () => {};
@@ -755,15 +768,22 @@ export function startHeadingCapture({ onReading, onError }) {
       // -1 es el valor que da iOS cuando el compás todavía no calibró.
       if (heading < 0 || (e.webkitCompassAccuracy ?? 0) < 0) return;
       referenced = true;
+      const decl = Number(getDeclination?.()) || 0;
       onReading({
-        heading: suavizar(norm360(heading)),
+        heading: norm360(suavizar(norm360(heading)) + decl),
+        declination: decl,
         ...compassStatus(e.webkitCompassAccuracy, needsCalibration),
       });
       return;
     }
     if (e.absolute !== true || !Number.isFinite(e.alpha)) return;
     referenced = true;
-    onReading({ heading: suavizar(norm360(360 - e.alpha)), ...compassStatus(NaN, needsCalibration) });
+    const decl = Number(getDeclination?.()) || 0;
+    onReading({
+      heading: norm360(suavizar(norm360(360 - e.alpha)) + decl),
+      declination: decl,
+      ...compassStatus(NaN, needsCalibration),
+    });
   }
 
   let needsCalibration = false;

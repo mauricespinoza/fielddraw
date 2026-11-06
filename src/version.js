@@ -59,6 +59,8 @@ export const CHANGELOG = [
     highlights: [
       'New “Check compass” button (Device panel and Compass tab): turn the phone one full circle, level, and FieldDraw compares the compass against the gyroscope to tell you whether it is calibrated (±° of heading error), with figure-8 calibration steps when it is not.',
       'The Device reading now warns when the compass is out of calibration — from iOS’s own accuracy figure, the browser’s calibration alert, or a failed check — and each measurement stores the compass accuracy / check result in its properties.',
+      'Magnetic declination: the phone compass readings (Device method and Compass tab) are now corrected to TRUE north with the local declination from the World Magnetic Model (WMM2025), computed on the device, offline, at your last GPS position. A “True north” checkbox switches back to magnetic north; each measurement records which north and which declination it used.',
+      'The Position tab shows the magnetic declination at your location (with a Copy button).',
       'iOS: fixed strikes on steep planes. North was being re-fixed while the phone was tilted on its way to the outcrop, where iOS’s compass heading is unreliable; it is now fixed only with the phone level and still, then held by the gyroscope.',
     ],
   },
