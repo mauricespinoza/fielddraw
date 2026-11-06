@@ -194,5 +194,112 @@ console.log('== canto del teléfono -> línea ==');
   ok('proyectada al plano horizontal queda horizontal', cerca(lp.plunge, 0, 1e-9) && cerca(lp.trend, 0, 1e-9));
 }
 
+
+console.log('== salud de la brújula ==');
+{
+  // El giro entre la orientación absoluta y la relativa es el mismo en
+  // cualquier postura, también de pie, donde alpha y gamma se confunden.
+  for (const [a, b, g] of [[30, 10, -5], [200, 89.5, 30], [95, -40, 60], [300, 90, 0]]) {
+    const Rrel = D.orientationMatrix(a, b, g);
+    // Orientación absoluta = Rz(37°)·Rrel: se reconstruye desde la normal y el canto girados.
+    const rot = (v) => D.rotateYaw(v, 37);
+    const nAbs = rot(D.normalFromOrientation(a, b, g));
+    const eAbs = rot(D.edgeFromOrientation(a, b, g));
+    // Buscar (α, β, γ) absolutos: misma β y γ, α + 37 (R(α+d) = Rz(d)·R(α)).
+    const d = D.yawOffsetBetween({ alpha: a + 37, beta: b, gamma: g }, { alpha: a, beta: b, gamma: g });
+    ok(`desfase abs−rel = 37° en (${a},${b},${g})`, cerca(d, 37, 1e-6), `${d}`);
+    const n2 = D.normalFromOrientation(a + 37, b, g);
+    ok('…y coincide con rotateYaw', cerca(n2.x, nAbs.x, 1e-9) && cerca(n2.y, nAbs.y, 1e-9) && cerca(eAbs.z, D.edgeFromOrientation(a + 37, b, g).z, 1e-9));
+    ok('matriz ortonormal', cerca(Rrel[0][0] ** 2 + Rrel[1][0] ** 2 + Rrel[2][0] ** 2, 1, 1e-9));
+  }
+
+  // Brújula sana: el desfase no depende del rumbo.
+  const sana = [];
+  const mala = [];
+  for (let h = 0; h < 360; h += 2) {
+    sana.push({ heading: h, offset: 123 + 0.5 * Math.sin((h * 7 * Math.PI) / 180) });
+    // Hierro duro: error de rumbo de ±9° con una onda por vuelta.
+    mala.push({ heading: h, offset: norm(355 + 9 * Math.sin((h * Math.PI) / 180)) });
+  }
+  function norm(x) {
+    return ((x % 360) + 360) % 360;
+  }
+  const rs = D.evaluateCompassCheck(sana);
+  ok('brújula sana: buena', rs.verdict === 'good' && rs.errorDeg < 1, JSON.stringify(rs));
+  const rm = D.evaluateCompassCheck(mala);
+  ok('hierro duro ±9°: mala', rm.verdict === 'poor' && cerca(rm.errorDeg, 9, 1), JSON.stringify(rm));
+  ok('cruza 0°/360° sin romperse', rm.sectors === 8);
+  const media = D.evaluateCompassCheck(sana.filter((s) => s.heading < 180));
+  ok('media vuelta: incompleta', media.verdict === 'incomplete' && media.sectors === 4, JSON.stringify(media));
+  ok('wrap180', D.wrap180(350) === -10 && D.wrap180(10) === 10);
+  ok('media circular cruza 0°', cerca(D.circularMeanDeg([350, 10]), 0, 1e-9) || cerca(D.circularMeanDeg([350, 10]), 360, 1e-9));
+}
+
+console.log('== iOS: el norte solo se fija nivelado ==');
+{
+  // Un `window` de juguete: guarda los oyentes y deja disparar eventos.
+  const oyentes = {};
+  globalThis.window = {
+    DeviceOrientationEvent: function () {},
+    addEventListener: (t, f) => ((oyentes[t] ||= []).push(f)),
+    removeEventListener: (t, f) => (oyentes[t] = (oyentes[t] || []).filter((g) => g !== f)),
+  };
+  globalThis.DeviceOrientationEvent = window.DeviceOrientationEvent;
+  let t0 = 1000;
+  const realNow = performance.now.bind(performance);
+  performance.now = () => t0;
+  const disparar = (e) => (oyentes.deviceorientation || []).forEach((f) => f(e));
+
+  // Origen arbitrario del giroscopio: alphaRel = alphaVerdadero − 90.
+  const ALFA = 100;
+  const rel = ALFA - 90;
+  let ultima = null;
+  const stop = D.startOrientationCapture({ onReading: (r) => (ultima = r) });
+  // 1) Nivelado y quieto: fija el norte. Rumbo de iOS = 360 − α.
+  for (let i = 0; i < 20; i++) {
+    t0 += 16;
+    disparar({ alpha: rel, beta: 2, gamma: -1, webkitCompassHeading: 360 - ALFA, webkitCompassAccuracy: 5 });
+  }
+  // 2) Camino a la pared: inclinado y de lado, con el rumbo de iOS ya
+  //    corrido 25° (la cámara trasera no apunta adonde el lado superior).
+  for (let i = 0; i < 20; i++) {
+    t0 += 16;
+    disparar({ alpha: rel, beta: 60, gamma: 40, webkitCompassHeading: 360 - ALFA + 25, webkitCompassAccuracy: 5 });
+  }
+  // 3) Contra la pared subvertical.
+  for (let i = 0; i < 70; i++) {
+    t0 += 16;
+    disparar({ alpha: rel, beta: 80, gamma: 25, webkitCompassHeading: 360 - ALFA + 25, webkitCompassAccuracy: 5 });
+  }
+  const esperado = D.strikeDipFromOrientation(ALFA, 80, 25);
+  ok('rumbo correcto en plano de alto ángulo', cerca(ultima.strike, esperado.strike, 0.05), `${ultima.strike} vs ${esperado.strike}`);
+  ok('manteo correcto', cerca(ultima.dip, esperado.dip, 0.05), `${ultima.dip} vs ${esperado.dip}`);
+  ok('avisa que el norte viene de la última lectura nivelada', ultima.headingHeld === true);
+  ok('informa la precisión de iOS', ultima.compassAccuracy === 5 && !ultima.compassUncalibrated);
+
+  // Precisión mala: se marca descalibrada.
+  for (let i = 0; i < 5; i++) {
+    t0 += 16;
+    disparar({ alpha: rel, beta: 80, gamma: 25, webkitCompassHeading: 360 - ALFA, webkitCompassAccuracy: 30 });
+  }
+  ok('±30° de iOS = descalibrada', ultima.compassUncalibrated === true);
+  stop();
+
+  // Prueba de calibración en iOS: vuelta completa, nivelado, despacio.
+  let prog = null;
+  const stopC = D.startCompassCheck({ onProgress: (r) => (prog = r) });
+  for (let k = 0; k <= 720; k++) {
+    t0 += 50; // 0,5° cada 50 ms = 10°/s
+    const yaw = k * 0.5;
+    const err = 7 * Math.sin((yaw * Math.PI) / 180); // brújula descalibrada
+    const h = (((yaw + err) % 360) + 360) % 360;
+    disparar({ alpha: (((360 - yaw - 40) % 360) + 360) % 360, beta: 1, gamma: 2, webkitCompassHeading: h, webkitCompassAccuracy: 5 });
+  }
+  ok('la prueba detecta ±7°', prog && prog.verdict === 'fair' && cerca(prog.errorDeg, 7, 1.2), JSON.stringify(prog));
+  stopC();
+  performance.now = realNow;
+  delete globalThis.window;
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

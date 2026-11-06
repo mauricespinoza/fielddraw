@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v70';
+const VERSION = 'v71';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -77,6 +77,7 @@ const SHELL = [
   './src/areaCache.js',
   './src/attrs.js',
   './src/basemaps.js',
+  './src/compassCheck.js',
   './src/compassWidget.js',
   './src/controlPointSymbols.js',
   './src/controlPoints.js',

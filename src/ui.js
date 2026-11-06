@@ -55,7 +55,9 @@ import {
   needsOrientationPermission,
   requestOrientationPermission,
   startOrientationCapture,
+  lastCompassCheck,
 } from './deviceOrientation.js';
+import { openCompassCheck } from './compassCheck.js';
 import { buildCompass, compassHint } from './compassWidget.js';
 import {
   CONTROL_POINT_ICONS,
@@ -4390,6 +4392,7 @@ function commitDeviceReading() {
     showBanner('The phone edge has not been read yet — hold it a moment longer along the line.', 'warn');
     return;
   }
+  const chequeo = lastCompassCheck();
   store.createMeasurement({
     lngLat: fix.lngLat,
     strike: r.strike,
@@ -4407,6 +4410,11 @@ function commitDeviceReading() {
       n: r.n,
       gpsAccuracy: Math.round(fix.accuracy),
       ...(conLinea && Number.isFinite(r.lineSpread) ? { lineSd: round1(r.lineSpread) } : {}),
+      // El estado de la brújula al medir: una dispersión chica no dice nada
+      // de un magnetómetro descalibrado, que sesga el rumbo sin hacerlo
+      // temblar. Viaja con el dato para poder descartarlo después.
+      ...(Number.isFinite(r.compassAccuracy) ? { compassAccuracy: Math.round(r.compassAccuracy) } : {}),
+      ...(chequeo ? { compassCheckDeg: round1(chequeo.errorDeg) } : {}),
     },
   });
   // La siguiente medida arranca en vivo: dejarla detenida guardaría dos veces
@@ -5499,6 +5507,12 @@ function measurementSection(body, medida, reabrir) {
     measureRow(cal, 'Samples', `${p.n ?? '—'}`);
     if (Number.isFinite(p.lineSd)) {
       measureRow(cal, 'Line spread', `±${p.lineSd}°`, 'Angular spread of the phone long edge across the samples');
+    }
+    if (Number.isFinite(p.compassCheckDeg)) {
+      measureRow(cal, 'Compass check', `±${p.compassCheckDeg}°`, 'Heading error found by the last “Check compass” before this measurement');
+    }
+    if (Number.isFinite(p.compassAccuracy)) {
+      measureRow(cal, 'Compass accuracy', `±${p.compassAccuracy}°`, 'Heading accuracy reported by iOS when the measurement was taken');
     }
     if (Number.isFinite(p.gpsAccuracy)) {
       measureRow(cal, 'GPS accuracy', `±${p.gpsAccuracy} m`, 'The point was placed at the GPS position, not a tapped location');
@@ -6914,6 +6928,9 @@ export function initUI() {
   $('btn-close-topo').addEventListener('click', () => $('topo-menu').classList.add('hidden'));
   $('btn-close-device').addEventListener('click', () => store.setMeasureMethod('manual'));
   $('btn-device-done').addEventListener('click', commitDeviceReading);
+  // La prueba de calibración, a mano desde el mismo panel en que se mide: el
+  // consejo de la lectura lleva aquí cuando la brújula falla (ver `compassHint`).
+  $('btn-device-check-compass').addEventListener('click', () => openCompassCheck({ onClose: renderDevicePanel }));
   $('btn-close-selection-picker').addEventListener('click', () => {
     pickerDismissedFor = selectionKey(store.getState().selection);
     renderSelectionPicker();

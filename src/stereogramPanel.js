@@ -9,7 +9,8 @@ import * as store from './store.js';
 import { STRUCTURE_TYPES } from './symbology.js';
 import { betaAxis, countsByType, meanPole, stereogramData } from './stereogram.js';
 import { renderStereogram, stereogramPNG, stereogramSVG } from './stereogramView.js';
-import { buildCompass } from './compassWidget.js';
+import { buildCompass, compassHealthNote } from './compassWidget.js';
+import { openCompassCheck } from './compassCheck.js';
 import { formatStrikeDip, quadrant } from './structure.js';
 import {
   deviceOrientationSupported,
@@ -51,6 +52,7 @@ export function initStereogramPanel({ message } = {}) {
   $('stereo-tab-plot').addEventListener('click', () => showTab('plot'));
   $('stereo-tab-compass').addEventListener('click', () => showTab('compass'));
   $('stereo-tab-position').addEventListener('click', () => showTab('position'));
+  $('btn-stereo-check-compass').addEventListener('click', () => openCompassCheck());
   for (const b of document.querySelectorAll('.pos-copy')) {
     b.addEventListener('click', () => {
       const text = posRaw[b.dataset.copy];
@@ -432,9 +434,17 @@ function startCompass() {
     // Esta pestaña es una brújula de referencia, no una medida: solo el
     // ángulo desde el norte al que apunta el teléfono, sostenido como
     // cualquier brújula — a ras, no contra una roca.
-    note.textContent = 'Hold the phone flat, screen up, pointing the way you want to read.';
+    const base = 'Hold the phone flat, screen up, pointing the way you want to read.';
+    note.textContent = base;
     stopCompassCapture = startHeadingCapture({
-      onReading: (r) => compassWidget.update(r),
+      onReading: (r) => {
+        compassWidget.update(r);
+        // Si la brújula está descalibrada se dice aquí también, con la misma
+        // frase que en el panel Device (ver `compassHealthNote`).
+        const aviso = compassHealthNote(r);
+        const texto = aviso ? `${base} ⚠ ${aviso}` : base;
+        if (note.textContent !== texto) note.textContent = texto;
+      },
       onError: (msg) => {
         note.textContent = msg;
       },
