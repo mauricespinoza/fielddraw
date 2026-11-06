@@ -35,6 +35,7 @@ import {
   CONTROL_POINT_TOOL,
   PURPOSE_BY_ID,
   defaultControlPointStyle,
+  nextControlPointCode,
   sanitizeControlPointStyle,
 } from './controlPoints.js';
 
@@ -340,6 +341,13 @@ let state = {
   controlPointSampleId: '',
   controlPointSampleDescription: '',
   controlPointNote: '',
+  /**
+   * Prefijo del código correlativo de los puntos (p. ej. «DCR»). Con él, el
+   * Name de cada punto nuevo llega ya escrito —DCR01, DCR02…— con el número
+   * siguiente al mayor que hay en el dibujo (`nextControlPointCode`). Se queda
+   * puesto entre puntos y entre sesiones: es el de la campaña, no el del punto.
+   */
+  controlPointPrefix: '',
   /** Tamaño del punto, zoom mínimo y por qué campo se rotula. */
   controlPointStyle: defaultControlPointStyle(),
   /**
@@ -795,7 +803,7 @@ export function addVertex(p) {
    * segundo toque antes de guardar lo mueve en vez de crear otro.
    */
   if (state.tool === CONTROL_POINT_TOOL) {
-    set({ pendingControlPoint: { lngLat: [p[0], p[1]], via: 'tap' } });
+    set({ pendingControlPoint: { lngLat: [p[0], p[1]], via: 'tap' }, ...autoName() });
     return;
   }
 
@@ -1673,7 +1681,22 @@ export function setControlPointField(patch = {}) {
     next.controlPointSampleDescription = texto(patch.sampleDescription);
   }
   if (patch.note !== undefined) next.controlPointNote = texto(patch.note);
+  if (patch.prefix !== undefined) next.controlPointPrefix = texto(patch.prefix).trim();
   set(next);
+}
+
+/** El código que tocaría ahora con el prefijo puesto, o '' sin prefijo. */
+export const nextControlPointName = () =>
+  nextControlPointCode(state.features, state.controlPointPrefix);
+
+/**
+ * Al abrir el formulario de un punto nuevo, el Name llega con el código
+ * correlativo si hay prefijo y no se había escrito ya otro a mano.
+ */
+function autoName() {
+  if (state.pendingControlPoint || state.controlPointName.trim()) return {};
+  const code = nextControlPointName();
+  return code ? { controlPointName: code } : {};
 }
 
 /**
@@ -1713,7 +1736,9 @@ export function createControlPoint({
       geomKind: CONTROL_POINT_KIND,
       // El nombre del PUNTO —la estación, el afloramiento— y no el de la
       // muestra: un punto sin muestra sigue necesitando cómo llamarse.
-      name: texto(name !== undefined ? name : state.controlPointName).trim(),
+      name:
+        texto(name !== undefined ? name : state.controlPointName).trim() ||
+        (name === undefined ? nextControlPointName() : ''),
       sampleId: texto(sampleId !== undefined ? sampleId : state.controlPointSampleId).trim(),
       sampleDescription: texto(
         sampleDescription !== undefined ? sampleDescription : state.controlPointSampleDescription,
@@ -1764,6 +1789,7 @@ export function setPendingControlPoint(pending) {
       via,
       ...(Number.isFinite(altitude) ? { altitude } : {}),
     },
+    ...autoName(),
   });
 }
 
@@ -3073,9 +3099,15 @@ export function adoptImported(id) {
  * original (la visibilidad y opacidad guardadas se aplican con
  * `applyLayerState`). No toca el historial: es restaurar, no editar.
  */
+const restoredImportedIds = new Set();
+
+/** ¿La capa importada volvió de una sesión anterior (y no se importó ahora)? */
+export const isRestoredImported = (id) => restoredImportedIds.has(id);
+
 export function restoreImportedLayers(list) {
   const nuevas = list.filter((l) => !state.imported.some((x) => x.id === l.id));
   if (!nuevas.length) return;
+  for (const l of nuevas) restoredImportedIds.add(l.id);
   const entries = nuevas.map((l) => ({
     id: l.id,
     kind: 'imported',

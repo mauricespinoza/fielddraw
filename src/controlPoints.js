@@ -217,3 +217,36 @@ export function controlPointsCSV(features) {
   });
   return `﻿${[cabecera.map(csvCell).join(','), ...filas].join('\r\n')}\r\n`;
 }
+
+/**
+ * Código correlativo del siguiente punto de control: prefijo + número.
+ *
+ * En terreno las estaciones se numeran seguidas —DCR01, DCR02, DCR03…— y
+ * escribir el número a mano en cada afloramiento es como se repiten o se saltan
+ * códigos. El número sale del DIBUJO y no de un contador guardado aparte: el
+ * siguiente es el mayor que ya existe con ese prefijo más uno, así que borrar
+ * el último punto, deshacer o abrir otro proyecto nunca deja la cuenta
+ * desfasada de lo que de verdad hay en el mapa.
+ *
+ * El prefijo se compara sin distinguir mayúsculas («dcr» sigue a «DCR04»), y
+ * el número se rellena con ceros al ancho mayor ya usado (mínimo `pad`), para
+ * que la lista ordene bien alfabéticamente.
+ *
+ * @returns {string} '' si no hay prefijo
+ */
+export function nextControlPointCode(features, prefix, pad = 2) {
+  const pre = String(prefix || '').trim();
+  if (!pre) return '';
+  const esc = pre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${esc}(\\d+)$`, 'i');
+  let max = 0;
+  let width = pad;
+  for (const f of features || []) {
+    if (!isControlPoint(f)) continue;
+    const m = re.exec(String(f.properties.name || '').trim());
+    if (!m) continue;
+    max = Math.max(max, Number(m[1]));
+    width = Math.max(width, m[1].length);
+  }
+  return `${pre}${String(max + 1).padStart(width, '0')}`;
+}

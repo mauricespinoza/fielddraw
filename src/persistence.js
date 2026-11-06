@@ -214,6 +214,26 @@ export function loadSavedStructureStyle() {
   }
 }
 
+const CONTROL_POINT_PREFIX_KEY = 'fielddraw.controlPointPrefix.v1';
+
+/** Prefijo del código correlativo de los puntos de control (ver store). */
+export function saveControlPointPrefix(prefix) {
+  try {
+    if (prefix) localStorage.setItem(CONTROL_POINT_PREFIX_KEY, String(prefix));
+    else localStorage.removeItem(CONTROL_POINT_PREFIX_KEY);
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedControlPointPrefix() {
+  try {
+    return localStorage.getItem(CONTROL_POINT_PREFIX_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function saveControlPointStyle(style) {
   try {
     localStorage.setItem(CONTROL_POINT_STYLE_KEY, JSON.stringify(style));

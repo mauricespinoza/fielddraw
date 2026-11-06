@@ -15,6 +15,7 @@ import {
 } from './ui.js';
 import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
+  loadSavedControlPointPrefix,
   loadSavedControlPointStyle,
   loadSavedLayerState,
   loadSavedView,
@@ -31,6 +32,7 @@ import {
   loadSavedStraboStyle,
   loadSavedStructureStyle,
   loadSavedUnits,
+  saveControlPointPrefix,
   saveControlPointStyle,
   saveFeatures,
   saveImportedLayers,
@@ -103,6 +105,8 @@ const savedStructureStyle = loadSavedStructureStyle();
 if (savedStructureStyle) store.setStructureStyle(savedStructureStyle);
 const savedControlPointStyle = loadSavedControlPointStyle();
 if (savedControlPointStyle) store.setControlPointStyle(savedControlPointStyle);
+const savedControlPointPrefix = loadSavedControlPointPrefix();
+if (savedControlPointPrefix) store.setControlPointField({ prefix: savedControlPointPrefix });
 const savedStraboStyle = loadSavedStraboStyle();
 if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
 const savedImportStyle = loadSavedImportStyle();
@@ -172,6 +176,7 @@ store.subscribe(() => {
   if (store.changed('ornaments')) saveOrnaments(store.getState().ornaments);
   if (store.changed('structureStyle')) saveStructureStyle(store.getState().structureStyle);
   if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
+  if (store.changed('controlPointPrefix')) saveControlPointPrefix(store.getState().controlPointPrefix);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
   // No antes de restaurar las importadas: se pisaría el estado guardado de sus filas.
@@ -210,7 +215,10 @@ addEventListener('pagehide', () => {
   if (importedTimer !== null) guardarCapasImportadas();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushFeatures();
+  if (document.visibilityState !== 'hidden') return;
+  flushFeatures();
+  // En iOS cerrar la app desde el selector a menudo solo manda esto, no `pagehide`.
+  if (importedTimer !== null) guardarCapasImportadas();
 });
 
 /*

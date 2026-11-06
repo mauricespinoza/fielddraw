@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.52.1';
+export const APP_VERSION = '0.53.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
-  ['Create · Control', 'Observation points: choose tap or GPS, then fill in unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
+  ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.53.0',
+    highlights: [
+      'Create ▸ Control has a Code prefix field: with “DCR”, each new observation point is named DCR01, DCR02, DCR03… automatically, continuing from the highest number already on the map. The prefix is remembered between points and sessions; the name can still be edited by hand.',
+      'Fixed: points from an imported GeoPackage seemed to vanish when the app was reopened without signal. They were kept on the device, but the map reopened at its default view, far from them. The opening view now frames the restored GeoPackage layers together with the drawing, they are drawn even if they load before the map, and they are also saved when the app is closed from the app switcher.',
+    ],
+  },
   {
     version: '0.52.1',
     highlights: [
