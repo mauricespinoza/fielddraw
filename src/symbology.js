@@ -131,6 +131,9 @@ export const FAULT_SENSES = [
   { id: 'inverse', short: 'Inv', label: 'Inverse' },
   { id: 'left-lateral', short: 'LL', label: 'Left-lateral' },
   { id: 'right-lateral', short: 'RL', label: 'Right-lateral' },
+  // Hay falla pero no se pudo determinar el sentido: se dibuja sin ornamento
+  // cinemático (como lo importado sin sentido) y la estría no lleva flecha.
+  { id: 'undetermined', short: 'UND', label: 'Undetermined' },
 ];
 
 export const FAULT_SENSE_BY_ID = new Map(FAULT_SENSES.map((t) => [t.id, t]));

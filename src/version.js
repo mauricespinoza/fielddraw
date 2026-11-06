@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.53.0';
+export const APP_VERSION = '0.54.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.54.0',
+    highlights: [
+      'The Unit list of a control point (and of a dip measurement) now ends with “+ New unit…”: type a name and a code and the new unit is created and selected on the spot, without leaving the form.',
+      'Fault type for fault-plane measurements has a new option, UND (undetermined), for faults whose sense of movement could not be determined. It is drawn without a kinematic ornament, shown as “Undetermined” in the tables and the GeoPackage, and the stereogram draws no motion arrow for it.',
+    ],
+  },
   {
     version: '0.53.0',
     highlights: [
