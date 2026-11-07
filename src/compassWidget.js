@@ -308,7 +308,16 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
  * norte y volver a apoyarlo. Decirlo es la única salida.
  */
 export function compassHint(reading) {
-  if (!reading || !(reading.n >= 2)) return 'Reading the sensors…';
+  if (!reading) return 'Reading the sensors…';
+  // Antes del recuento de muestras: sin norte fijado la tanda está vacía
+  // A PROPÓSITO, y el consejo que sirve es nivelar, no «leyendo…».
+  if (reading.needsHeading) {
+    const salud = compassHealthNote(reading);
+    const nivelar =
+      'Hold the phone level, screen up, for a moment so the compass can find north — then press it flat against the surface.';
+    return salud ? `⚠ ${salud} · ${nivelar}` : nivelar;
+  }
+  if (!(reading.n >= 2)) return 'Reading the sensors…';
   const salud = compassHealthNote(reading);
   return salud ? `⚠ ${salud} · ${compassHintBase(reading)}` : compassHintBase(reading);
 }
