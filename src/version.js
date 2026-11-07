@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.55.0';
+export const APP_VERSION = '0.55.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.55.1',
+    highlights: [
+      'The map buttons — go to my GPS position, zoom, compass, fit all — now work with the Select tool (and every drawing tool) active. The selection lasso was swallowing their taps.',
+    ],
+  },
   {
     version: '0.55.0',
     highlights: [

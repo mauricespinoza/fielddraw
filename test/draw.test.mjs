@@ -813,5 +813,45 @@ console.log('== resetPointers deja el controlador utilizable ==');
   ok('no deja punteros', h.controller.touchCount() === 0);
 }
 
+console.log('== los controles del mapa (GPS, zoom…) no los consume ninguna herramienta ==');
+{
+  // Elegir (lazo) y Línea consumen cualquier puntero sobre el mapa; sobre un
+  // control de MapLibre no deben: el botón de GPS dejaba de responder.
+  // En el navegador `target` es el botón, hijo del host; aquí se reproduce
+  // fijándolo en el evento antes de entregárselo al host.
+  const sobre = (h, esControl, type, props) => {
+    const destino = type === 'pointerup' ? h.root : h.host;
+    const e = new PE(type, {
+      pointerId: 1, pointerType: 'mouse', buttons: 1, clientX: 900, clientY: 700,
+      getCoalescedEvents: () => [], ...props,
+    });
+    Object.defineProperty(e, 'target', {
+      value: { closest: (sel) => (esControl && sel === '.maplibregl-ctrl' ? {} : null) },
+      configurable: true,
+    });
+    destino.dispatchEvent(e);
+  };
+  for (const [nombre, opts, pre] of [
+    ['Elegir', { drawing: false, drag: true }, (h) => (h.controller.cb.lassoMode = () => true)],
+    ['Línea', { drawing: true }, () => {}],
+  ]) {
+    for (const esControl of [true, false]) {
+      const h = harness(opts);
+      pre(h);
+      sobre(h, esControl, 'pointerdown');
+      ok(
+        `${nombre}: ${esControl ? 'sobre un control NO se consume' : 'sobre el mapa SÍ se consume'}`,
+        h.controller.consuming === !esControl,
+        `consuming=${h.controller.consuming}`,
+      );
+      sobre(h, esControl, 'pointerup');
+      await sleep(10);
+      if (esControl) {
+        ok(`${nombre}: sobre un control no emite vértice ni arrastre`, h.kinds().length === 0, JSON.stringify(h.kinds()));
+      }
+    }
+  }
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);
