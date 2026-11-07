@@ -345,6 +345,12 @@ export function compassHealthNote(reading) {
   return '';
 }
 
+/** «40 s» / «2 min». */
+function edad(ms) {
+  const s = Math.round((ms || 0) / 1000);
+  return s < 90 ? `${s} s` : `${Math.round(s / 60)} min`;
+}
+
 function compassHintBase(reading) {
   if (reading.needsHeading) {
     return 'Hold the phone level, screen up, for a moment so the compass can find north — then press it flat against the surface.';
@@ -357,9 +363,9 @@ function compassHintBase(reading) {
   const partes = [`${reading.n} samples`];
   if (disp !== null) partes.push(`steady to ±${disp}°`);
   if (reading.headingStale) {
-    partes.push(`north locked ${Math.round(reading.headingAge / 1000)} s ago — level the phone again if the strike looks off`);
+    partes.push(`north locked ${edad(reading.headingAge)} ago — hold the phone level a moment to renew it`);
   } else if (reading.headingHeld) {
-    partes.push('north held from the last level reading');
+    partes.push(`north held by the gyroscope (${edad(reading.headingAge)})`);
   }
   return partes.join(' · ');
 }

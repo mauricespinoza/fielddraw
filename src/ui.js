@@ -4266,19 +4266,55 @@ function openGpsRequiredDialog() {
  * `DeviceOrientationEvent` y con el GPS es asunto de la capa de aplicación,
  * no del estado.
  */
-function syncDeviceCapture() {
+/** ¿La herramienta está en Create → Dip → Device? */
+function deviceWanted() {
   const s = store.getState();
-  const quiere = s.tool === 'measure' && s.measureMethod === 'device';
+  return s.tool === 'measure' && s.measureMethod === 'device';
+}
+
+/**
+ * Cuánto siguen escuchando los sensores después de salir de Device.
+ *
+ * EL NORTE DE iOS VIVE EN LA CAPTURA: es un desfase entre el giroscopio y la
+ * brújula, fijado con el teléfono nivelado, y cortar la escucha lo pierde
+ * —Safari para el giroscopio y al volver arranca con otro origen—. Y la
+ * escucha se cortaba en CADA medida: «Add measurement» pasa la herramienta un
+ * instante por Elegir antes de volver a armar Device, así que había que
+ * nivelar el teléfono antes de cada plano. Con este margen, ese parpadeo, o
+ * salir a mirar el mapa y volver dentro de un minuto, no tocan los sensores.
+ */
+const DEVICE_STOP_GRACE_MS = 60 * 1000;
+let deviceStopTimer = null;
+
+function stopDeviceCaptureNow() {
+  if (deviceStopTimer) {
+    clearTimeout(deviceStopTimer);
+    deviceStopTimer = null;
+  }
+  if (stopDeviceCapture) {
+    stopDeviceCapture();
+    stopDeviceCapture = null;
+    store.setDeviceReading(null);
+  }
+}
+
+function syncDeviceCapture() {
+  const quiere = deviceWanted();
 
   if (!quiere) {
-    if (stopDeviceCapture) {
-      stopDeviceCapture();
-      stopDeviceCapture = null;
-      store.setDeviceReading(null);
+    if (stopDeviceCapture && !deviceStopTimer) {
+      deviceStopTimer = setTimeout(() => {
+        deviceStopTimer = null;
+        if (!deviceWanted()) stopDeviceCaptureNow();
+      }, DEVICE_STOP_GRACE_MS);
     }
     deviceHeld = null;
     $('device-panel').classList.add('hidden');
     return;
+  }
+  if (deviceStopTimer) {
+    clearTimeout(deviceStopTimer);
+    deviceStopTimer = null;
   }
 
   if (!gpsReadyForDevice()) {
@@ -4304,11 +4340,16 @@ function syncDeviceCapture() {
       // Norte verdadero: la declinación del WMM en la última posición del GPS.
       getDeclination: activeDeclination,
       // Con la medida detenida los sensores siguen escuchando —reanudar es
-      // instantáneo—, pero la lectura mostrada no se toca.
+      // instantáneo—, pero la lectura mostrada no se toca. Fuera de Device (en el margen de `DEVICE_STOP_GRACE_MS`) los sensores
+      // siguen escuchando para no perder el norte, pero no se publica nada:
+      // sesenta lecturas por segundo en el store mientras se dibuja otra cosa
+      // serían sesenta repasos de suscriptores para nada.
       onReading: (r) => {
-        if (!deviceHeld) store.setDeviceReading(r);
+        if (!deviceHeld && deviceWanted()) store.setDeviceReading(r);
       },
       onError: (msg) => {
+        // Si ya se salió de Device (margen de cierre), no se toca la paleta.
+        if (!deviceWanted()) return;
         showBanner(msg, 'warn');
         store.setMeasureMethod('manual');
       },

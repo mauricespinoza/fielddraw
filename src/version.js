@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.55.2';
+export const APP_VERSION = '0.55.3';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.55.3',
+    highlights: [
+      'iPhone/iPad, Device method: level the phone ONCE and measure plane after plane. “Add measurement” no longer drops north (it used to restart the sensors, so you had to level before every measurement), and leaving Device for up to a minute keeps it too.',
+      'North is now held by the gyroscope for 3 minutes instead of 45 s. Each time the phone passes level again it renews north by itself and measures how much this phone’s gyroscope drifts, and the hold time adapts to that (2° of drift, between 45 s and 10 min).',
+    ],
+  },
   {
     version: '0.55.2',
     highlights: [
