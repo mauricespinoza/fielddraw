@@ -459,8 +459,59 @@ export const READY_SPREAD_DEG = 4;
 /** Recorte de atípicos: se descarta lo que se aparte más de esto de la media. */
 const TRIM_FACTOR = 2.5;
 const TRIM_FLOOR_DEG = 1.5;
-/** A partir de aquí el norte anclado ya tiene edad como para avisar. */
-export const HEADING_STALE_MS = 45000;
+/**
+ * iOS: cuánto se sostiene el norte con el giroscopio antes de pedir que se
+ * renueve, mientras no se haya medido la deriva de ESTE teléfono.
+ *
+ * Era 45 s fijos, lo que obligaba a nivelar casi en cada medida. El giroscopio
+ * de un teléfono actual deriva en acimut del orden de un grado en varios
+ * minutos, así que 3 min es prudente. En cuanto el teléfono vuelve a pasar
+ * por una postura nivelada y quieta —lo que pasa solo, al mirar la pantalla
+ * entre medida y medida— el norte se renueva y además se MIDE cuánto derivó
+ * (ver `noteGyroDrift`), y el plazo pasa a ser el que da esa deriva.
+ */
+export const HEADING_STALE_MS = 3 * 60 * 1000;
+/** Deriva acumulada (grados) a partir de la cual el norte sostenido ya no vale. */
+const STALE_DRIFT_DEG = 2;
+/** Plazos mínimo y máximo de sostén, se mida la deriva que se mida. */
+const STALE_MIN_MS = 45 * 1000;
+const STALE_MAX_MS = 10 * 60 * 1000;
+/** Hueco mínimo entre dos anclajes para medir deriva: con menos, manda el ruido del compás. */
+const DRIFT_MIN_GAP_MS = 20 * 1000;
+
+/**
+ * Deriva del giroscopio en acimut, en °/min, medida en este teléfono durante
+ * esta sesión (`NaN` mientras no se haya medido). Vive fuera de la captura
+ * para que sobreviva a cerrar y abrir el panel.
+ */
+let gyroDriftDegPerMin = NaN;
+
+/**
+ * Anota una deriva observada: al renovar el norte, cuánto se había corrido el
+ * sostenido (`grados`) en cuánto tiempo (`ms`). Media móvil, para que una
+ * renovación ruidosa no mande sola. Incluye el ruido del propio compás de
+ * iOS, así que tiende a SOBREestimar la deriva: el plazo sale prudente.
+ */
+export function noteGyroDrift(grados, ms) {
+  if (!(ms >= DRIFT_MIN_GAP_MS) || !Number.isFinite(grados)) return;
+  const rate = Math.abs(grados) / (ms / 60000);
+  gyroDriftDegPerMin = Number.isFinite(gyroDriftDegPerMin) ? 0.5 * gyroDriftDegPerMin + 0.5 * rate : rate;
+}
+
+/** Deriva medida (°/min), o `NaN`. */
+export const gyroDrift = () => gyroDriftDegPerMin;
+
+/** Cuánto se puede sostener el norte ahora, en ms (ver `HEADING_STALE_MS`). */
+export function headingStaleAfterMs() {
+  if (!Number.isFinite(gyroDriftDegPerMin)) return HEADING_STALE_MS;
+  const ms = (STALE_DRIFT_DEG / Math.max(gyroDriftDegPerMin, 1e-3)) * 60000;
+  return Math.min(STALE_MAX_MS, Math.max(STALE_MIN_MS, ms));
+}
+
+/** Solo para las pruebas: olvida la deriva medida. */
+export function resetGyroDrift() {
+  gyroDriftDegPerMin = NaN;
+}
 /**
  * iOS: inclinación máxima de la normal (respecto de la vertical) con la que
  * se acepta fijar el norte. Ver la nota del anclaje en `onEvent`.
@@ -505,6 +556,8 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
    */
   let yawOffset = null;
   let yawOffsetAt = 0;
+  /** Norte sostenido justo antes de volver a anclar, para medir la deriva. */
+  let reanchor = null;
   /** Desfases candidatos recientes, tomados con el teléfono nivelado y quieto. */
   let anchors = [];
   /** Última muestra nivelada, para medir a qué velocidad gira el teléfono. */
@@ -669,9 +722,19 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
       const alphaAbs = valido && nivelado ? alphaFromHeading(heading, beta) : null;
       const anclaAhora = alphaAbs !== null && quieto;
       if (anclaAhora) {
+        // Vuelve a anclar después de haberlo sostenido con el giroscopio: se
+        // guarda el norte sostenido para medir cuánto había derivado.
+        if (yawOffset !== null && !reanchor && now - yawOffsetAt > 1000) {
+          reanchor = { offset: yawOffset, at: yawOffsetAt };
+        }
         anchors.push({ t: now, d: norm360(alphaAbs - alphaRel) });
         anchors = anchors.filter((a) => now - a.t <= ANCHOR_WINDOW_MS);
         yawOffset = circularMeanDeg(anchors.map((a) => a.d));
+        // Medio segundo de candidatos nuevos ya promedia el ruido del compás.
+        if (reanchor && now - anchors[0].t >= 500) {
+          noteGyroDrift(wrap180(yawOffset - reanchor.offset), anchors[0].t - reanchor.at);
+          reanchor = null;
+        }
         yawOffsetAt = now;
       }
       if (yawOffset === null) {
@@ -691,10 +754,13 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
         now,
         rotateYaw(edgeFromOrientation(alphaRel, beta, gamma), yawOffset),
       );
+      const plazo = headingStaleAfterMs();
       report({
         headingHeld: !anclaAhora,
         headingAge: anclaAhora ? 0 : now - yawOffsetAt,
-        headingStale: !anclaAhora && now - yawOffsetAt > HEADING_STALE_MS,
+        headingStale: !anclaAhora && now - yawOffsetAt > plazo,
+        headingStaleAfter: plazo,
+        ...(Number.isFinite(gyroDriftDegPerMin) ? { gyroDrift: gyroDriftDegPerMin } : {}),
       });
       return;
     }

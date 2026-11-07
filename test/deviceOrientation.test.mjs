@@ -370,5 +370,59 @@ console.log('== iOS: abrir Device con el teléfono inclinado no es «sin magnet�
   delete globalThis.window;
 }
 
+console.log('== iOS: cuánto se sostiene el norte, según la deriva medida ==');
+{
+  D.resetGyroDrift();
+  ok('sin deriva medida: 3 min', D.headingStaleAfterMs() === 180000);
+  const oyentes = {};
+  globalThis.window = {
+    DeviceOrientationEvent: function () {},
+    addEventListener: (t, f) => ((oyentes[t] ||= []).push(f)),
+    removeEventListener: (t, f) => (oyentes[t] = (oyentes[t] || []).filter((g) => g !== f)),
+  };
+  let t0 = 100000;
+  const realNow = performance.now.bind(performance);
+  performance.now = () => t0;
+  const disparar = (e) => (oyentes.deviceorientation || []).forEach((f) => f(e));
+  let u = null;
+  const stop = D.startOrientationCapture({ onReading: (r) => (u = r) });
+  const ALFA = 100; // acimut verdadero del teléfono
+  // El giroscopio deriva: su origen se corre `deriva` grados.
+  const evento = (deriva, beta, gamma) =>
+    disparar({ alpha: ALFA - 90 + deriva, beta, gamma, webkitCompassHeading: 360 - ALFA, webkitCompassAccuracy: 5 });
+  const durante = (ms, f) => {
+    const fin = t0 + ms;
+    while (t0 < fin) {
+      t0 += 16;
+      f();
+    }
+  };
+  durante(1000, () => evento(0, 2, 1)); // nivelado: fija el norte
+  durante(60000, () => evento(0, 75, 10)); // un minuto contra la roca
+  ok('a 1 min, con el plazo por omisión, no está vencido', u.headingHeld && !u.headingStale, JSON.stringify(u));
+  // Vuelve a nivelar tras ~1 min, con el giroscopio corrido 1°: ~1°/min.
+  durante(1000, () => evento(1, 2, 1));
+  ok('mide la deriva al renovar el norte', Math.abs(D.gyroDrift() - 1 / (61 / 60)) < 0.15, `${D.gyroDrift()}`);
+  ok('el plazo pasa a ser el de 2° de deriva (~2 min)', Math.abs(D.headingStaleAfterMs() - (2 / D.gyroDrift()) * 60000) < 1, `${D.headingStaleAfterMs()}`);
+  durante(130000, () => evento(1, 75, 10));
+  ok('pasado ese plazo, avisa', u.headingStale === true, JSON.stringify(u));
+  stop();
+
+  // Un giroscopio muy estable no alarga el plazo más allá del tope, ni uno
+  // muy malo lo baja del mínimo.
+  D.resetGyroDrift();
+  D.noteGyroDrift(0.01, 600000);
+  ok('tope de 10 min', D.headingStaleAfterMs() === 600000);
+  D.resetGyroDrift();
+  D.noteGyroDrift(20, 30000);
+  ok('mínimo de 45 s', D.headingStaleAfterMs() === 45000);
+  D.resetGyroDrift();
+  D.noteGyroDrift(5, 5000);
+  ok('un hueco corto no cuenta (manda el ruido del compás)', Number.isNaN(D.gyroDrift()));
+  D.resetGyroDrift();
+  performance.now = realNow;
+  delete globalThis.window;
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);
