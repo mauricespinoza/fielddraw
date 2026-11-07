@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.55.1';
+export const APP_VERSION = '0.55.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.55.2',
+    highlights: [
+      'iPhone/iPad: fixed the Device method failing with “No compass-referenced orientation arrived” and falling back to Manual when it was opened with the phone tilted (a regression in 0.55.0). It now asks you to hold the phone level for a moment to find north, and actually locks north even with normal sensor jitter.',
+    ],
+  },
   {
     version: '0.55.1',
     highlights: [

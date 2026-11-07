@@ -509,6 +509,8 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
   let anchors = [];
   /** Última muestra nivelada, para medir a qué velocidad gira el teléfono. */
   let prevLevel = null;
+  /** Si en la última base de ~200 ms el teléfono, nivelado, estuvo quieto. */
+  let levelStill = false;
   /** iOS: error estimado de la brújula, en grados (`webkitCompassAccuracy`). */
   let compassAccuracy = NaN;
   /** El navegador avisó (`compassneedscalibration`) de que hay que calibrar. */
@@ -611,6 +613,16 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
     const heading = e.webkitCompassHeading;
 
     if (heading !== undefined) {
+      /*
+       * QUE LLEGUE `webkitCompassHeading` YA PRUEBA QUE HAY MAGNETÓMETRO,
+       * aunque todavía no se haya podido fijar el norte. Antes esto se
+       * marcaba solo después de fijarlo, y desde que el norte exige el
+       * teléfono nivelado y quieto, quien abría Device con el teléfono en la
+       * mano inclinado recibía a los 2,5 s el error de «no hay magnetómetro»
+       * y la app lo devolvía al método manual. Lo que falta en ese caso no
+       * es el sensor, es nivelar un momento — y eso lo dice `needsHeading`.
+       */
+      referenced = true;
       const alphaRel = Number.isFinite(e.alpha) ? e.alpha : 0;
       const acc = e.webkitCompassAccuracy;
       compassAccuracy = Number.isFinite(acc) ? acc : NaN;
@@ -638,14 +650,21 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
       const nRel = normalFromOrientation(alphaRel, beta, gamma);
       let quieto = false;
       const nivelado = nRel.z >= Math.cos(ANCHOR_MAX_TILT_DEG * RAD);
+      // La velocidad de giro se mide sobre ~200 ms y no muestra a muestra:
+      // a 60 Hz, un cuarto de grado de ruido entre dos muestras ya parecería
+      // un giro de 15°/s, y el norte no se fijaría nunca.
       if (nivelado) {
-        if (prevLevel && now > prevLevel.t) {
+        if (!prevLevel) {
+          prevLevel = { t: now, alpha: alphaRel };
+        } else if (now - prevLevel.t >= 200) {
           const giro = Math.abs(wrap180(alphaRel - prevLevel.alpha));
-          quieto = (giro / (now - prevLevel.t)) * 1000 <= ANCHOR_MAX_RATE_DEG_S;
+          levelStill = (giro / (now - prevLevel.t)) * 1000 <= ANCHOR_MAX_RATE_DEG_S;
+          prevLevel = { t: now, alpha: alphaRel };
         }
-        prevLevel = { t: now, alpha: alphaRel };
+        quieto = levelStill;
       } else {
         prevLevel = null;
+        levelStill = false;
       }
       const alphaAbs = valido && nivelado ? alphaFromHeading(heading, beta) : null;
       const anclaAhora = alphaAbs !== null && quieto;
@@ -661,7 +680,8 @@ export function startOrientationCapture({ onReading, onError, getDeclination }) 
         report({
           needsHeading: true,
           headingHeld: false,
-          ...compassStatus(compassAccuracy, needsCalibration),
+          // Rumbo −1 sostenido: iOS no ha calibrado el compás todavía.
+          ...compassStatus(compassAccuracy, needsCalibration || !(heading >= 0)),
         });
         return;
       }

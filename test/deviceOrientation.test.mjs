@@ -333,5 +333,42 @@ console.log('== norte verdadero ==');
   delete globalThis.window;
 }
 
+console.log('== iOS: abrir Device con el teléfono inclinado no es «sin magnetómetro» ==');
+{
+  const oyentes = {};
+  globalThis.window = {
+    DeviceOrientationEvent: function () {},
+    addEventListener: (t, f) => ((oyentes[t] ||= []).push(f)),
+    removeEventListener: (t, f) => (oyentes[t] = (oyentes[t] || []).filter((g) => g !== f)),
+  };
+  const disparar = (e) => (oyentes.deviceorientation || []).forEach((f) => f(e));
+  let error = null;
+  let ultima = null;
+  const stop = D.startOrientationCapture({ onReading: (r) => (ultima = r), onError: (m) => (error = m) });
+  // 3 s con el teléfono en la mano, inclinado 55°: el norte no se puede fijar.
+  const t0 = Date.now();
+  while (Date.now() - t0 < 2700) {
+    disparar({ alpha: 30, beta: 55, gamma: 10, webkitCompassHeading: 200, webkitCompassAccuracy: 8 });
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  ok('no salta el error de magnetómetro', error === null, error);
+  ok('pide nivelar', ultima && ultima.needsHeading === true, JSON.stringify(ultima));
+  // Se nivela un momento (con algo de ruido de muestra a muestra): fija el norte.
+  for (let i = 0; i < 40; i++) {
+    disparar({ alpha: 30 + (i % 2 ? 0.3 : -0.3), beta: 3, gamma: -2, webkitCompassHeading: 200, webkitCompassAccuracy: 8 });
+    await new Promise((r) => setTimeout(r, 16));
+  }
+  ok('nivelado con ruido, fija el norte', ultima && !ultima.needsHeading && ultima.n >= 2, JSON.stringify(ultima));
+  stop();
+
+  // Compás de iOS sin calibrar (rumbo −1): se avisa, no se rinde.
+  let u2 = null;
+  const stop2 = D.startOrientationCapture({ onReading: (r) => (u2 = r) });
+  disparar({ alpha: 30, beta: 3, gamma: 0, webkitCompassHeading: -1, webkitCompassAccuracy: -1 });
+  ok('rumbo −1: pide nivelar y marca descalibrada', u2 && u2.needsHeading && u2.compassUncalibrated === true, JSON.stringify(u2));
+  stop2();
+  delete globalThis.window;
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);
