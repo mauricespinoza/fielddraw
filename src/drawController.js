@@ -454,7 +454,25 @@ export class DrawController {
     }
   }
 
+  /**
+   * ¿El puntero cayó sobre un control del mapa (GPS, zoom, brújula, ajustar
+   * vista) y no sobre el mapa mismo?
+   *
+   * Los controles de MapLibre viven DENTRO del host, así que este controlador
+   * veía también sus pulsaciones. Con Elegir activa, el lazo consume cualquier
+   * puntero —`stopPropagation` más `preventDefault`— y `swallow` se traga el
+   * `click` que viene detrás: el botón de GPS no recibía ni el clic, y lo
+   * mismo le pasaba a los demás controles. Un control no es una superficie de
+   * dibujo ni de selección, así que su pulsación no es de este controlador:
+   * se deja pasar entera, en cualquier herramienta.
+   */
+  onControl(e) {
+    const t = e.target;
+    return !!(t && typeof t.closest === 'function' && t.closest('.maplibregl-ctrl'));
+  }
+
   onPointerDown(e) {
+    if (this.onControl(e)) return;
     /*
      * `isPrimary` es el PRIMER contacto de su tipo: si llega uno y todavía
      * creemos tener dedos en la pantalla, lo que tenemos es basura de un gesto
