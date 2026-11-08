@@ -73,6 +73,31 @@ ok('...y lo dice', conSeleccion.usingSelection === true);
 const counts = S.countsByType(sinSeleccion.points);
 ok('cuenta por tipo', counts.get('bedding') === 2 && counts.get('joint') === 1);
 
+// Un lazo en el mapa se lleva también contactos y polígonos: a la red pasan
+// solo las medidas estructurales que envolvió, y se cuenta lo dejado fuera.
+{
+  const contacto = { type: 'Feature', properties: { id: 'k', geomKind: 'line' }, geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] } };
+  const poligono = { type: 'Feature', properties: { id: 'u', geomKind: 'polygon' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } };
+  const todo = [...features, contacto, poligono];
+  const mixta = S.stereogramData(todo, ['a', 'k', 'u']);
+  ok('selección mixta: solo la medida envuelta', mixta.points.length === 1 && mixta.points[0].id === 'a');
+  ok('...usa la selección', mixta.usingSelection === true);
+  ok('...y cuenta lo que no es medida', mixta.selectedOther === 2, `${mixta.selectedOther}`);
+  const sinMedidas = S.stereogramData(todo, ['k', 'u']);
+  ok('selección sin medidas: entran todas', sinMedidas.points.length === 3 && !sinMedidas.usingSelection);
+  const rota = { type: 'Feature', properties: { id: 'z', geomKind: 'measurement', type: 'joint', strike: null, dip: 30 }, geometry: { type: 'Point', coordinates: [0, 0] } };
+  ok('una medida sin rumbo no entra', S.stereogramData([...features, rota], []).points.length === 3);
+}
+
+// Filtro por tipo: lo oculto no se plotea, pero sigue disponible para la leyenda.
+{
+  const filtrada = S.stereogramData(features, [], { hiddenTypes: new Set(['bedding']) });
+  ok('filtro por tipo: solo las diaclasas', filtrada.points.length === 1 && filtrada.points[0].type === 'joint');
+  ok('...lo oculto sigue en available', filtrada.available.length === 3);
+  const conSelYFiltro = S.stereogramData(features, ['a', 'b'], { hiddenTypes: ['joint'] });
+  ok('selección + filtro', conSelYFiltro.points.length === 1 && conSelYFiltro.points[0].id === 'a');
+}
+
 console.log('== vector medio de un cúmulo de polos ==');
 
 // `strikeDipFromPole` es el inverso exacto de `poleOf`: ida y vuelta sobre

@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.55.3';
+export const APP_VERSION = '0.56.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.56.0',
+    highlights: [
+      'Stereogram from a map selection: when the lasso or rectangle wraps dip measurements together with contacts, polygons or control points, only the structural data are plotted, and the note says how many other features were left out.',
+      'Stereogram filter by type: the “By type” legend is now a set of checkboxes. Untick bedding, foliation, joints or fault planes to hide them from the net, the mean vector, the beta axis and the average plane; the choice is kept while the app is open.',
+    ],
+  },
   {
     version: '0.55.3',
     highlights: [
