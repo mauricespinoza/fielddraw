@@ -3335,6 +3335,17 @@ input[type='radio'] {
   opacity: 0.4;
 }
 
+/* La leyenda por tipo es también el filtro: cada fila es una casilla. */
+.sv-row.sv-filter {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sv-row.sv-filter input[type='checkbox'] {
+  margin: 0;
+  flex: none;
+}
+
 @media (max-width: 860px) {
   .sv-body {
     flex-direction: column;

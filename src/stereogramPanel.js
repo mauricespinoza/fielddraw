@@ -52,6 +52,18 @@ let showMean = false;
 let showBeta = false;
 /** Líneas (estría, L₁) y flechas del colgante: parte del dato, encendidas. */
 let showLines = true;
+/**
+ * Tipos de estructura que la leyenda tiene apagados. Se recuerdan mientras
+ * dura la sesión —cerrar y reabrir la red no los vuelve a encender—: quien
+ * filtra para ver solo la estratificación lo hace para varias vueltas.
+ */
+const hiddenTypes = new Set();
+
+/** Lo que se grafica ahora mismo: selección del mapa, y filtro por tipo. */
+const currentData = () => {
+  const st = store.getState();
+  return stereogramData(st.features, st.selection, { hiddenTypes });
+};
 
 export function initStereogramPanel({ message } = {}) {
   onMessage = message || onMessage;
@@ -169,8 +181,14 @@ function showTab(tab) {
 /* ---------- pestaña Plot ---------- */
 
 function renderPlot() {
-  const st = store.getState();
-  const data = stereogramData(st.features, st.selection);
+  const data = currentData();
+  // Lo lassado que el filtro acaba de esconder deja de contar: no se puede
+  // promediar ni mandar al mapa algo que no se ve en la red.
+  if (highlighted.size > 0) {
+    const visibles = new Set(data.points.map((p) => p.id));
+    const quedan = [...highlighted].filter((id) => visibles.has(id));
+    if (quedan.length !== highlighted.size) highlighted = new Set(quedan);
+  }
   // El vector medio y el eje beta se calculan del cúmulo que el lazo tiene
   // marcado, si hay algo lassado — es la forma directa de promediar solo un
   // subconjunto sin pasar por «Select these on the map» y reabrir la
@@ -193,9 +211,17 @@ function renderPlot() {
     showLines,
   });
 
-  $('stereo-source-note').textContent = data.usingSelection
-    ? `Plotting ${data.points.length} of ${data.total} measurement(s) — the current map selection.`
-    : `Plotting all ${data.total} measurement(s) — select some on the map to plot only those.`;
+  const filtrados = data.available.length - data.points.length;
+  const partes = [
+    data.usingSelection
+      ? `Plotting ${data.points.length} of ${data.total} measurement(s) — the structural data in the current map selection.`
+      : `Plotting ${data.points.length} of ${data.total} measurement(s) — select some on the map to plot only those.`,
+  ];
+  if (data.selectedOther > 0) {
+    partes.push(`${data.selectedOther} other selected feature(s) left out — only dip measurements have a pole to plot.`);
+  }
+  if (filtrados > 0) partes.push(`${filtrados} hidden by the type filter.`);
+  $('stereo-source-note').textContent = partes.join(' ');
 
   const deQue = usandoLazo ? ` of the ${statSource.length} lassoed` : '';
   const meanValue = $('stereo-mean-value');
@@ -229,14 +255,34 @@ function renderPlot() {
     betaValue.classList.add('hidden');
   }
 
-  const counts = countsByType(data.points);
+  // La leyenda es también el filtro: una casilla por tipo presente en lo que
+  // se está mirando, contada ANTES de filtrar para que un tipo apagado siga
+  // ahí y se pueda volver a encender.
+  const counts = countsByType(data.available);
   const legend = $('stereo-legend');
   legend.replaceChildren();
-  for (const t of STRUCTURE_TYPES) {
+  const tipos = [...STRUCTURE_TYPES];
+  for (const id of counts.keys()) {
+    if (!tipos.some((t) => t.id === id)) {
+      const p = data.available.find((q) => q.type === id);
+      tipos.push({ id, label: p ? p.typeLabel : String(id), color: p ? p.color : '#9aa4b2' });
+    }
+  }
+  for (const t of tipos) {
     const n = counts.get(t.id) || 0;
     if (n === 0) continue;
-    const row = document.createElement('div');
-    row.className = 'sv-row';
+    const on = !hiddenTypes.has(t.id);
+    const row = document.createElement('label');
+    row.className = `sv-row sv-filter${on ? '' : ' off'}`;
+    row.title = on ? `Hide ${t.label} from the net` : `Show ${t.label} on the net`;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = on;
+    cb.addEventListener('change', () => {
+      if (cb.checked) hiddenTypes.delete(t.id);
+      else hiddenTypes.add(t.id);
+      renderPlot();
+    });
     const sw = document.createElement('span');
     sw.className = 'sv-swatch';
     sw.style.background = t.color;
@@ -246,7 +292,7 @@ function renderPlot() {
     const num = document.createElement('span');
     num.className = 'sv-num';
     num.textContent = String(n);
-    row.append(sw, what, num);
+    row.append(cb, sw, what, num);
     legend.appendChild(row);
   }
   const nLineas = data.points.filter((p) => p.line).length;
@@ -267,7 +313,10 @@ function renderPlot() {
     row.append(sw, what, num);
     legend.appendChild(row);
   }
-  $('stereo-legend-count').textContent = `${data.points.length}`;
+  $('stereo-legend-count').textContent =
+    data.points.length === data.available.length
+      ? `${data.points.length}`
+      : `${data.points.length} / ${data.available.length}`;
 
   $('btn-stereo-average').disabled = (usandoLazo ? statSource.length : data.points.length) < 2;
   $('btn-stereo-select-map').disabled = highlighted.size === 0;
@@ -282,7 +331,7 @@ function renderPlot() {
  */
 function createAverage() {
   const st = store.getState();
-  const data = stereogramData(st.features, st.selection);
+  const data = currentData();
   const ids = new Set(
     highlighted.size > 0 ? [...highlighted] : data.points.map((p) => p.id),
   );

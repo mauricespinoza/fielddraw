@@ -120,20 +120,45 @@ export function lineOf(p) {
 }
 
 /**
- * Qué medidas entran al gráfico: la selección actual si hay alguna medida en
- * ella, o todas las medidas del dibujo si no. Es la misma regla que ya usa el
- * corte estructural para decidir qué manteos proyectar (`sectionPanel.js`):
- * con selección se respeta lo elegido, sin ella hay que ofrecer algo y lo que
- * tiene sentido es todo.
+ * Qué medidas entran al gráfico: las medidas estructurales de la selección
+ * actual si hay alguna en ella, o todas las medidas del dibujo si no. Es la
+ * misma regla que ya usa el corte estructural para decidir qué manteos
+ * proyectar (`sectionPanel.js`): con selección se respeta lo elegido, sin ella
+ * hay que ofrecer algo y lo que tiene sentido es todo.
+ *
+ * Un lazo sobre el mapa se lleva de todo —contactos, polígonos, puntos de
+ * control—, pero a la red solo pasan las medidas de rumbo y manteo que
+ * envolvió: lo demás no tiene polo que plotear. Una medida sin rumbo o manteo
+ * numérico (importada a medias) tampoco entra: no hay dónde dibujarla.
+ *
+ * `hiddenTypes` es el filtro por tipo de la leyenda: esos tipos se cuentan
+ * (`available`, para que la leyenda los ofrezca para volver a encenderlos)
+ * pero no se plotean ni entran a ningún promedio.
+ *
+ * @returns {{points, available, usingSelection, selectedOther, total}}
+ *   `selectedOther` cuenta lo seleccionado que no es una medida, para decir
+ *   que se dejó fuera.
  */
-export function stereogramData(features, selectionIds) {
-  const medidas = features.filter((f) => f.properties.geomKind === 'measurement');
+export function stereogramData(features, selectionIds, { hiddenTypes = null } = {}) {
+  const medidas = features.filter(
+    (f) =>
+      f.properties.geomKind === 'measurement' &&
+      Number.isFinite(f.properties.strike) &&
+      Number.isFinite(f.properties.dip),
+  );
   const ids = new Set(selectionIds);
   const elegidas = medidas.filter((f) => ids.has(f.properties.id));
   const fuente = elegidas.length > 0 ? elegidas : medidas;
+  const available = fuente.map(stereogramPoint);
+  const ocultos = hiddenTypes instanceof Set ? hiddenTypes : new Set(hiddenTypes || []);
   return {
-    points: fuente.map(stereogramPoint),
+    points: ocultos.size ? available.filter((p) => !ocultos.has(p.type)) : available,
+    available,
     usingSelection: elegidas.length > 0,
+    selectedOther:
+      elegidas.length > 0
+        ? features.filter((f) => ids.has(f.properties.id)).length - elegidas.length
+        : 0,
     total: medidas.length,
   };
 }
