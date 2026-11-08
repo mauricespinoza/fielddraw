@@ -3359,6 +3359,39 @@ input[type='radio'] {
   opacity: 0.4;
 }
 
+/* Barra de filtro por tipo, sobre la red: una ficha por tipo. */
+.sv-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.sv-filterbar.hidden {
+  display: none;
+}
+
+.sv-filterbar-title {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sv-chips .sv-row {
+  padding: 6px 10px;
+  border-radius: 999px;
+  min-height: 34px;
+}
+
 /* La leyenda por tipo es también el filtro: cada fila es una casilla. */
 .sv-row.sv-filter {
   cursor: pointer;

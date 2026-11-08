@@ -1657,6 +1657,17 @@
           <button class="icon-btn close-x" id="btn-close-stereo" aria-label="Close stereogram">✕</button>
         </header>
 
+        <!-- Filtro por tipo y «Clear lasso»: fuera del lateral para que en un
+             teléfono —donde el lateral queda bajo la red— siempre estén a
+             mano. `stereogramPanel.js` llena `stereo-legend` y la oculta con
+             la pestaña. -->
+        <div class="sv-filterbar" id="stereo-filterbar">
+          <span class="sv-filterbar-title">Types <span class="sv-count" id="stereo-legend-count"></span></span>
+          <div class="sv-chips" id="stereo-legend" role="group" aria-label="Filter by structure type"></div>
+          <button class="pill" id="btn-stereo-clear-lasso" disabled
+            title="Clear the lasso (or tap outside the net)">Clear lasso</button>
+        </div>
+
         <div class="sv-body" id="stereo-panel-plot">
           <div class="sv-chart-wrap">
             <div class="stereo-chart-stack">
@@ -1699,18 +1710,15 @@
             <!-- Igual que el vector medio: solo aparece con la casilla
                  encendida y datos de sobra para un eje. -->
             <p class="hint footnote sv-mean-value hidden" id="stereo-beta-value"></p>
-            <h3>By type <span class="sv-count" id="stereo-legend-count"></span></h3>
-            <div class="sv-list" id="stereo-legend"></div>
-            <p class="hint footnote">Untick a type to hide it from the net, the mean vector, the beta axis and the average.</p>
             <button class="pill wide" id="btn-stereo-select-map" disabled>Select these on the map</button>
-            <button class="pill wide" id="btn-stereo-clear-lasso" disabled>Clear lasso</button>
             <button class="pill wide accent" id="btn-stereo-average" disabled
               title="Create one plane with the mean strike/dip of the plotted (or lassoed) planes, placed at their centroid">
               Create average plane
             </button>
             <p class="hint footnote">
               Drag on the net to lasso a subset of poles — with something lassoed, Mean vector and
-              Beta axis are computed from just those poles.
+              Beta axis are computed from just those poles. Tap outside the net to clear the lasso.
+              Untick a type above to hide it from the net, the mean vector, the beta axis and the average.
             </p>
           </aside>
         </div>

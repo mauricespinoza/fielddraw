@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.56.1';
+export const APP_VERSION = '0.56.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.56.2',
+    highlights: [
+      'Stereogram: the type filter and “Clear lasso” moved to a bar above the net. On a phone they used to sit far below the net, out of reach, so they seemed not to work.',
+      'Stereogram: tapping outside the poles (on the net or on the margin around it) now clears the lasso.',
+    ],
+  },
   {
     version: '0.56.1',
     highlights: [

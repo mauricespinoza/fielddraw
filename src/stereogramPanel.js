@@ -169,6 +169,7 @@ function showTab(tab) {
   $('stereo-tab-compass').classList.toggle('active', tab === 'compass');
   $('stereo-panel-plot').classList.toggle('hidden', tab !== 'plot');
   $('stereo-panel-compass').classList.toggle('hidden', tab !== 'compass');
+  $('stereo-filterbar').classList.toggle('hidden', tab !== 'plot');
   $('stereo-tab-position').classList.toggle('active', tab === 'position');
   $('stereo-panel-position').classList.toggle('hidden', tab !== 'position');
   if (tab === 'compass') startCompass();
@@ -427,12 +428,24 @@ function wireLasso() {
     if (path.length >= 3 && lastPlot) {
       highlighted = new Set(lastPlot.placed.filter((d) => pointInPolygon([d.x, d.y], path)).map((d) => d.id));
       renderPlot();
+    } else {
+      // Un toque sin arrastre, sobre la red pero fuera de todo polo: suelta el lazo.
+      clearHighlight();
     }
     path = null;
     shape.setAttribute('points', '');
   };
   svg.addEventListener('pointerup', finish);
   svg.addEventListener('pointercancel', finish);
+
+  // Tocar el margen que rodea la red (el papel del marco, fuera del lienzo del
+  // lazo) también lo suelta, igual que tocar afuera en el mapa deselecciona.
+  $('stereo-panel-plot')
+    .querySelector('.sv-chart-wrap')
+    .addEventListener('pointerdown', (e) => {
+      if (e.target === svg || svg.contains(e.target)) return;
+      clearHighlight();
+    });
 }
 
 /* ---------- pestaña Compass ---------- */
