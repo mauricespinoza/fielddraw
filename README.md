@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram deviceOrientation geomag profile mapFrame zip geotiff utm shell view; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -1682,6 +1682,47 @@ símbolo de rumbo y manteo del mapa, que sobre un disco graduado con los cuatro
 cardinales se leía como una brújula mal calibrada. El número debajo va rotulado
 `Strike (RHR) / Dip`, porque un «120/45» a secas no dice si esos 120 son rumbo
 por la mano derecha o dirección de manteo, y las dos lecturas difieren en 90°.
+
+#### Pestaña Faults: solución de plano de falla
+
+Port del plugin de QGIS **Fault-plane Solver** (v1.7) al estereograma. Entran
+solo las fallas con **dato completo**: plano de falla, estría (trend/plunge, o
+rake) y sentido de movimiento —normal, inversa, dextral o sinestral—; un plano
+sin estría o con sentido *undetermined* se cuenta y se dice que quedó fuera.
+Misma regla de origen que Plot: la selección del mapa si la hay, todo si no.
+
+Las cuentas (`src/faultKin.js`) son las del plugin, con los mismos umbrales y
+probadas contra su código Python con los mismos datos:
+
+- **Vector de deslizamiento**: la estría se proyecta al plano (aviso sobre 5°
+  fuera, rechazo sobre 15°) y el sentido elige cuál de sus dos direcciones es
+  el movimiento del colgante; un sentido que la estría no permite rechaza el
+  dato (⚠ en la lista, con el motivo).
+- **Ejes P/T/B por falla** y tensor de momento unitario (Marrett &
+  Allmendinger 1990).
+- **Ejes medios P̄/T̄/B̄** por el promedio de Bingham de los tensores, con
+  `K = (λ2−λ3)/(λ1−λ3)` y la fracción **CLVD** (cuánto se aparta el tensor
+  medio de un doble par puro).
+- **Inversión de esfuerzos de Michael (1984)** con ≥ 4 fallas: σ1/σ2/σ3
+  (compresión positiva), `R = (σ2−σ3)/(σ1−σ3)`, `R′` de Delvaux y el misfit β
+  de cada falla.
+- **Régimen** por los umbrales del World Stress Map sobre los plunges de σ; con
+  menos de 4 fallas, sobre P̄/B̄/T̄, y se marca como cinemático.
+
+Cada falla tiene su **casilla**: apagarla la saca de Bingham, de Michael y del
+dibujo, y el régimen, R y β se rehacen al instante — así se ve cuánto pesa
+una sola medida. Las casillas siguen al id de la medida (sobreviven a cambiar
+la selección) mientras la app está abierta. Apuntar una fila resalta esa falla
+en la red.
+
+Capas, como el panel «Stereogram layers» del plugin y con sus mismos valores de
+fábrica: planos de falla, polos, estrías con la flecha del colgante, ejes P y T
+de cada falla, ejes medios, planos nodales del doble par, sombreado del
+beachball (color del régimen: azul normal, rojo inverso, verde de rumbo, gris
+oblicuo), ejes σ y encabezado. La casilla **Best-fit double-couple** alterna
+entre el doble par simétrico (ejes ortogonalizados, con planos nodales) y el
+patrón del tensor medio completo. Las capas se recuerdan en el dispositivo, y
+PNG/SVG/Copy exportan lo que está en pantalla.
 
 ### Espesor estratigráfico
 

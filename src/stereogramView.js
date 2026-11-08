@@ -51,7 +51,7 @@ const el = (name, attrs = {}) => {
  * rosa no se puede rotar un dato, ni leer la intersección de dos planos, ni
  * sacar un eje de pliegue.
  */
-function net(cx, cy, R) {
+export function net(cx, cy, R) {
   const g = el('g', { class: 'stereo-grid', fill: 'none', 'stroke-linecap': 'round' });
   const { great, small } = schmidtNet({ step: 10, R: 1, steps: 240 });
   const dibuja = (segmentos, ancho) => {

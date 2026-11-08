@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.56.2';
+export const APP_VERSION = '0.57.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -32,7 +32,7 @@ export const APP_TOOLS = [
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
   ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
-  ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis.'],
+  ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
   ['Topology · Hole', 'Subtract an area from a polygon, leaving a hole.'],
@@ -54,6 +54,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.57.0',
+    highlights: [
+      'Stereogram → new Faults tab: the fault-plane solution of the faults with full datum (plane + striae + sense of slip), ported from the Fault-plane Solver QGIS plugin — per-fault P/T axes, Bingham mean axes P̄/T̄/B̄, the double-couple beachball shaded by regime, and the Michael stress inversion (σ1/σ2/σ3, R, R′, misfit β) with 4 faults or more.',
+      'Each fault has a checkbox: untick it to leave it out and watch the regime, R and β change at once. Faults without striae or with an undetermined sense are listed as left out; inconsistent ones are flagged with the reason.',
+      'Draw options like the plugin: fault planes, poles, striae with hanging-wall arrows, P and T axes, mean axes, nodal planes, beachball shading, stress axes and header, plus best-fit double-couple or full tensor. PNG, SVG and Copy export the solution as shown.',
+    ],
+  },
   {
     version: '0.56.2',
     highlights: [

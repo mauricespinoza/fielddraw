@@ -31,6 +31,7 @@ import {
 import { downloadBlob } from './persistence.js';
 import { averageMeasurements } from './average.js';
 import { formatLat, formatLon, formatUTM, toUTM } from './utm.js';
+import { renderFaultTab } from './faultKinPanel.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -74,6 +75,7 @@ export function initStereogramPanel({ message } = {}) {
   $('stereo-tab-plot').addEventListener('click', () => showTab('plot'));
   $('stereo-tab-compass').addEventListener('click', () => showTab('compass'));
   $('stereo-tab-position').addEventListener('click', () => showTab('position'));
+  $('stereo-tab-faults').addEventListener('click', () => showTab('faults'));
   $('btn-stereo-check-compass').addEventListener('click', () => openCompassCheck());
   /*
    * Norte verdadero o magnético: una sola preferencia, con su casilla aquí y
@@ -137,7 +139,8 @@ export function initStereogramPanel({ message } = {}) {
   store.subscribe(() => {
     if (!panelOpen) return;
     if (store.changed('features') || store.changed('selection') || store.changed('ornaments')) {
-      renderPlot();
+      if (activeTab === 'faults') renderFaultTab();
+      else renderPlot();
     }
   });
 }
@@ -172,11 +175,14 @@ function showTab(tab) {
   $('stereo-filterbar').classList.toggle('hidden', tab !== 'plot');
   $('stereo-tab-position').classList.toggle('active', tab === 'position');
   $('stereo-panel-position').classList.toggle('hidden', tab !== 'position');
+  $('stereo-tab-faults').classList.toggle('active', tab === 'faults');
+  $('stereo-panel-faults').classList.toggle('hidden', tab !== 'faults');
   if (tab === 'compass') startCompass();
   else stopCompass();
   if (tab === 'position') startPosition();
   else stopPosition();
   if (tab === 'plot') renderPlot();
+  if (tab === 'faults') renderFaultTab();
 }
 
 /* ---------- pestaña Plot ---------- */
@@ -602,16 +608,20 @@ function stopCompass() {
 
 /* ---------- exportación ---------- */
 
-const fileBase = () => `fielddraw-stereogram-${new Date().toISOString().slice(0, 10)}`;
+const fileBase = () =>
+  `fielddraw-${activeTab === 'faults' ? 'fault-solution' : 'stereogram'}-${new Date().toISOString().slice(0, 10)}`;
+
+/** Lo que exportan PNG/SVG/Copy: la red de la pestaña abierta. */
+const activeChart = () => (activeTab === 'faults' ? $('fault-chart') : $('stereo-chart'));
 
 function exportSVG() {
-  downloadBlob(new Blob([stereogramSVG($('stereo-chart'))], { type: 'image/svg+xml' }), `${fileBase()}.svg`);
+  downloadBlob(new Blob([stereogramSVG(activeChart())], { type: 'image/svg+xml' }), `${fileBase()}.svg`);
   onMessage('Stereogram exported as SVG — editable in Illustrator or Inkscape.', 'info');
 }
 
 async function exportPNG() {
   try {
-    const blob = await stereogramPNG($('stereo-chart'), { scale: 2 });
+    const blob = await stereogramPNG(activeChart(), { scale: 2 });
     downloadBlob(blob, `${fileBase()}.png`);
     onMessage('Stereogram exported as PNG at twice the on-screen size.', 'info');
   } catch (err) {
@@ -625,7 +635,7 @@ async function copyToClipboard() {
     return;
   }
   try {
-    const blob = await stereogramPNG($('stereo-chart'), { scale: 2 });
+    const blob = await stereogramPNG(activeChart(), { scale: 2 });
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     onMessage('Stereogram copied to the clipboard.', 'info');
   } catch (err) {

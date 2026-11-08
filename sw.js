@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v78';
+const VERSION = 'v79';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -124,6 +124,9 @@ const SHELL = [
   './src/stereogram.js',
   './src/stereogramPanel.js',
   './src/stereogramView.js',
+  './src/faultKin.js',
+  './src/faultKinPanel.js',
+  './src/faultKinView.js',
   './src/store.js',
   './src/stroke.js',
   './src/structure.js',
