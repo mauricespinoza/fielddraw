@@ -853,5 +853,91 @@ console.log('== los controles del mapa (GPS, zoom…) no los consume ninguna her
   }
 }
 
+console.log('== Navegar → Elegir: apoyar en un lugar vacío y arrastrar ==');
+{
+  /** Navegar: nada se dibuja, y quien monta el controlador responde al reparto. */
+  const monta = ({ vacio = true } = {}) => {
+    const h = harness({ drawing: false, drag: true });
+    const cb = h.controller.cb;
+    cb.canHoldSelect = () => vacio;
+    cb.onHoldSelect = (on) => h.log.push(['holdSelect', on]);
+    cb.onHoldSelectStart = () => h.log.push(['holdSelectStart']);
+    return h;
+  };
+
+  for (const tipo of ['touch', 'pen']) {
+    const h = monta();
+    h.ev('pointerdown', { pointerType: tipo, clientX: 300, clientY: 300 });
+    await sleep(120);
+    ok(`${tipo}: arrastrar antes de la pausa NO pasa a Elegir`, !h.kinds().includes('holdSelectStart'));
+    await sleep(420);
+    ok(`${tipo}: cumplida la pausa se congela el mapa`, h.log.some((l) => l[0] === 'holdSelect' && l[1] === true), JSON.stringify(h.kinds()));
+    ok(`${tipo}: y se muestra el aro`, h.kinds().includes('arm'));
+    h.ev('pointermove', { pointerType: tipo, clientX: 304, clientY: 300 });
+    ok(`${tipo}: 4 px no es arrastre`, !h.kinds().includes('holdSelectStart'));
+    h.ev('pointermove', { pointerType: tipo, clientX: 340, clientY: 330 });
+    ok(`${tipo}: arrastrar tras la pausa pasa a Elegir`, h.kinds().includes('holdSelectStart'), JSON.stringify(h.kinds()));
+    const ini = h.log.find((l) => l[0] === 'dragStart');
+    ok(`${tipo}: el lazo arranca donde se apoyó`, ini && ini[1][0] === 300 && ini[1][1] === 300, JSON.stringify(ini));
+    ok(`${tipo}: y sigue al dedo`, h.log.some((l) => l[0] === 'dragMove' && l[1][0] === 340));
+    ok(`${tipo}: no se consume el puntero (MapLibre recibe el touchend)`, h.controller.consuming === false);
+    h.ev('pointermove', { pointerType: tipo, clientX: 400, clientY: 380 });
+    h.ev('pointerup', { pointerType: tipo, clientX: 400, clientY: 380 });
+    await sleep(10);
+    const fin = h.log.find((l) => l[0] === 'dragEnd');
+    ok(`${tipo}: al soltar se resuelve el lazo`, fin && fin[2].moved === true, JSON.stringify(fin));
+    ok(`${tipo}: y se devuelve el desplazamiento al mapa`, h.log.filter((l) => l[0] === 'holdSelect').at(-1)[1] === false);
+    ok(`${tipo}: sin tocar ni abrir menú`, !h.kinds().includes('fingerTap') && !h.kinds().includes('longPress'));
+  }
+
+  {
+    const h = monta({ vacio: false });
+    h.ev('pointerdown', { pointerType: 'touch', clientX: 300, clientY: 300 });
+    await sleep(520);
+    h.ev('pointermove', { pointerType: 'touch', clientX: 360, clientY: 330 });
+    ok('sobre un elemento NO se activa', !h.kinds().includes('holdSelectStart') && !h.kinds().includes('holdSelect'), JSON.stringify(h.kinds()));
+    h.ev('pointerup', { pointerType: 'touch', clientX: 360, clientY: 330 });
+  }
+
+  {
+    const h = monta();
+    h.ev('pointerdown', { pointerType: 'touch', clientX: 300, clientY: 300 });
+    h.ev('pointermove', { pointerType: 'touch', clientX: 340, clientY: 300 });
+    await sleep(520);
+    ok('mover antes de la pausa es un paneo normal: no se congela', !h.kinds().includes('holdSelect'), JSON.stringify(h.kinds()));
+    h.ev('pointerup', { pointerType: 'touch', clientX: 340, clientY: 300 });
+  }
+
+  {
+    const h = monta();
+    h.ev('pointerdown', { pointerType: 'touch', clientX: 300, clientY: 300 });
+    await sleep(520);
+    h.ev('pointerup', { pointerType: 'touch', clientX: 300, clientY: 300 });
+    await sleep(10);
+    ok('apoyar sin arrastrar no cambia de herramienta', !h.kinds().includes('holdSelectStart'));
+    ok('y devuelve el desplazamiento al soltar', h.log.filter((l) => l[0] === 'holdSelect').at(-1)[1] === false, JSON.stringify(h.kinds()));
+  }
+
+  {
+    const h = monta();
+    h.ev('pointerdown', { pointerType: 'touch', pointerId: 1, clientX: 300, clientY: 300 });
+    await sleep(520);
+    // Un segundo dedo: es un gesto de navegación, no un lazo.
+    h.ev('pointerdown', { pointerType: 'touch', pointerId: 2, clientX: 500, clientY: 300 });
+    h.ev('pointermove', { pointerType: 'touch', pointerId: 1, clientX: 360, clientY: 330 });
+    ok('con un segundo dedo no pasa a Elegir', !h.kinds().includes('holdSelectStart'), JSON.stringify(h.kinds()));
+    ok('y el mapa vuelve a poder desplazarse', h.log.filter((l) => l[0] === 'holdSelect').at(-1)[1] === false);
+  }
+
+  {
+    // Sin los callbacks (otras herramientas, pruebas anteriores): nada cambia.
+    const h = harness({ drawing: false, drag: true });
+    h.ev('pointerdown', { pointerType: 'touch', clientX: 300, clientY: 300 });
+    await sleep(520);
+    h.ev('pointermove', { pointerType: 'touch', clientX: 360, clientY: 330 });
+    ok('sin callbacks no pasa nada', !h.kinds().includes('dragStart'), JSON.stringify(h.kinds()));
+  }
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

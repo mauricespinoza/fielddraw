@@ -22,6 +22,18 @@ const FINGER_DOUBLE_TAP_DIST = 48; // px
 const LONG_PRESS_HOLD_MS = 1000;
 
 /*
+ * Navegar → Elegir: apoyar el dedo o el lápiz en un lugar vacío y, tras una
+ * pausa breve, arrastrar. Es más corta que el segundo del menú de propiedades
+ * porque ahí no hay nada que consultar (el lugar está vacío), y el arrastre
+ * que sigue debe sentirse como una continuación del apoyo, no como una espera.
+ * `HOLD_SELECT_MOVE` es cuánto hay que correrse tras la pausa para que cuente
+ * como arrastre: menos que `FINGER_TAP_MOVE`, porque ya se sabe que hubo
+ * intención.
+ */
+const HOLD_SELECT_MS = 450;
+const HOLD_SELECT_MOVE = 8; // px
+
+/*
  * Cuánto puede correrse el botón derecho y seguir contando como clic.
  *
  * Mucho más que los 10 px del arrastre normal, y a propósito. Lo que hay al
@@ -123,6 +135,8 @@ export class DrawController {
     this.secondary = null;
     /** Temporizador del botón PRIMARIO sostenido; ver `armPrimaryLongPress`. */
     this.primaryHoldTimer = null;
+    /** Puntero con la pausa de Navegar → Elegir cumplida, o null. */
+    this.holdSelectPointer = null;
 
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
@@ -284,7 +298,83 @@ export class DrawController {
     }
   }
 
+  /**
+   * NAVEGAR → ELEGIR: APOYAR EN UN LUGAR VACÍO Y ARRASTRAR.
+   *
+   * En Navegar, arrastrar desplaza el mapa. Si el dedo o el lápiz se apoyan
+   * quietos sobre un sitio donde no hay nada dibujado, y tras una pausa se
+   * arrastra, la intención es otra: encerrar una zona. Se pasa a Elegir y el
+   * arrastre sigue siendo el lazo, desde el punto donde se apoyó.
+   *
+   * Solo dedo y lápiz, con un único puntero, y solo si quien monta el
+   * controlador dice que ahí no hay nada (`canHoldSelect`): sobre un elemento
+   * la pulsación sostenida ya significa «abrir el menú».
+   *
+   * Al cumplirse la pausa se le pide a `mapView` que congele el desplazamiento
+   * del mapa (`onHoldSelect`), porque MapLibre ya recibió el `touchstart` y
+   * tragarse el resto de eventos lo dejaría con un dedo fantasma. El aro de
+   * `onLongPressArm` avisa de que la pausa se registró.
+   */
+  armHoldSelect(pointerId, obs) {
+    if (!this.cb.canHoldSelect || !this.cb.onHoldSelectStart || !obs.solo) return;
+    obs.holdTimer = setTimeout(() => {
+      obs.holdTimer = null;
+      if (this.observed.get(pointerId) !== obs || obs.moved || !obs.solo) return;
+      if (this.gesture || this.holdSelectPointer !== null) return;
+      if (!this.cb.canHoldSelect([obs.x, obs.y])) return;
+      obs.holdArmed = true;
+      this.holdSelectPointer = pointerId;
+      if (this.cb.onHoldSelect) this.cb.onHoldSelect(true);
+      this.cb.onLongPressArm([obs.x, obs.y]);
+    }, HOLD_SELECT_MS);
+  }
+
+  /** Deja todo como estaba si la pausa se cumplió y no llegó a haber arrastre. */
+  endHoldSelect() {
+    if (this.holdSelectPointer === null) return;
+    this.holdSelectPointer = null;
+    if (this.cb.onHoldSelect) this.cb.onHoldSelect(false);
+    this.cb.onLongPressArm(null);
+  }
+
+  /**
+   * El dedo apoyado empieza a arrastrar tras la pausa: pasa a ser el gesto del
+   * lazo de Elegir. No se consume el puntero —`consuming` sigue apagado— para
+   * que el `touchend`/`mouseup` le llegue a MapLibre y no se quede con un
+   * contacto abierto; mientras tanto no desplaza, porque `onHoldSelect` lo
+   * congeló.
+   */
+  promoteHoldSelect(e, obs) {
+    this.observed.delete(e.pointerId);
+    this.clearFingerLongPress(e.pointerId);
+    this.cb.onLongPressArm(null);
+    this.cb.onHoldSelectStart();
+    this.gesture = {
+      pointerId: e.pointerId,
+      startX: obs.x,
+      startY: obs.y,
+      moved: true,
+      freehand: false,
+      points: [[obs.x, obs.y]],
+      dragging: true,
+      viaHold: true,
+    };
+    try {
+      this.host.setPointerCapture(e.pointerId);
+    } catch {
+      /* algunos navegadores rechazan la captura; el gesto igual funciona */
+    }
+    this.cb.onHover(null);
+    this.cb.onDragStart([obs.x, obs.y]);
+    this.cb.onDragMove(this.toLocal(e));
+  }
+
   clearFingerLongPress(pointerId) {
+    const obs = this.observed.get(pointerId);
+    if (obs && obs.holdTimer) {
+      clearTimeout(obs.holdTimer);
+      obs.holdTimer = null;
+    }
     const timer = this.observedTimers.get(pointerId);
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -293,6 +383,10 @@ export class DrawController {
   }
 
   clearObserved() {
+    for (const o of this.observed.values()) {
+      if (o.holdTimer) clearTimeout(o.holdTimer);
+    }
+    this.endHoldSelect();
     for (const timer of this.observedTimers.values()) clearTimeout(timer);
     this.observedTimers.clear();
     this.observed.clear();
@@ -626,6 +720,7 @@ export class DrawController {
         };
         this.observed.set(e.pointerId, obs);
         this.armFingerLongPress(e.pointerId, obs);
+        this.armHoldSelect(e.pointerId, obs);
       } else {
         // Ratón en Navegar y en Elegir: el mapa se queda el evento —arrastrar
         // desplaza—, pero sostener sin mover abre el menú.
@@ -740,6 +835,15 @@ export class DrawController {
         this.emitInfo(e, 0);
       }
       const obs = this.observed.get(e.pointerId);
+      if (obs && obs.holdArmed && this.holdSelectPointer === e.pointerId) {
+        const q = this.toLocal(e);
+        if (Math.hypot(q[0] - obs.x, q[1] - obs.y) > HOLD_SELECT_MOVE) {
+          this.promoteHoldSelect(e, obs);
+          e.stopPropagation();
+          if (e.cancelable) e.preventDefault();
+        }
+        return;
+      }
       if (obs && !obs.moved) {
         const q = this.toLocal(e);
         if (Math.hypot(q[0] - obs.x, q[1] - obs.y) > FINGER_TAP_MOVE) {
@@ -852,6 +956,8 @@ export class DrawController {
     if (obs) {
       this.observed.delete(e.pointerId);
       this.clearFingerLongPress(e.pointerId);
+      if (obs.holdTimer) clearTimeout(obs.holdTimer);
+      if (this.holdSelectPointer === e.pointerId) this.endHoldSelect();
       // Si ya abrió el menú, el mismo dedo no debe además cerrar el elemento.
       const clean =
         obs.solo && !obs.moved && !obs.longPressed && performance.now() - obs.t < FINGER_TAP_MS;
@@ -911,6 +1017,7 @@ export class DrawController {
         now - lt.t < DOUBLE_TAP_MS &&
         Math.hypot(lt.x - g.startX, lt.y - g.startY) < DOUBLE_TAP_DIST;
       this.lastTap = g.moved || doubleTap ? null : { t: now, x: g.startX, y: g.startY };
+      if (g.viaHold) this.endHoldSelect();
       this.cb.onDragEnd(p, {
         moved: g.moved,
         doubleTap,
@@ -1005,6 +1112,9 @@ export class DrawController {
     this.pointers.delete(e.pointerId);
     this.clearPrimaryHold();
     if (this.secondary && this.secondary.pointerId === e.pointerId) this.secondary = null;
+    const o = this.observed.get(e.pointerId);
+    if (o && o.holdTimer) clearTimeout(o.holdTimer);
+    if (this.holdSelectPointer === e.pointerId) this.endHoldSelect();
     this.observed.delete(e.pointerId);
     this.clearFingerLongPress(e.pointerId);
     this.touchStarts.delete(e.pointerId);
@@ -1034,6 +1144,7 @@ export class DrawController {
 
   abort() {
     const arrastraba = !!(this.gesture && this.gesture.dragging);
+    this.endHoldSelect();
     this.clearLongPress();
     this.gesture = null;
     this.consuming = false;

@@ -498,6 +498,14 @@ ninguna de las tres, y lo que lo permite es que el umbral decide **al soltar**:
   vía de siempre, con la tolerancia del dedo o la del ratón según qué tocó.
 - El botón derecho ni siquiera entra: el reparto de punteros lo aparta antes,
   así que el menú se abre como en cualquier otra herramienta.
+- **Desde Navegar, sin cambiar de herramienta.** Apoyar el dedo o el lápiz quieto
+  ~0,45 s en un lugar donde no hay nada —ni elemento propio, ni medida de
+  StraboSpot, ni capa importada— y arrastrar pasa a Elegir y el arrastre es el
+  lazo, desde el punto donde se apoyó. Un aro confirma la pausa y mientras el
+  dedo sigue abajo el mapa no se desplaza (se congela `dragPan`; el `touchend`
+  sigue llegando a MapLibre). Un arrastre sin pausa desplaza como siempre, y
+  sobre un elemento sostener sigue abriendo el menú. Solo dedo y lápiz: el ratón
+  ya tiene Elegir a un clic.
 - Con **dos dedos** el gesto es de navegación y el lazo se aborta —con su goma—,
   que es como se sigue moviendo el mapa sin salir de Elegir. Con ratón,
   desplazar es `Navegar` (`H`) o las flechas.

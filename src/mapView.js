@@ -3456,6 +3456,43 @@ export function createMapView({
         onDigitizePreview(null);
       }
     },
+    /*
+     * Navegar → Elegir: apoyar el dedo o el lápiz en un lugar vacío y arrastrar
+     * (ver `armHoldSelect` en drawController.js). «Vacío» es que no haya bajo
+     * el punto nada de lo que el mapa dibuja ni se pueda consultar: ni un
+     * elemento propio —punto, línea o polígono, que es lo que `pickAt`
+     * resuelve, interior del polígono incluido—, ni una medida bajada de
+     * StraboSpot, ni una capa importada. Sobre cualquiera de ellos, sostener
+     * sigue significando «abrir el menú».
+     */
+    canHoldSelect: (p) => {
+      if (store.getState().tool !== 'navigate') return false;
+      if (pickAt(p)) return false;
+      if (straboHitAt(p)) return false;
+      if (importedHitAt(p)) return false;
+      return true;
+    },
+    // Mientras la pausa está cumplida y el dedo sigue abajo, el mapa no debe
+    // desplazarse: el arrastre que viene es un lazo. Se congela el
+    // desplazamiento en vez de tragarse los eventos, para que MapLibre reciba
+    // el `touchend` y no se quede con un contacto abierto.
+    onHoldSelect: (on) => {
+      if (on) {
+        map.dragPan.disable();
+        // Un toque de vibración confirma la pausa donde el navegador lo permite
+        // (Android); el aro lo confirma en todas partes.
+        try {
+          if (navigator.vibrate) navigator.vibrate(12);
+        } catch {
+          /* sin vibración: no es grave */
+        }
+      } else {
+        map.dragPan.enable();
+      }
+    },
+    onHoldSelectStart: () => {
+      store.setTool('select');
+    },
     // Mantener pulsado abre el menú de propiedades en cualquier herramienta:
     // es el gesto para tocar los atributos de lo que ya está dibujado sin
     // tener que cambiar a Elegir y volver.
