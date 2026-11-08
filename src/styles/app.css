@@ -883,6 +883,30 @@ body,
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
 }
 
+/*
+ * El panel Device es más ancho que los demás desplegables y su brújula ya no
+ * se queda en 300 px: con el número de rumbo/manteo debajo dentro del mismo
+ * lienzo (más alto que ancho), el disco quedaba chico. Si con la brújula
+ * grande el panel no cabe en la pantalla, hace scroll y el botón de añadir la
+ * medida se queda pegado abajo, siempre a mano.
+ */
+#device-panel {
+  width: min(420px, 94vw);
+}
+
+#device-compass {
+  flex: none;
+  max-width: min(100%, 390px);
+}
+
+#btn-device-done {
+  position: sticky;
+  bottom: -14px;
+  z-index: 1;
+  flex: none;
+  box-shadow: 0 -8px 10px -4px var(--panel-solid);
+}
+
 /* La del panel Device se toca para detener la medida: que se note. */
 #device-compass {
   cursor: pointer;
