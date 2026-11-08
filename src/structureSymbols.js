@@ -325,19 +325,45 @@ const imageFor = (key, variant, color) =>
 /** Último color con el que se rasterizaron las copias de lo importado. */
 let importedColorDrawn = null;
 
-export function addStructureImages(map, importStyle = defaultImportStyle()) {
-  for (const [key, variant] of everyImage()) {
-    const name = structureImageName(key, variant);
-    if (!map.hasImage(name)) {
-      const color = STRUCTURE_TYPE_BY_ID.get(typeOfKey(key)).color;
-      map.addImage(name, imageFor(key, variant, color), { pixelRatio: DPR });
-    }
-    const ajeno = structureImageName(key, variant, true);
-    if (!map.hasImage(ajeno)) {
-      map.addImage(ajeno, imageFor(key, variant, importStyle.color), { pixelRatio: DPR });
+/** Nombre de imagen → [clave, variante, ¿importado?], armado una vez. */
+let indice = null;
+function imagenPorNombre(name) {
+  if (!indice) {
+    indice = new Map();
+    for (const [key, variant] of everyImage()) {
+      indice.set(structureImageName(key, variant), [key, variant, false]);
+      indice.set(structureImageName(key, variant, true), [key, variant, true]);
     }
   }
+  return indice.get(name);
+}
+
+/** Mapas que ya rasterizan sus símbolos a pedido. */
+const aPedido = new WeakSet();
+
+/**
+ * Hace que el mapa rasterice cada símbolo de rumbo y manteo cuando lo pinta
+ * por primera vez.
+ *
+ * Antes se dibujaban todos al montar el mapa: cada tipo de superficie (y cada
+ * sentido de falla) por cuatro variantes y por dos colores —el propio y el de
+ * lo importado—, casi un centenar de lienzos con su `getImageData`, en el
+ * camino crítico del arranque aunque el dibujo tuviera tres medidas de un solo
+ * tipo. MapLibre avisa con `styleimagemissing` justo antes de pintar un icono
+ * que falta, y lo que se añade en ese momento sale en el mismo frame.
+ */
+export function addStructureImages(map, importStyle = defaultImportStyle()) {
   importedColorDrawn = importStyle.color;
+  if (aPedido.has(map)) return;
+  aPedido.add(map);
+  map.on('styleimagemissing', (e) => {
+    const name = e && e.id;
+    const hit = typeof name === 'string' && name.startsWith('str-') ? imagenPorNombre(name) : null;
+    if (!hit || map.hasImage(name)) return;
+    const [key, variant, imported] = hit;
+    const color = imported ? importedColorDrawn : STRUCTURE_TYPE_BY_ID.get(typeOfKey(key)).color;
+    map.addImage(name, imageFor(key, variant, color), { pixelRatio: DPR });
+  });
 }
 
 /**

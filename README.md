@@ -125,6 +125,15 @@ se toleraban los fallos y `activate` borraba igual la caché vieja completa, as�
 que una actualización a medias dejaba la app sin módulos —y sin poder reabrir
 los mapas offline guardados—.
 
+**Y solo baja lo que cambió.** Cada archivo del shell se pide condicional
+contra la copia de la versión anterior (`If-None-Match` / `If-Modified-Since`
+con su `ETag` / `Last-Modified`): un 304 reutiliza esa copia y solo viaja la
+cabecera. Una publicación que toca tres módulos ya no obliga a re-bajar los
+~3,5 MB de `vendor/` y `src/` con 4G antes de poder aplicarse. Si la copia
+anterior no tiene validadores, o el servidor no los entiende, se pide entero
+como antes (el tercer intento va siempre entero). `serve.mjs` manda los mismos
+validadores para poder probarlo en local.
+
 **Y se aplica al arrancar, no a media faena.** La versión nueva instalada queda
 esperando; `app.js` le pide tomar el control (`skipWaiting`) solo al abrir la
 app o en sus primeros 15 s, y entonces recarga una vez, desde caché. Si llega
@@ -489,6 +498,14 @@ ninguna de las tres, y lo que lo permite es que el umbral decide **al soltar**:
   vía de siempre, con la tolerancia del dedo o la del ratón según qué tocó.
 - El botón derecho ni siquiera entra: el reparto de punteros lo aparta antes,
   así que el menú se abre como en cualquier otra herramienta.
+- **Desde Navegar, sin cambiar de herramienta.** Apoyar el dedo o el lápiz quieto
+  ~0,45 s en un lugar donde no hay nada —ni elemento propio, ni medida de
+  StraboSpot, ni capa importada— y arrastrar pasa a Elegir y el arrastre es el
+  lazo, desde el punto donde se apoyó. Un aro confirma la pausa y mientras el
+  dedo sigue abajo el mapa no se desplaza (se congela `dragPan`; el `touchend`
+  sigue llegando a MapLibre). Un arrastre sin pausa desplaza como siempre, y
+  sobre un elemento sostener sigue abriendo el menú. Solo dedo y lápiz: el ratón
+  ya tiene Elegir a un clic.
 - Con **dos dedos** el gesto es de navegación y el lazo se aborta —con su goma—,
   que es como se sigue moviendo el mapa sin salir de Elegir. Con ratón,
   desplazar es `Navegar` (`H`) o las flechas.

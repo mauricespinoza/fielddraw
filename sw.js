@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v79';
+const VERSION = 'v81';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -178,6 +178,53 @@ const SHELL = [
 ];
 
 /*
+ * ACTUALIZAR SIN VOLVER A BAJAR LO QUE NO CAMBIÓ.
+ *
+ * Cada publicación cambia un puñado de archivos, pero la caché nueva empezaba
+ * vacía y se volvían a bajar los ~3,5 MB del shell entero —MapLibre, JSTS,
+ * sql.js…— con `cache: 'reload'`. Con 4G eso eran varios segundos peleando
+ * por la red con las teselas en cada apertura tras una publicación, y luego
+ * la recarga de `app.js`: era buena parte del «arranque lento».
+ *
+ * Ahora cada archivo se pide CONDICIONAL contra la copia de la versión
+ * anterior (`If-None-Match` / `If-Modified-Since` con sus validadores): si el
+ * servidor contesta 304, se reutiliza esa copia tal cual y solo viaja la
+ * cabecera. Lo que cambió llega entero, como siempre. Si no hay copia
+ * anterior o no trae validadores, se pide entero, igual que antes. La regla de
+ * «todo o nada» no cambia: un 304 sin copia que reutilizar cuenta como fallo.
+ */
+async function copiasAnteriores() {
+  const nombres = (await caches.keys()).filter((k) => k.startsWith('fielddraw-shell-') && k !== PRECACHE);
+  // La más reciente primero: `caches.keys()` va en orden de creación.
+  return Promise.all(nombres.reverse().map((k) => caches.open(k)));
+}
+
+async function copiaAnterior(anteriores, url) {
+  for (const c of anteriores) {
+    const hit = await c.match(url);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** Pide un archivo del shell; con copia anterior, condicional. */
+async function bajarDelShell(url, vieja) {
+  const h = vieja && vieja.headers;
+  const etag = h && h.get && h.get('ETag');
+  const fecha = h && h.get && h.get('Last-Modified');
+  if (etag || fecha) {
+    const headers = {};
+    if (etag) headers['If-None-Match'] = etag;
+    if (fecha) headers['If-Modified-Since'] = fecha;
+    // `no-store`: que el 304 llegue aquí y no lo resuelva la caché HTTP.
+    const res = await conPlazo(new Request(url, { cache: 'no-store', headers }), SHELL_TIMEOUT_MS);
+    if (res.status === 304) return vieja;
+    return res;
+  }
+  return conPlazo(new Request(url, { cache: 'reload' }), SHELL_TIMEOUT_MS);
+}
+
+/*
  * INSTALAR ES TODO O NADA.
  *
  * Antes se precacheaba archivo a archivo, se toleraban los fallos con un
@@ -203,13 +250,17 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(PRECACHE);
+      const anteriores = await copiasAnteriores();
       const fallos = [];
       await Promise.all(
         SHELL.map(async (url) => {
           if (await cache.match(url)) return;
+          const vieja = await copiaAnterior(anteriores, url);
           for (let intento = 0; intento < 3; intento++) {
             try {
-              const res = await conPlazo(new Request(url, { cache: 'reload' }), SHELL_TIMEOUT_MS);
+              // El último intento va entero: por si el validador guardado
+              // es el que confunde al servidor o a algún proxy.
+              const res = await bajarDelShell(url, intento < 2 ? vieja : undefined);
               if (!res.ok) throw new Error(`HTTP ${res.status}`);
               await cache.put(url, res);
               return;
@@ -427,9 +478,25 @@ const sinTesela = () =>
 /** `localhost`: el servidor de desarrollo, no una publicación. */
 const DESARROLLO = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(self.location.hostname);
 
+/**
+ * La caché del shell, abierta una sola vez por vida del worker: al arrancar
+ * pasan por aquí ~90 peticiones seguidas (HTML, módulos, CSS, vendor) y abrirla
+ * en cada una era trabajo repetido en el camino crítico.
+ */
+let shellAbierta = null;
+const cacheShell = () => {
+  if (!shellAbierta) {
+    shellAbierta = caches.open(PRECACHE).catch((err) => {
+      shellAbierta = null;
+      throw err;
+    });
+  }
+  return shellAbierta;
+};
+
 /** Copia del shell; `index.html` también responde por `./`. */
 async function delShell(request) {
-  const cache = await caches.open(PRECACHE);
+  const cache = await cacheShell();
   return (
     (await cache.match(request, { ignoreSearch: true })) ||
     (request.mode === 'navigate'
@@ -484,7 +551,7 @@ self.addEventListener('fetch', (event) => {
         try {
           const res = await conPlazo(request, SHELL_TIMEOUT_MS);
           if (res.ok && mismoOrigen && request.mode !== 'navigate') {
-            const cache = await caches.open(PRECACHE);
+            const cache = await cacheShell();
             await cache.put(request, res.clone());
           }
           return res;

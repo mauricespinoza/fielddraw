@@ -54,11 +54,21 @@ const server = createServer(async (req, res) => {
       res.writeHead(404).end('No encontrado');
       return;
     }
-    const body = await readFile(file);
-    res.writeHead(200, {
+    // Validadores, como los de cualquier hosting estático: el service worker
+    // los usa para no volver a bajar lo que no cambió (ver `bajarDelShell`).
+    const etag = `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+    const headers = {
       'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream',
       'Cache-Control': 'no-cache',
-    });
+      ETag: etag,
+      'Last-Modified': info.mtime.toUTCString(),
+    };
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, headers).end();
+      return;
+    }
+    const body = await readFile(file);
+    res.writeHead(200, headers);
     res.end(body);
   } catch {
     res.writeHead(404).end('No encontrado');

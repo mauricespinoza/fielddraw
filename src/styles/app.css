@@ -4425,3 +4425,223 @@ a.link-pill {
 .compass-check-link {
   align-self: center;
 }
+
+/* ------------------------------------- estereograma: la red cabe entera ---- */
+
+/*
+ * La red se dimensiona contra el marco que la contiene, en las DOS
+ * direcciones. Antes solo contaba el ancho (`min(100%, 520px)`) y, centrada en
+ * un `grid`, cuando el marco era más bajo que ancho —siempre en un teléfono,
+ * con la cabecera y el filtro encima— se salía por arriba y por abajo: el
+ * norte, el sur y el encabezado de la solución de falla quedaban recortados,
+ * y la mitad de arriba ni siquiera se alcanzaba desplazando. Con el marco como
+ * contenedor de consultas (`container-type: size`) el lado del cuadrado es el
+ * menor de los dos, sin medir nada en JS. Donde no hay unidades `cq` se queda
+ * la regla de antes.
+ */
+.stereo-view .sv-chart-wrap {
+  container-type: size;
+}
+
+.stereo-view .stereo-chart-stack > * {
+  width: min(100cqw - 24px, 100cqh - 24px);
+}
+
+/* La solución de falla es 520 × 540: el alto manda un poco más. */
+.stereo-view .fk-chart-stack > * {
+  width: min(100cqw - 24px, (100cqh - 24px) * 520 / 540);
+}
+
+/* Fichas del filtro por tipo del tamaño del resto del panel (heredaban los
+   16 px del documento y en el teléfono se comían tres filas). */
+.sv-chips .sv-row,
+.sv-filterbar .pill {
+  font-size: 12.5px;
+}
+
+/*
+ * TELÉFONO (Y TABLET) EN VERTICAL: LA RED A TODO EL ANCHO, EL PANEL DEBAJO.
+ *
+ * Repartir el alto entre red y lateral dejaba una red pequeña y recortada y un
+ * lateral de un tercio de pantalla con su propio desplazamiento. Aquí la vista
+ * entera desplaza: arriba la cabecera compacta y el filtro en una sola fila,
+ * luego la red cuadrada al ancho de la pantalla —lo que se mira—, y debajo los
+ * controles, a un deslizamiento de distancia. El lazo no compite con ese
+ * desplazamiento: su lienzo lleva `touch-action: none`.
+ */
+@media (max-width: 860px) and (orientation: portrait) {
+  .stereo-view {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+  }
+
+  .stereo-view > * {
+    flex: none;
+  }
+
+  /* Cabecera en dos filas: título y exportación con el cierre arriba; las
+     pestañas, a todo el ancho y repartidas, debajo. */
+  .stereo-view .sv-head {
+    gap: 6px;
+  }
+
+  .stereo-view .sv-head h2 {
+    margin-right: auto;
+  }
+
+  .stereo-view .sv-spacer {
+    display: none;
+  }
+
+  .stereo-view .sv-tabs {
+    order: 10;
+    flex: 1 1 100%;
+  }
+
+  .stereo-view .sv-tab {
+    flex: 1 1 0;
+    padding: 4px 6px;
+    min-height: 34px;
+  }
+
+  .stereo-view .sv-head .pill {
+    min-height: 32px;
+    padding: 4px 10px;
+  }
+
+  .stereo-view .icon-btn.close-x {
+    min-width: 36px;
+    min-height: 36px;
+    font-size: 20px;
+  }
+
+  /* El filtro en UNA fila que desliza de lado, en vez de tres filas
+     apiladas encima de la red. */
+  .stereo-view .sv-filterbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -2px;
+    padding: 0 2px;
+  }
+
+  .stereo-view .sv-filterbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stereo-view .sv-filterbar > *,
+  .stereo-view .sv-chips .sv-row {
+    flex: none;
+  }
+
+  .stereo-view .sv-chips {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .stereo-view .sv-chips .sv-row {
+    min-height: 32px;
+    padding: 4px 10px;
+  }
+
+  .stereo-view .sv-chips .sv-row .sv-what {
+    overflow: visible;
+  }
+
+  .stereo-view .sv-filterbar .pill {
+    min-height: 32px;
+    padding: 4px 10px;
+  }
+
+  .stereo-view .sv-body {
+    flex: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* El marco ya no tiene alto propio: lo da la red. */
+  .stereo-view .sv-chart-wrap {
+    container-type: normal;
+    flex: none;
+    overflow: visible;
+  }
+
+  .stereo-view .stereo-chart-stack {
+    height: auto;
+    padding: 4px;
+  }
+
+  /* Al ancho de la pantalla, pero sin pasar del alto visible en una tablet:
+     ahí la red entera tiene que verse sin desplazar. */
+  .stereo-view .stereo-chart-stack > * {
+    width: min(100%, 78vh);
+  }
+
+  .stereo-view .fk-chart-stack > * {
+    width: min(100%, 78vh * 520 / 540);
+  }
+
+  .stereo-view .sv-side,
+  .stereo-view .sv-side.fk-side {
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: 12px;
+  }
+
+  .stereo-view .stereo-compass-wrap,
+  .stereo-view .stereo-position-wrap {
+    padding: 14px;
+  }
+}
+
+/*
+ * TELÉFONO APAISADO: red a la izquierda al alto disponible, controles a la
+ * derecha. En 390 px de alto apilarlos dejaba la red del tamaño de un sello.
+ */
+@media (max-width: 960px) and (orientation: landscape) {
+  .stereo-view .sv-body {
+    flex-direction: row;
+  }
+
+  .stereo-view .sv-side,
+  .stereo-view .sv-side.fk-side {
+    width: min(300px, 42vw);
+    max-height: none;
+  }
+
+  .stereo-view .sv-filterbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .stereo-view .sv-chips {
+    flex-wrap: nowrap;
+  }
+
+  .stereo-view .sv-chips .sv-row,
+  .stereo-view .sv-filterbar > * {
+    flex: none;
+  }
+
+  .stereo-view .stereo-chart-stack {
+    padding: 4px;
+  }
+
+  .stereo-view .stereo-chart-stack > * {
+    width: min(100cqw - 8px, 100cqh - 8px);
+  }
+
+  .stereo-view .fk-chart-stack > * {
+    width: min(100cqw - 8px, (100cqh - 8px) * 520 / 540);
+  }
+}
+
+/* La estratificación es negra: sin un filo claro, su muestra desaparecía
+   sobre el panel oscuro y la ficha parecía tener un hueco. */
+.sv-chips .sv-swatch:not(.sv-swatch-square) {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45);
+}

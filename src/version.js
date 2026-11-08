@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.57.0';
+export const APP_VERSION = '0.58.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -33,7 +33,7 @@ export const APP_TOOLS = [
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
   ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault.'],
-  ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once.'],
+  ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
   ['Topology · Hole', 'Subtract an area from a polygon, leaving a hole.'],
   ['Topology · Split · Reshape', 'Cut a feature with a line, or redraw part of its outline.'],
@@ -54,6 +54,22 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.58.0',
+    highlights: [
+      'Navigate → Select without the button: rest a finger or the pencil on an empty spot of the map for a moment (a ring confirms it) and drag — the app switches to Select and the drag becomes the lasso, starting where you rested. A normal drag still pans the map.',
+      'It only triggers where there is nothing drawn, imported or from StraboSpot under the point; on top of something, holding still opens its properties as before. A second finger cancels it and goes back to moving the map.',
+    ],
+  },
+  {
+    version: '0.57.1',
+    highlights: [
+      'Stereogram on a phone: the net now fits whole — it used to overflow its frame and lose the N and S ends and the fault-solution header. In portrait the net takes the full screen width with the controls below (scroll to reach them); the type filter is a single sliding row and the tabs span the width. In landscape, net on the left at full height, controls on the right.',
+      'Faults tab: if the solution cannot be computed, the tab now says why instead of staying blank.',
+      'Faster start after an update: a new version only downloads the files that changed (unchanged ones are revalidated, a few bytes each) instead of the whole app again, so the one-time reload after publishing comes sooner and competes less with the map tiles.',
+      'Faster first paint of the map: strike/dip symbols and control-point shapes are drawn when first needed instead of all at start-up, and the layout is measured once instead of four times.',
+    ],
+  },
   {
     version: '0.57.0',
     highlights: [

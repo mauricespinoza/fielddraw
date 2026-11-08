@@ -1,6 +1,5 @@
 import { GEOLOGY_SOURCE } from './geologyStyle.js';
 import {
-  CONTROL_POINT_ICONS,
   CONTROL_POINT_ICON_BY_ID,
   CONTROL_POINT_KIND,
   CONTROL_POINT_NO_UNIT_COLOR,
@@ -139,14 +138,30 @@ export function controlPointIconImage(shape) {
 
 export const controlPointIconName = (id) => `cpoint-icon-${id}`;
 
-/** Registra en el mapa las formas que falten. Barato: son siete imágenes. */
+/** Mapas que ya generan sus formas a pedido. */
+const aPedido = new WeakSet();
+
+/**
+ * Hace que el mapa genere cada forma cuando la necesita.
+ *
+ * Antes se calculaban las siete al montar el mapa: el campo de distancias de
+ * cada una recorre todos sus píxeles contra todos sus lados, y en el arranque
+ * eso era trabajo en el camino crítico aunque el dibujo no tuviera un solo
+ * punto de control —o los tuviera todos con la misma forma—. MapLibre avisa
+ * con `styleimagemissing` justo antes de pintar un símbolo cuya imagen falta,
+ * y una imagen añadida en ese momento se usa en el mismo frame.
+ */
 export function addControlPointIcons(map) {
-  for (const i of CONTROL_POINT_ICONS) {
-    const name = controlPointIconName(i.id);
-    if (!map.hasImage(name)) {
-      map.addImage(name, controlPointIconImage(i.id), { pixelRatio: ICON_PR, sdf: true });
-    }
-  }
+  if (aPedido.has(map)) return;
+  aPedido.add(map);
+  const prefijo = controlPointIconName('');
+  map.on('styleimagemissing', (e) => {
+    const name = e && e.id;
+    if (typeof name !== 'string' || !name.startsWith(prefijo) || map.hasImage(name)) return;
+    const shape = name.slice(prefijo.length);
+    if (!CONTROL_POINT_ICON_BY_ID.has(shape)) return;
+    map.addImage(name, controlPointIconImage(shape), { pixelRatio: ICON_PR, sdf: true });
+  });
 }
 
 const iconOf = (style) =>
