@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.57.0';
+export const APP_VERSION = '0.57.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.57.1',
+    highlights: [
+      'Stereogram on a phone: the net now fits whole — it used to overflow its frame and lose the N and S ends and the fault-solution header. In portrait the net takes the full screen width with the controls below (scroll to reach them); the type filter is a single sliding row and the tabs span the width. In landscape, net on the left at full height, controls on the right.',
+      'Faults tab: if the solution cannot be computed, the tab now says why instead of staying blank.',
+      'Faster start after an update: a new version only downloads the files that changed (unchanged ones are revalidated, a few bytes each) instead of the whole app again, so the one-time reload after publishing comes sooner and competes less with the map tiles.',
+      'Faster first paint of the map: strike/dip symbols and control-point shapes are drawn when first needed instead of all at start-up, and the layout is measured once instead of four times.',
+    ],
+  },
   {
     version: '0.57.0',
     highlights: [

@@ -644,14 +644,20 @@
             esperadas.push(estructural.structureImageName(k, v, true));
           }
         }
+        // Se rasterizan a pedido (`styleimagemissing`): cada una que MapLibre
+        // pida tiene que aparecer, y ninguna se dibuja antes de pedirla.
         const mapaFalso = {
           imgs: new Set(),
+          oyentes: [],
+          on(tipo, f) { if (tipo === 'styleimagemissing') this.oyentes.push(f); },
           hasImage(name) { return this.imgs.has(name); },
           addImage(name) { this.imgs.add(name); },
         };
         estructural.addStructureImages(mapaFalso);
+        ok('ninguna imagen se dibuja antes de pedirla', mapaFalso.imgs.size === 0);
+        for (const id of esperadas) for (const f of mapaFalso.oyentes) f({ id });
         const faltan = esperadas.filter((name) => !mapaFalso.hasImage(name));
-        ok(esperadas.length + ' imágenes de rumbo/manteo registradas', faltan.length === 0, faltan.join(', '));
+        ok(esperadas.length + ' imágenes de rumbo/manteo disponibles a pedido', faltan.length === 0, faltan.join(', '));
 
         // El estilo es editable: con los parámetros al máximo tampoco puede
         // producir capas que el spec rechace.

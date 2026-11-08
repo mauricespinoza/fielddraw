@@ -2385,12 +2385,19 @@ function wireToolbarWidth() {
       if (noCabe()) marca.classList.add('crowded');
     }
   };
-  medir();
+  /*
+   * UN solo observador para los tres. Con uno por elemento, más la llamada
+   * directa de arranque, `medir` —que fuerza un layout síncrono cada vez—
+   * corría cuatro veces seguidas al abrir la app, porque cada observador
+   * avisa al empezar a observar. Un observador entrega todos sus cambios en
+   * una sola llamada por frame, antes de pintar, así que tampoco hace falta
+   * la medida directa: las variables ya están puestas en el primer frame.
+   */
   if (typeof ResizeObserver === 'function') {
-    if (barra) new ResizeObserver(medir).observe(barra);
-    if (arriba) new ResizeObserver(medir).observe(arriba);
-    if (acciones) new ResizeObserver(medir).observe(acciones);
+    const ro = new ResizeObserver(medir);
+    for (const el of [barra, arriba, acciones]) if (el) ro.observe(el);
   } else {
+    medir();
     window.addEventListener('resize', medir);
   }
 }

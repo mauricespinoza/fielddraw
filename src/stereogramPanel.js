@@ -139,7 +139,7 @@ export function initStereogramPanel({ message } = {}) {
   store.subscribe(() => {
     if (!panelOpen) return;
     if (store.changed('features') || store.changed('selection') || store.changed('ornaments')) {
-      if (activeTab === 'faults') renderFaultTab();
+      if (activeTab === 'faults') drawFaults();
       else renderPlot();
     }
   });
@@ -182,7 +182,27 @@ function showTab(tab) {
   if (tab === 'position') startPosition();
   else stopPosition();
   if (tab === 'plot') renderPlot();
-  if (tab === 'faults') renderFaultTab();
+  if (tab === 'faults') drawFaults();
+}
+
+/**
+ * La solución de falla, sin dejar la pestaña muda si algo se rompe.
+ *
+ * Un dato raro o un navegador que no entiende algo hacía que la excepción se
+ * perdiera en la consola: la pestaña cambiaba pero quedaba en blanco, y desde
+ * el teléfono eso no se distingue de «no pasa nada». Ahora se dice qué falló,
+ * en la nota de la pestaña y en el aviso, para poder reportarlo.
+ */
+function drawFaults() {
+  try {
+    renderFaultTab();
+  } catch (err) {
+    console.error('[faults]', err);
+    const msg = `Could not compute the fault-plane solution: ${(err && err.message) || err}`;
+    const note = $('fk-source-note');
+    if (note) note.textContent = msg;
+    onMessage(msg, 'warn');
+  }
 }
 
 /* ---------- pestaña Plot ---------- */

@@ -76,7 +76,7 @@ function cargarSW({ fetchImpl, host = 'example.org' } = {}) {
   };
   const ctx = {
     self, caches: { open: async (n) => abrir(n), keys: async () => [...almacenes.keys()], delete: async (n) => almacenes.delete(n) },
-    fetch: fetchImpl, Request: class { constructor(u, o = {}) { this.url = new URL(u, `https://${host}/`).href; Object.assign(this, o); this.headers = new Map(); this.method = 'GET'; } },
+    fetch: fetchImpl, Request: class { constructor(u, o = {}) { this.url = new URL(u, `https://${host}/`).href; Object.assign(this, o); this.headers = new Map(Object.entries(o.headers || {})); this.method = 'GET'; } },
     Response: class { constructor(b, o = {}) { this.body = b; this.status = o.status ?? 200; this.ok = this.status < 300; } clone() { return this; } },
     URL, AbortController, setTimeout, clearTimeout, console: { warn() {}, log() {} }, Date,
   };
@@ -103,6 +103,39 @@ console.log('== sw.js: instalar es todo o nada ==');
   // Lo ya bajado de esta versión no se vuelve a pedir en el reintento.
   const cache = caida.almacenes.get(caida.sw.PRECACHE);
   ok('lo bajado queda para el reintento', cache.m.size === shell.length - 1);
+}
+
+console.log('== sw.js: actualizar sin volver a bajar lo que no cambió ==');
+{
+  const conEtag = (tag) => ({ ok: true, status: 200, tag, headers: new Map([['ETag', tag]]), clone() { return this; } });
+  const pedidas = [];
+  const env = cargarSW({
+    fetchImpl: async (req) => {
+      pedidas.push(req);
+      const inm = req.headers && req.headers.get('If-None-Match');
+      // ui.js cambió; todo lo demás sigue igual.
+      if ((req.url || '').endsWith('/src/ui.js')) return conEtag('"nuevo"');
+      if (inm === '"viejo"') return { ok: false, status: 304, clone() { return this; } };
+      return conEtag('"sin-copia"');
+    },
+  });
+  // La versión anterior del shell, completa y con validadores.
+  const cachesFalsas = env.almacenes;
+  const nombreViejo = 'fielddraw-shell-v1';
+  const m = new Map();
+  for (const f of shell) m.set(new URL(f, 'https://example.org/').href, conEtag('"viejo"'));
+  cachesFalsas.set(nombreViejo, {
+    m,
+    async match(req) { return m.get(typeof req === 'string' ? new URL(req, 'https://example.org/').href : req.url); },
+    async put() {}, async keys() { return []; }, async delete() { return false; },
+  });
+  ok('instala con 304', await instalar(env));
+  const nueva = env.almacenes.get(env.sw.PRECACHE);
+  const ui = nueva.m.get('https://example.org/src/ui.js');
+  const app = nueva.m.get('https://example.org/src/app.js');
+  ok('lo que cambió llega nuevo', ui && ui.tag === '"nuevo"');
+  ok('lo que no cambió se reutiliza de la versión anterior (304)', app && app.tag === '"viejo"');
+  ok('se pidió condicional', pedidas.every((r) => r.headers.get('If-None-Match') === '"viejo"' && r.cache === 'no-store'));
 }
 
 console.log('== sw.js: teselas ==');
