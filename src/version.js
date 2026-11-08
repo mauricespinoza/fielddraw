@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.56.0';
+export const APP_VERSION = '0.56.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.56.1',
+    highlights: [
+      'Device method: the compass is bigger. The panel is wider and the dial grows to fill it (up to about 390 px, limited by screen height so “Add measurement” stays reachable), so the strike/dip reading below no longer shrinks it.',
+    ],
+  },
   {
     version: '0.56.0',
     highlights: [
