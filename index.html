@@ -126,6 +126,9 @@
     <link rel="modulepreload" href="./src/stereogram.js" />
     <link rel="modulepreload" href="./src/stereogramPanel.js" />
     <link rel="modulepreload" href="./src/stereogramView.js" />
+    <link rel="modulepreload" href="./src/faultKin.js" />
+    <link rel="modulepreload" href="./src/faultKinPanel.js" />
+    <link rel="modulepreload" href="./src/faultKinView.js" />
     <link rel="modulepreload" href="./src/store.js" />
     <link rel="modulepreload" href="./src/strabo/adopt.js" />
     <link rel="modulepreload" href="./src/strabo/api.js" />
@@ -1649,6 +1652,8 @@
             <button class="sv-tab active" id="stereo-tab-plot" role="tab">Plot</button>
             <button class="sv-tab" id="stereo-tab-compass" role="tab">Compass</button>
             <button class="sv-tab" id="stereo-tab-position" role="tab">Position</button>
+            <button class="sv-tab" id="stereo-tab-faults" role="tab"
+              title="Fault-plane solution of the faults with full datum (plane + striae + sense)">Faults</button>
           </div>
           <span class="sv-spacer"></span>
           <button class="pill" id="btn-stereo-png" title="Save as a picture">PNG</button>
@@ -1730,6 +1735,46 @@
             <button class="pill compass-check-link" id="btn-stereo-check-compass" type="button"
               title="Turn the phone one full circle, level, to test whether the compass is calibrated">Check compass</button>
           </div>
+        </div>
+
+        <!-- Solución de plano de falla (port del plugin Fault-plane Solver):
+             solo las fallas con dato completo —plano, estría y sentido—, una
+             casilla por falla para sacarla del análisis, y una casilla por
+             elemento dibujable. Lo llena faultKinPanel.js. -->
+        <div class="sv-body hidden" id="stereo-panel-faults">
+          <div class="sv-chart-wrap">
+            <div class="stereo-chart-stack fk-chart-stack">
+              <svg id="fault-chart" class="sv-chart" aria-label="Fault-plane solution on a Schmidt net"></svg>
+            </div>
+          </div>
+          <aside class="sv-side fk-side">
+            <p class="hint footnote" id="fk-source-note"></p>
+            <dl class="fk-summary" id="fk-summary"></dl>
+            <div class="fk-legend" id="fk-legend"></div>
+            <h3>Faults <span class="sv-count" id="fk-count"></span>
+              <button class="sv-mini" id="fk-all-on" type="button">All on</button>
+              <button class="sv-mini fk-mini" id="fk-all-off" type="button">All off</button>
+              <button class="sv-mini fk-mini" id="fk-invert" type="button">Invert</button>
+            </h3>
+            <div class="sv-list fk-list" id="fk-list"></div>
+            <h3>Draw
+              <button class="sv-mini" id="fk-layers-all" type="button">All</button>
+              <button class="sv-mini fk-mini" id="fk-layers-none" type="button">None</button>
+              <button class="sv-mini fk-mini" id="fk-layers-reset" type="button" title="Back to the factory layers">Reset</button>
+            </h3>
+            <div class="fk-layers" id="fk-layers"></div>
+            <p class="fk-group">Projection</p>
+            <label class="sv-check">
+              <input type="checkbox" id="fk-dc" checked />
+              Best-fit double-couple (symmetric beachball; off = full mean tensor)
+            </label>
+            <p class="hint footnote">
+              Only fault planes with striae and a sense of slip (normal, inverse, left- or right-lateral) enter.
+              Untick a fault to leave it out of the Bingham axes, the Michael inversion and the plot — the regime,
+              R and β update at once. Point at a row to highlight that fault on the net.
+              β is the angle between the striae and the shear the stress tensor predicts.
+            </p>
+          </aside>
         </div>
 
         <!-- Posición del GPS en su propia pestaña: junto a la brújula le quitaba

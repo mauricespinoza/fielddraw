@@ -3403,6 +3403,115 @@ input[type='radio'] {
   flex: none;
 }
 
+/* ---------- pestaña Faults: solución de plano de falla ---------- */
+
+#stereo-panel-faults .sv-chart-wrap {
+  background: #e9edf2;
+}
+
+/* El SVG de la solución es más alto que ancho (lleva el encabezado). */
+.fk-chart-stack > * {
+  aspect-ratio: 520 / 540;
+}
+
+.fk-side {
+  width: 340px;
+}
+
+.fk-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fk-summary dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.fk-summary dd {
+  margin: 0;
+  color: var(--text);
+}
+
+.fk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fk-leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Las fichas de símbolos van sobre fondo oscuro: un disco claro detrás. */
+.fk-leg svg {
+  background: #ffffff;
+  border-radius: 3px;
+}
+
+.sv-side h3 .sv-mini.fk-mini {
+  margin-left: 0;
+}
+
+.fk-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  flex: none;
+}
+
+.fk-row .sv-num:first-of-type {
+  min-width: 1.6em;
+  text-align: right;
+}
+
+.fk-row input[type='checkbox']:disabled {
+  opacity: 0.5;
+}
+
+.fk-group {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.fk-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sv-check.fk-sub {
+  padding-left: 18px;
+}
+
+/* Apuntar una fila de la lista resalta esa falla y apaga las demás. */
+#fault-chart.fk-focus [data-fid] {
+  opacity: 0.12;
+  transition: opacity 0.12s;
+}
+
+#fault-chart.fk-focus [data-fid].fk-hot {
+  opacity: 1;
+}
+
+#fault-chart.fk-focus polyline.fk-hot {
+  stroke: #ff9500;
+  stroke-width: 2.6;
+}
+
 @media (max-width: 860px) {
   .sv-body {
     flex-direction: column;
@@ -3410,6 +3519,14 @@ input[type='radio'] {
   .sv-side {
     width: auto;
     max-height: 34%;
+  }
+  /* La lista de fallas es lo que se toca en terreno: algo más de alto, y un
+     solo desplazamiento (el del lateral), no dos anidados. */
+  .sv-side.fk-side {
+    max-height: 45%;
+  }
+  .fk-list {
+    max-height: none;
   }
 }
 
