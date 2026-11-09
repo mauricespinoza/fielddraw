@@ -596,8 +596,8 @@
           <input type="text" id="project-name" placeholder="Cerro Colorado map" />
         </label>
         <button class="pill wide" id="btn-save-project">Save project…</button>
-        <button class="pill wide" id="btn-save-package" title="One .zip with the project plus the offline maps and elevation model that are open, to open directly on another device">
-          Save with offline maps &amp; DEM (.zip)…
+        <button class="pill wide" id="btn-save-package" title="One .zip with the project plus everything it leaves out — imported GeoPackage layers (control points, structural data…), offline maps and the elevation model — to open directly on another device">
+          Save with maps, DEM &amp; layers (.zip)…
         </button>
         <button class="pill wide" id="btn-open-project">Open project…</button>
         <!-- La lámina cuelga de Proyecto y no de Export, que es donde está el
@@ -608,9 +608,10 @@
         <button class="pill danger wide" id="btn-new-project">New project</button>
         <p class="hint">
           <strong>Save project</strong> writes a <code>.fdproj.json</code> with the drawing, units,
-          symbology and settings. <strong>Save with offline maps &amp; DEM</strong> writes a
-          <code>.fdproj.zip</code> that also carries the open PMTiles/MBTiles and elevation model;
-          <strong>Open project</strong> reads either one. GeoPackage layers are not included.
+          symbology and settings, but not the imported GeoPackage layers.
+          <strong>Save with maps, DEM &amp; layers</strong> writes a <code>.fdproj.zip</code> that
+          also carries the imported GeoPackage layers (control points, structural data…), the
+          open PMTiles/MBTiles and the elevation model; <strong>Open project</strong> reads either one.
         </p>
         <p class="hint footnote" id="project-status">Not saved yet in this session.</p>
       </div>
