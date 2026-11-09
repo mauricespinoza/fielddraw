@@ -162,5 +162,25 @@ console.log('== nombre de archivo ==');
   ok('con nombre vacío usa uno por defecto', projectFilename('').startsWith('fielddraw-'));
 }
 
+console.log('== el nombre del proyecto se recuerda ==');
+{
+  const { loadSavedProjectName, saveProjectName } = await import('../src/persistence.js');
+  const mem = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+    setItem: (k, v) => mem.set(k, String(v)),
+    removeItem: (k) => mem.delete(k),
+  };
+  ok('sin nada guardado, vacío', loadSavedProjectName() === '');
+  saveProjectName('  Cerro Colorado ');
+  ok('guarda sin los espacios de los bordes', loadSavedProjectName() === 'Cerro Colorado');
+  saveProjectName('');
+  ok('vaciarlo lo olvida', loadSavedProjectName() === '' && mem.size === 0);
+  globalThis.localStorage = { getItem() { throw new Error('bloqueado'); }, setItem() { throw new Error('bloqueado'); }, removeItem() { throw new Error('bloqueado'); } };
+  saveProjectName('x');
+  ok('con el almacenamiento bloqueado no falla', loadSavedProjectName() === '');
+  delete globalThis.localStorage;
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

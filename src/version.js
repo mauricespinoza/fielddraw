@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.58.1';
+export const APP_VERSION = '0.58.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.58.2',
+    highlights: [
+      'The project name is remembered: what you type in Project → Name is still there the next time you open the app, and it follows the project you open (and clears with New project).',
+    ],
+  },
   {
     version: '0.58.1',
     highlights: [

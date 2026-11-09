@@ -105,7 +105,9 @@ import {
   downloadBlob,
   downloadGeoJSON,
   downloadText,
+  loadSavedProjectName,
   saveOpenTopoKey,
+  saveProjectName,
 } from './persistence.js';
 import { exportGeoPackage, importGeoPackage } from './gpkg/index.js';
 import { exportMapImage, pageSizeMm } from './mapExport.js';
@@ -5906,7 +5908,10 @@ async function doOpenProject(file) {
     // La vista va a donde está lo que se acaba de abrir: el proyecto puede
     // ser de otra zona, y quedarse mirando la anterior lo haría parecer vacío.
     if (mapBridge) mapBridge.fitToFeatures(project.features);
-    if (project.name) $('project-name').value = project.name;
+    if (project.name) {
+      $('project-name').value = project.name;
+      saveProjectName(project.name);
+    }
     // Recién abierto, el proyecto coincide con su archivo.
     projectDirty = false;
     setProjectStatus(`Opened ${file.name} · ${n} feature(s).`);
@@ -5940,6 +5945,7 @@ async function doNewProject() {
     console.warn('[importados] no se pudo vaciar lo guardado:', err);
   }
   $('project-name').value = '';
+  saveProjectName('');
   projectDirty = false;
   setProjectStatus('New project, not saved yet.');
 }
@@ -7100,6 +7106,10 @@ export function initUI() {
 
   $('btn-project').addEventListener('click', () => togglePanel('project-menu'));
   $('btn-close-project').addEventListener('click', () => $('project-menu').classList.add('hidden'));
+  // El nombre del proyecto se recuerda entre aperturas: se repone al arrancar y
+  // se guarda al teclearlo, al abrir un proyecto y al empezar uno nuevo.
+  $('project-name').value = loadSavedProjectName();
+  $('project-name').addEventListener('input', () => saveProjectName($('project-name').value));
   $('btn-save-project').addEventListener('click', doSaveProject);
   $('btn-save-package').addEventListener('click', doSaveProjectPackage);
   renderPackageButton();
