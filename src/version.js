@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.58.0';
+export const APP_VERSION = '0.58.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -54,6 +54,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.58.1',
+    highlights: [
+      'Save with maps, DEM & layers (.zip) now packs everything: the imported GeoPackage layers — the control points and structural data that came from a GeoPackage — travel inside the zip, next to the project, the offline maps and the DEM. They used to be left out, so on the other device those points and measurements were missing.',
+      'Opening the zip brings the layers back with their style, visibility and opacity; one that is already open is not duplicated. The button is enabled whenever there is an imported layer, offline map or DEM to pack, and closing a project asks to save the full package in those cases. Older zips still open.',
+    ],
+  },
   {
     version: '0.58.0',
     highlights: [

@@ -71,5 +71,47 @@ console.log('== paquete de proyecto ==');
   ok('y sus bytes', pkg.files[1].file.size === pm.length * 2 && pkg.files[1].file.name === 'dem.pmtiles');
 }
 
+console.log('== paquete de proyecto: capas importadas (puntos de control, datos estructurales) ==');
+{
+  const punto = (props, c) => ({ type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: c } });
+  const capas = [
+    {
+      id: 'gpkg-a-0', table: 'puntos_control', label: 'Puntos de control', kind: 'point',
+      geojson: { type: 'FeatureCollection', features: [punto({ name: 'CP1' }, [-71, -37]), punto({ name: 'CP2' }, [-71.1, -37])] },
+      style: { color: '#ff0000' },
+    },
+    {
+      id: 'gpkg-a-1', table: 'estructural/rumbos', label: 'Datos: estructurales', kind: 'point',
+      geojson: { type: 'FeatureCollection', features: [punto({ strike: 30, dip: 40 }, [-71, -37.1])] },
+      style: null,
+    },
+  ];
+  const { data, blob } = await buildProjectPackage('Con capas', [], undefined, { imported: capas });
+  ok('el manifiesto nombra las dos capas', data.importedLayers.length === 2);
+  ok('rutas bajo layers/ y sin caracteres prohibidos', data.importedLayers.every((l) => /^layers\/[^/\\:*?"<>|]+\.json$/.test(l.path)), JSON.stringify(data.importedLayers));
+  const entradas = await readZip(blob);
+  ok('el zip lleva las capas como archivos', entradas.filter((e) => e.name.startsWith('layers/')).length === 2);
+  const pkg = await readProjectPackage(blob);
+  ok('vuelven las dos capas sin avisos', pkg.importedLayers.length === 2 && pkg.warnings.length === 0, JSON.stringify(pkg.warnings));
+  ok('con sus elementos intactos', pkg.importedLayers[0].geojson.features.length === 2 && pkg.importedLayers[1].geojson.features[0].properties.dip === 40);
+  ok('con su id, estilo y etiqueta', pkg.importedLayers[0].id === 'gpkg-a-0' && pkg.importedLayers[0].style.color === '#ff0000' && pkg.importedLayers[0].label === 'Puntos de control');
+  ok('y sin archivos de mapa', pkg.files.length === 0);
+
+  // Un paquete anterior a esto (sin `importedLayers`) sigue abriéndose.
+  const viejo = await buildZip([{ name: 'project.fdproj.json', blob: new Blob([JSON.stringify({ format: 'fielddraw-project', version: 1, features: [] })]) }]);
+  const pk = await readProjectPackage(viejo);
+  ok('un paquete sin capas sigue abriéndose', pk.importedLayers.length === 0 && pk.warnings.length === 0);
+
+  // Una capa listada pero ausente o rota se avisa, no tumba el resto.
+  const roto = await buildZip([
+    { name: 'project.fdproj.json', blob: new Blob([JSON.stringify({ format: 'fielddraw-project', version: 1, features: [], importedLayers: [{ path: 'layers/x.json', id: 'x', label: 'X' }, { path: 'layers/falta.json', id: 'y', label: 'Y' }, { path: 'layers/ok.json', id: 'z', label: 'Z' }] })]) },
+    { name: 'layers/x.json', blob: new Blob(['no es json']) },
+    { name: 'layers/ok.json', blob: new Blob([JSON.stringify(capas[0])]) },
+  ]);
+  const pr = await readProjectPackage(roto);
+  ok('la capa buena se conserva', pr.importedLayers.length === 1);
+  ok('y se avisa de la rota y de la ausente', pr.warnings.length === 2, JSON.stringify(pr.warnings));
+}
+
 console.log(fails ? `\n${fails} FALLO(S)` : '\nTODO OK');
 process.exit(fails ? 1 : 0);

@@ -5674,11 +5674,14 @@ async function currentOfflineFiles() {
     .map((r) => ({ role: r.role === 'dem' ? 'dem' : 'tiles', name: r.name || r.file.name, file: r.file }));
 }
 
+/** ¿Hay algo que el `.json` deja fuera y el paquete sí lleva? */
+const hasPackageExtras = (st) => !!(st.tileSets.length || st.demSet || st.imported.length);
+
 /** Habilita «Save with offline maps» solo si hay algo que meter. */
 function renderPackageButton() {
   const st = store.getState();
   const btn = $('btn-save-package');
-  if (btn) btn.disabled = !st.tileSets.length && !st.demSet;
+  if (btn) btn.disabled = !hasPackageExtras(st);
 }
 
 /** @returns {Promise<boolean>} si quedó guardado */
@@ -5687,21 +5690,32 @@ async function doSaveProjectPackage() {
   setBusy('Packing the project…');
   try {
     const files = await currentOfflineFiles();
-    if (!files.length) {
-      showBanner('No offline map or elevation model is open: saving the plain project instead.', 'warn');
+    const imported = store.getState().imported;
+    if (!files.length && !imported.length) {
+      showBanner('No offline map, elevation model or imported layer is open: saving the plain project instead.', 'warn');
       doSaveProject();
       return true;
     }
-    const { data, blob } = await buildProjectPackage(name, files, (hechos, total) => {
-      setBusy(`Packing the project… ${total ? Math.round((hechos / total) * 100) : 100}%`);
-    });
+    const { data, blob } = await buildProjectPackage(
+      name,
+      files,
+      (hechos, total) => {
+        setBusy(`Packing the project… ${total ? Math.round((hechos / total) * 100) : 100}%`);
+      },
+      { imported },
+    );
     downloadBlob(blob, packageFilename(name));
     projectDirty = false;
+    const extras = [
+      files.length ? `${files.length} map/DEM file(s)` : '',
+      imported.length ? `${imported.length} imported layer(s)` : '',
+    ].filter(Boolean);
     setProjectStatus(
-      `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s) + ${files.length} file(s), ${fmtMB(blob.size)}.`,
+      `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s) + ${extras.join(' + ')}, ${fmtMB(blob.size)}.`,
     );
+    const que = [...files.map((f) => f.name), ...imported.map((l) => l.label || l.id)];
     showBanner(
-      `Project packed with ${files.map((f) => f.name).join(', ')} (${fmtMB(blob.size)}). Open the .zip with Open project on the other device.`,
+      `Project packed with ${que.join(', ')} (${fmtMB(blob.size)}). Open the .zip with Open project on the other device.`,
       'info',
     );
     return true;
@@ -5803,7 +5817,7 @@ async function confirmCloseProject(text) {
   // Con mapas offline o DEM abiertos se guarda el paquete: el .json solo
   // dejaría fuera justo lo que el proyecto nuevo va a quitar.
   const st = store.getState();
-  if (st.tileSets.length || st.demSet) return doSaveProjectPackage();
+  if (hasPackageExtras(st)) return doSaveProjectPackage();
   doSaveProject();
   return true;
 }
@@ -5845,11 +5859,13 @@ async function doOpenProject(file) {
   try {
     let text;
     let empaquetados = [];
+    let capasPaquete = [];
     let avisosPaquete = [];
     if (await isZip(file)) {
       const pkg = await readProjectPackage(file);
       text = pkg.text;
       empaquetados = pkg.files;
+      capasPaquete = pkg.importedLayers;
       avisosPaquete = pkg.warnings;
     } else {
       text = await file.text();
@@ -5865,6 +5881,23 @@ async function doOpenProject(file) {
     if (!seguir) return;
     setBusy(`Opening ${file.name}…`);
     const n = openProject(project);
+    if (capasPaquete.length) {
+      /*
+       * Las capas importadas del paquete (puntos de control, datos
+       * estructurales de un GeoPackage…). Una con el mismo id ya presente no se
+       * duplica. Después hay que reaplicar visibilidad y opacidad: el proyecto
+       * las aplicó cuando estas capas todavía no existían.
+       */
+      const nuevas = capasPaquete.filter((l) => !store.getState().imported.some((x) => x.id === l.id));
+      store.restoreImportedLayers(capasPaquete);
+      store.applyLayerState(project.layers);
+      const feats = capasPaquete.reduce((t, l) => t + l.geojson.features.length, 0);
+      warnings.push(
+        `Imported layers: ${capasPaquete.map((l) => l.label || l.id).join(', ')} (${feats} feature(s)${
+          nuevas.length < capasPaquete.length ? `, ${capasPaquete.length - nuevas.length} already open` : ''
+        }).`,
+      );
+    }
     if (empaquetados.length) {
       const { hechos, fallos } = await openPackagedFiles(empaquetados);
       if (hechos.length) warnings.push(`Offline maps / DEM: ${hechos.join(', ')}.`);
@@ -7071,7 +7104,7 @@ export function initUI() {
   $('btn-save-package').addEventListener('click', doSaveProjectPackage);
   renderPackageButton();
   store.subscribe(() => {
-    if (store.changed('tileSets') || store.changed('demSet')) renderPackageButton();
+    if (store.changed('tileSets') || store.changed('demSet') || store.changed('imported')) renderPackageButton();
     if (PROJECT_KEYS.some((k) => store.changed(k))) projectDirty = true;
   });
   /*

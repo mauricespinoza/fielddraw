@@ -8,11 +8,13 @@ import { buildZip, readZip } from './zip.js';
  * Proyectos de FieldDraw: un único JSON con el dibujo, las unidades, la
  * simbología y los ajustes.
  *
- * El `.fdproj.json` NO guarda las capas importadas ni los mapas offline: son
- * archivos de cientos de MB, y meterlos dentro convertiría un proyecto de
- * 40 KB en uno de 2 GB. Para llevar todo a otro dispositivo está el PAQUETE
- * (`.fdproj.zip`, ver `buildProjectPackage`): el mismo JSON más los PMTiles/
- * MBTiles y el DEM, sin recomprimir.
+ * El `.fdproj.json` NO guarda las capas importadas (GeoPackage, con sus
+ * puntos de control y datos estructurales) ni los mapas offline: son archivos
+ * de cientos de MB, y meterlos dentro convertiría un proyecto de 40 KB en uno
+ * de 2 GB. Para llevar todo a otro dispositivo está el PAQUETE
+ * (`.fdproj.zip`, ver `buildProjectPackage`): el mismo JSON, cada capa
+ * importada en su propio archivo, y los PMTiles/MBTiles y el DEM sin
+ * recomprimir.
  *
  * El formato es GeoJSON válido por dentro (`features` es una lista de features),
  * así que un proyecto se puede inspeccionar con cualquier herramienta.
@@ -70,28 +72,52 @@ export function packageFilename(name = '') {
   return projectFilename(name).replace(/\.json$/, '.zip');
 }
 
+/** Nombre de archivo seguro dentro del ZIP. */
+const seguro = (txt, vacio) => String(txt || vacio).replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || vacio;
+
 /**
- * Paquete de proyecto: el proyecto más los mapas offline y el DEM.
+ * Paquete de proyecto: el proyecto más TODO lo que el `.fdproj.json` deja
+ * fuera — las capas importadas (GeoPackage: puntos de control, datos
+ * estructurales, contactos…), los mapas offline y el DEM.
+ *
+ * Las capas importadas van cada una en su archivo (`layers/…json`) y no dentro
+ * del JSON del proyecto: así el proyecto sigue siendo pequeño y legible, y una
+ * capa de decenas de MB no obliga a parsear todo de golpe.
  *
  * @param {string} name
  * @param {{role: 'tiles'|'dem', name: string, file: Blob}[]} files
  * @param {(hechos: number, total: number) => void} [onProgress]
+ * @param {{imported?: object[]}} [opts] capas importadas; por omisión las del store
  * @returns {Promise<{data: object, blob: Blob}>}
  */
-export async function buildProjectPackage(name, files, onProgress) {
+export async function buildProjectPackage(name, files, onProgress, { imported } = {}) {
   const data = serializeProject(name);
+  const capas = Array.isArray(imported) ? imported : store.getState().imported;
   const usados = new Set();
-  const dentro = files.map((f) => {
-    const base = String(f.name || 'file').replace(/[\\/:*?"<>|]+/g, '_') || 'file';
-    let path = `files/${base}`;
-    for (let i = 2; usados.has(path); i++) path = `files/${i}-${base}`;
+  const unico = (carpeta, base) => {
+    let path = `${carpeta}/${base}`;
+    for (let i = 2; usados.has(path); i++) path = `${carpeta}/${i}-${base}`;
     usados.add(path);
-    return { path, role: f.role, name: f.name, file: f.file };
-  });
+    return path;
+  };
+  const dentro = files.map((f) => ({
+    path: unico('files', seguro(f.name, 'file')),
+    role: f.role,
+    name: f.name,
+    file: f.file,
+  }));
+  const capasDentro = capas.map((l, i) => ({
+    path: unico('layers', `${seguro(l.label || l.table || l.id, `layer-${i}`)}.json`),
+    id: l.id,
+    label: l.label,
+    blob: new Blob([JSON.stringify(l)], { type: 'application/json' }),
+  }));
   data.offlineFiles = dentro.map(({ path, role, name: n }) => ({ path, role, name: n }));
+  data.importedLayers = capasDentro.map(({ path, id, label }) => ({ path, id, label }));
   const blob = await buildZip(
     [
       { name: PACKAGE_PROJECT, blob: new Blob([JSON.stringify(data)], { type: 'application/json' }) },
+      ...capasDentro.map((e) => ({ name: e.path, blob: e.blob })),
       ...dentro.map((e) => ({ name: e.path, blob: e.file })),
     ],
     onProgress,
@@ -100,22 +126,26 @@ export async function buildProjectPackage(name, files, onProgress) {
 }
 
 /**
- * Abre un paquete: el texto del proyecto y sus archivos, cada uno como un
- * `File` que es un trozo del ZIP (no se copia nada a memoria).
+ * Abre un paquete: el texto del proyecto, sus capas importadas y sus archivos
+ * (cada uno como un `File` que es un trozo del ZIP: no se copia nada a
+ * memoria).
  *
- * @returns {Promise<{text: string, files: {role: string, name: string, file: File}[], warnings: string[]}>}
+ * @returns {Promise<{text: string, files: {role: string, name: string, file: File}[], importedLayers: object[], warnings: string[]}>}
  */
 export async function readProjectPackage(zipFile) {
   const entries = await readZip(zipFile);
   const porNombre = new Map(entries.map((e) => [e.name, e]));
   const proj =
     porNombre.get(PACKAGE_PROJECT) ||
-    entries.find((e) => /\.(fdproj\.json|fdproj|json)$/i.test(e.name) && !e.name.startsWith('files/'));
+    entries.find((e) => /\.(fdproj\.json|fdproj|json)$/i.test(e.name) && !/^(files|layers)\//.test(e.name));
   if (!proj || !proj.blob) throw new Error('the ZIP holds no FieldDraw project');
   const text = await proj.blob.text();
   let manifest = [];
+  let manifestCapas = [];
   try {
-    manifest = JSON.parse(text).offlineFiles || [];
+    const raw = JSON.parse(text);
+    manifest = raw.offlineFiles || [];
+    manifestCapas = raw.importedLayers || [];
   } catch {
     manifest = [];
   }
@@ -131,7 +161,25 @@ export async function readProjectPackage(zipFile) {
     const nombre = m.name || e.name.replace(/^files\//, '');
     files.push({ role, name: nombre, file: new File([e.blob], nombre) });
   }
-  return { text, files, warnings };
+  const importedLayers = [];
+  for (const m of Array.isArray(manifestCapas) ? manifestCapas : []) {
+    const e = m && porNombre.get(m.path);
+    const nombre = (m && (m.label || m.id)) || 'An imported layer';
+    if (!e || !e.blob) {
+      warnings.push(`${nombre} is listed but missing or compressed in the package.`);
+      continue;
+    }
+    try {
+      const capa = JSON.parse(await e.blob.text());
+      if (!capa || !capa.id || !capa.geojson || !Array.isArray(capa.geojson.features)) {
+        throw new Error('not a layer');
+      }
+      importedLayers.push(capa);
+    } catch {
+      warnings.push(`${nombre} could not be read from the package.`);
+    }
+  }
+  return { text, files, importedLayers, warnings };
 }
 
 /**

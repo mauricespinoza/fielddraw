@@ -67,6 +67,20 @@ operaciones de corte y unión, y la validación de todas las capas generadas
 contra el style-spec de MapLibre —incluidos los símbolos de rumbo y manteo y
 sus dieciséis imágenes.
 
+## Guardar el proyecto
+
+- **Save project** escribe un `.fdproj.json`: dibujo (incluidas las medidas
+  estructurales y los puntos de control propios), unidades, simbología, ajustes,
+  datasets de StraboSpot y perfiles guardados. **No** lleva las capas importadas
+  de un GeoPackage ni los mapas offline: pesan cientos de MB.
+- **Save with maps, DEM & layers (.zip)** escribe un `.fdproj.zip` con todo:
+  el mismo `project.fdproj.json`, **cada capa importada** en `layers/<nombre>.json`
+  (los puntos de control y datos estructurales que vinieron de un GeoPackage), y
+  los PMTiles/MBTiles y el DEM abiertos en `files/`, sin recomprimir. Se habilita
+  con cualquiera de las tres cosas. **Open project** lee ambos; al abrir el zip
+  las capas vuelven con su estilo, visibilidad y opacidad, y una con el mismo id
+  ya abierta no se duplica. Un paquete anterior, sin `layers/`, sigue abriéndose.
+
 ## Publicar y usar sin señal
 
 La app es estática: son archivos, sin backend ni build. Se puede servir desde
