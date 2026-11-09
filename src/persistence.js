@@ -81,6 +81,13 @@ export function loadSavedLayerState() {
  */
 const OPENTOPO_KEY = 'fielddraw.opentopo-key.v1';
 
+/**
+ * Nombre del proyecto que se está escribiendo en el panel Project. Es del
+ * dispositivo, como la vista y las capas: sin esto la caja quedaba vacía en
+ * cada apertura y había que volver a teclearlo antes de guardar.
+ */
+const PROJECT_NAME_KEY = 'fielddraw.project-name.v1';
+
 /** Cuándo se escribió la copia del dibujo que hay en localStorage (ms). */
 const FEATURES_SAVED_AT_KEY = 'fielddraw.features.saved-at.v1';
 
@@ -330,6 +337,24 @@ export function saveOpenTopoKey(key) {
 export function loadSavedOpenTopoKey() {
   try {
     return localStorage.getItem(OPENTOPO_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveProjectName(name) {
+  try {
+    const limpio = String(name || '').trim();
+    if (limpio) localStorage.setItem(PROJECT_NAME_KEY, limpio);
+    else localStorage.removeItem(PROJECT_NAME_KEY);
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedProjectName() {
+  try {
+    return localStorage.getItem(PROJECT_NAME_KEY) || '';
   } catch {
     return '';
   }
