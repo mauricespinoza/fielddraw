@@ -128,6 +128,28 @@ console.log('== solo cambia lo editado ==');
   ok('en su orden', col.features.map((f) => f.properties.id).join() === '11,21,31');
 }
 
+console.log('== una muestra añadida aquí ==');
+{
+  editar((f) => f.properties.straboSpotId === '21' && f.properties.geomKind === 'control-point',
+    (f) => ({
+      ...f,
+      properties: {
+        ...f.properties,
+        samples: [
+          { sampleId: f.properties.sampleId, sampleDescription: f.properties.sampleDescription, purpose: f.properties.purpose },
+          { sampleId: 'S2', sampleDescription: 'toba', purpose: 'petrology' },
+        ],
+      },
+    }));
+  const r = push();
+  const punto = r.spots.get('21').properties;
+  ok('se suma al final, sin tocar la que ya había',
+     punto.samples.length === 2 && punto.samples[0].material_type === 'intact_rock' &&
+       punto.samples[1].sample_id_name === 'S2' && punto.samples[1].main_sampling_purpose === 'petrology',
+     JSON.stringify(punto.samples));
+  ok('con un id propio', Number.isFinite(Number(punto.samples[1].id)) && punto.samples[1].id !== punto.samples[0].id);
+}
+
 console.log('== lo que no se puede traducir no se sube ==');
 {
   // Mover el punto: cambia de lugar y sigue siendo traducible.

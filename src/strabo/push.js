@@ -32,7 +32,8 @@ import {
   traceFor,
 } from './mapping.js';
 import { isEditedLocally, subsetBySpot } from './sync.js';
-import { CONTROL_POINT_KIND } from '../controlPoints.js';
+import { CONTROL_POINT_KIND, samplesOf } from '../controlPoints.js';
+import { newStraboId } from './api.js';
 
 /**
  * Claves de `trace` que dicen QUÉ es la traza. Al cambiar el tipo se quitan
@@ -224,29 +225,59 @@ function aplicarMuestra(props, lp, fp) {
     props.name = txt(lp.name);
     cambios.push('name');
   }
-  const campos = [
+  /*
+   * Muestra a muestra, por posición: la i-ésima de aquí frente a la i-ésima de
+   * lo adoptado. Las que ya existían se buscan en el spot (la única que tenga,
+   * o la de su mismo código) y se les cambian solo los campos editados; las
+   * añadidas aquí se suman al final. Quitar una muestra no se sube: borrarla
+   * allá podría llevarse fotos o análisis colgados de ella.
+   */
+  const CAMPOS = [
     ['sampleId', 'sample_id_name'],
     ['sampleDescription', 'sample_description'],
     ['purpose', 'main_sampling_purpose'],
-  ].filter(([k]) => txt(lp[k]) !== txt(fp[k]));
-  if (campos.length === 0) return { cambios, problemas };
-  const muestras = Array.isArray(props.samples) ? props.samples : [];
-  const candidatas = muestras.length === 1
-    ? muestras
-    : muestras.filter((s) => txt(s.sample_id_name) === txt(fp.sampleId));
-  if (candidatas.length !== 1) {
-    problemas.push('it is not clear which of the spot’s samples it is');
+  ];
+  const locales = samplesOf(lp);
+  const previas = samplesOf(fp);
+  if (locales.length < previas.length) {
+    problemas.push('removing a sample is not uploaded; delete it in StraboSpot');
     return { cambios, problemas };
   }
-  const original = candidatas[0];
-  const nueva = { ...original };
-  for (const [k, campo] of campos) {
-    const v = txt(lp[k]);
-    if (v) nueva[campo] = v;
-    else delete nueva[campo];
+  let muestras = Array.isArray(props.samples) ? [...props.samples] : [];
+  let tocada = false;
+  for (let i = 0; i < locales.length; i++) {
+    const loc = locales[i];
+    const prev = previas[i];
+    if (prev) {
+      const campos = CAMPOS.filter(([k]) => txt(loc[k]) !== txt(prev[k]));
+      if (campos.length === 0) continue;
+      const candidatas = muestras.length === 1 && previas.length === 1
+        ? muestras
+        : muestras.filter((s) => txt(s.sample_id_name) === txt(prev.sampleId));
+      if (candidatas.length !== 1) {
+        problemas.push('it is not clear which of the spot’s samples it is');
+        return { cambios: [], problemas };
+      }
+      const original = candidatas[0];
+      const nueva = { ...original };
+      for (const [k, campo] of campos) {
+        const v = txt(loc[k]);
+        if (v) nueva[campo] = v;
+        else delete nueva[campo];
+      }
+      muestras = muestras.map((s) => (s === original ? nueva : s));
+      tocada = true;
+    } else {
+      const nueva = { id: newStraboId(), sample_type: 'individual_sample' };
+      for (const [k, campo] of CAMPOS) if (txt(loc[k])) nueva[campo] = txt(loc[k]);
+      muestras.push(nueva);
+      tocada = true;
+    }
   }
-  props.samples = muestras.map((s) => (s === original ? nueva : s));
-  cambios.push('sample');
+  if (tocada) {
+    props.samples = muestras;
+    cambios.push('sample');
+  }
   return { cambios, problemas };
 }
 

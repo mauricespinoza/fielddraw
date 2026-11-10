@@ -10,7 +10,7 @@ import {
   surfaceFeatureFor,
   traceFor,
 } from './mapping.js';
-import { CONTROL_POINT_KIND, purposeLabel } from '../controlPoints.js';
+import { CONTROL_POINT_KIND, purposeLabel, samplesOf } from '../controlPoints.js';
 
 /**
  * Convierte el dibujo de FieldDraw en spots de StraboSpot.
@@ -94,7 +94,13 @@ function spotName(feature, counters) {
    * que poder buscar en la lista de spots. Sin ninguno de los dos, se numera
    * por lo que es.
    */
-  if (esPuntoControl(feature) && (p.name || p.sampleId)) return p.name || p.sampleId;
+  if (esPuntoControl(feature)) {
+    // Con varias muestras, el código de la primera: el resumen «A1; A2» no es
+    // un nombre que nadie vaya a buscar.
+    const [primera] = samplesOf(p);
+    const nombre = p.name || (primera && primera.sampleId);
+    if (nombre) return nombre;
+  }
   if (p.unit && feature.geometry.type === 'Polygon') {
     const n = (counters.get(p.unit) || 0) + 1;
     counters.set(p.unit, n);
@@ -233,7 +239,19 @@ export function featuresToSpots(features, meta = {}) {
 
       // Lo que hace que StraboSpot lo entienda, según la geometría.
       ...(esMedida(f) ? { orientation_data: [planarOrientation(p, newStraboId())] } : {}),
-      ...(esPuntoControl(f) ? { samples: [sampleFor(p, newStraboId(), fecha)] } : {}),
+      /*
+       * Una muestra de StraboSpot por cada muestra del punto. Un punto sin
+       * ninguna sube igual con una muestra vacía —como siempre—, que es lo
+       * que lo hace verse como punto de muestreo allá y deja el formulario
+       * listo para rellenar.
+       */
+      ...(esPuntoControl(f)
+        ? {
+            samples: (samplesOf(p).length ? samplesOf(p) : [{}]).map((m) =>
+              sampleFor(m, newStraboId(), fecha),
+            ),
+          }
+        : {}),
       ...(f.geometry.type === 'LineString' ? { trace: traceFor(p) } : {}),
       ...(f.geometry.type === 'Polygon' ? { surface_feature: surfaceFeatureFor(p) } : {}),
 
