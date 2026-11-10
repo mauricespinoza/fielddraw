@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.59.0';
+export const APP_VERSION = '0.59.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.59.1',
+    highlights: [
+      'GeoPackages downloaded from StraboSpot now read properly: the Notes field — the outcrop descriptions — no longer arrives empty. Notes stored as binary text are read as text, accents garbled into “PlutÃ³n” are repaired, and notes with HTML markup (<p>, <br>, &oacute;…) become plain text with their line breaks.',
+      'Long-press a point of the imported layer and Notes (and any description) shows as a full-width paragraph.',
+      'Edit (move into the drawing) keeps the descriptions: StraboSpot stations and samples without strike and dip become control points — name, unit, sample ID, description, purpose, date and altitude — with Notes in their Notes field instead of being dropped. Measurements, lines and polygons also bring Notes into their own note.',
+    ],
+  },
   {
     version: '0.59.0',
     highlights: [

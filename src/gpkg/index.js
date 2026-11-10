@@ -18,6 +18,7 @@ import {
   isControlPoint,
   labelColumnFor,
 } from '../controlPoints.js';
+import { attributeValue } from './text.js';
 import { decodeGeoPackageBinary, encodeGeoPackageBinary, envelopeOf } from './wkb.js';
 import {
   buildControlPointQML,
@@ -640,7 +641,9 @@ export async function importGeoPackage(arrayBuffer) {
         const properties = {};
         for (const [k, v] of Object.entries(row)) {
           if (k === geomCol) continue;
-          properties[k] = v instanceof Uint8Array ? null : v;
+          // Texto limpio, y un BLOB que es texto (las Notes de StraboSpot) como
+          // texto: ver `gpkg/text.js`. Otro binario no tiene cómo enseñarse.
+          properties[k] = attributeValue(v);
         }
         features.push({ type: 'Feature', properties, geometry });
       }
