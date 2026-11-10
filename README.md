@@ -1915,6 +1915,17 @@ los renderers `singleSymbol`, `categorizedSymbol`, `graduatedSymbol` y
 `RuleRenderer`, tanto en formato `<Option>` (QGIS 3.x) como en el antiguo
 `<prop k= v=>`, incluida la cola `rgb:` que QGIS 3.30+ añade a los colores.
 
+Los textos de los atributos se leen como texto aunque otra herramienta los haya
+dejado mal: es lo que pasa con el campo **Notes** del GeoPackage que se descarga
+de StraboSpot, donde van las descripciones. Un BLOB que es UTF-8 válido (y no
+una geometría) entra como texto en vez de vacío, el UTF-8 leído como Latin-1
+(«PlutÃ³n») se repara, y las notas con marcado HTML (`<p>`, `<br>`,
+`&oacute;`) pasan a texto plano con sus saltos de línea (`src/gpkg/text.js`).
+Al **adoptar** la capa (Edit), `Notes` pasa a la nota propia de cada elemento, y
+los puntos sin rumbo ni manteo —estaciones y muestras— entran como puntos de
+control con nombre, unidad, muestra, propósito, fecha y altitud en vez de
+descartarse.
+
 Como `line-dasharray` no admite expresiones data-driven en MapLibre, cada patrón
 de guiones se emite como una capa aparte; y como en QGIS gana la primera regla
 que hace match, a cada regla se le resta el filtro de las anteriores para que

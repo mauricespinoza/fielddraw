@@ -204,5 +204,25 @@ console.log('== esquema y columnas de escritura ==');
   ok('se revisaron las cuatro tablas', declaradas.size >= 4, [...declaradas.keys()].join());
 }
 
+console.log('== texto de atributos (Notes de StraboSpot) ==');
+{
+  const T = await import('../src/gpkg/text.js');
+  const enc = (t) => new TextEncoder().encode(t);
+  ok('un BLOB de texto UTF-8 se lee como texto',
+     T.attributeValue(enc('Granodiorita de biotita, Plutón')) === 'Granodiorita de biotita, Plutón');
+  ok('con el NUL final que dejan algunos escritores', T.attributeValue(enc('abc\u0000')) === 'abc');
+  ok('una geometría GP no se toma por texto',
+     T.attributeValue(encodeGeoPackageBinary({ type: 'Point', coordinates: [1, 2] })) === null);
+  ok('un binario cualquiera sigue siendo null', T.attributeValue(new Uint8Array([0xff, 0x00, 0x13])) === null);
+  ok('UTF-8 leído como Latin-1 se repara', T.cleanText('PlutÃ³n, cuarzo-monzonita con anfÃ\u00adbola') === 'Plutón, cuarzo-monzonita con anfíbola');
+  ok('un texto sano no se toca', T.cleanText('SÃO PAULO · 5 < 10') === 'SÃO PAULO · 5 < 10');
+  ok('CRLF a salto de línea', T.cleanText('a\r\nb') === 'a\nb');
+  ok('notas HTML a texto plano',
+     T.cleanText('<p>Toba soldada</p><p>Fiammes &gt; 2 cm, cristales de pl&oacute;</p>') === 'Toba soldada\nFiammes > 2 cm, cristales de pló');
+  ok('<br> es salto de línea', T.cleanText('uno<br>dos<br/>tres') === 'uno\ndos\ntres');
+  ok('entidades sueltas se decodifican', T.cleanText('Rumbo N30&deg;E &amp; manteo') === 'Rumbo N30°E & manteo');
+  ok('números y fechas pasan igual', T.attributeValue(42) === 42 && T.attributeValue(null) === null);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

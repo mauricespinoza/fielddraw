@@ -158,11 +158,62 @@ console.log('== puntos ==');
     { newId: contador() },
   );
   ok('un punto con orientación es una medida', r.stats.points === 1);
-  // Sin rumbo ni manteo, dibujar el símbolo afirmaría una orientación que
-  // nadie midió: se descarta.
-  ok('un punto sin orientación se descarta', r.stats.skipped === 1);
+  // Sin rumbo ni manteo no se dibuja un símbolo que afirme una orientación:
+  // pasa a punto de control, que no la afirma.
+  ok('un punto sin orientación pero con nombre es punto de control', r.stats.controlPoints === 1);
+  ok('y se llama como venía', r.features[1].properties.name === 'Muestra 3');
+  const vacio = A.adoptLayer(capa([punto({ fid: 7 })]), { newId: contador() });
+  ok('un punto sin nada que guardar se descarta', vacio.stats.skipped === 1);
   ok('el rumbo llega como número', r.features[0].properties.strike === 312);
   ok('y se deriva la dirección de manteo', r.features[0].properties.dipAzimuth === 42);
+}
+
+console.log('== GeoPackage de StraboSpot: Notes ==');
+{
+  const punto = (properties, coordinates = [-73.1, -37.2, 145]) => ({
+    type: 'Feature',
+    properties,
+    geometry: { type: 'Point', coordinates },
+  });
+  const r = A.adoptLayer(
+    capa([
+      punto({
+        fid: 1,
+        Name: 'DCR02',
+        Date: '2026-01-14T15:20:00Z',
+        Notes: 'Granodiorita de biotita, grano medio.\nEquigranular, con enclaves máficos.',
+        Unit: 'Plutón Santa Juana',
+        'Sample Code': 'DCR02-A',
+        'Sample Description': 'Granodiorita fresca',
+        Purpose: 'geochronology',
+      }),
+      punto({ fid: 2, Name: 'DCR03', Notes: 'Estratificación en areniscas', Strike: 120, Dip: 35, Type: 'bedding' }),
+      linea({ Name: 'c1', Notes: 'Contacto visto en quebrada', Type: 'contact' }),
+    ], 'StraboSpot'),
+    { newId: contador() },
+  );
+  const cp = r.features[0].properties;
+  ok('la estación pasa a punto de control', cp.geomKind === 'control-point');
+  ok('Notes llega a la nota del punto', cp.note.startsWith('Granodiorita de biotita') && cp.note.includes('\nEquigranular'));
+  ok('y no queda duplicada como atributo suelto', !('Notes' in cp));
+  ok('el nombre del punto', cp.name === 'DCR02');
+  ok('la muestra con su código, descripción y propósito',
+     cp.samples.length === 1 && cp.sampleId === 'DCR02-A' && cp.sampleDescription === 'Granodiorita fresca' && cp.purpose === 'geochronology');
+  ok('la unidad se crea y se asigna', cp.unit === 'Plutón Santa Juana' && r.units.some((u) => u.id === cp.unitId));
+  ok('la altitud sale de la Z', cp.altitude === 145);
+  ok('la fecha de StraboSpot se conserva', cp.createdAt === Date.parse('2026-01-14T15:20:00Z'));
+  ok('la geometría queda en 2D', r.features[0].geometry.coordinates.length === 2);
+  const m = r.features[1].properties;
+  ok('una medida con Notes la lleva en su nota', m.geomKind === 'measurement' && m.note === 'Estratificación en areniscas');
+  ok('una línea con Notes también', r.features[2].properties.note === 'Contacto visto en quebrada');
+
+  const fd = A.adoptLayer(
+    capa([punto({ name: 'P1', sample_id: 'M1; M2', sample_description: 'a; b', purpose: 'petrology; geochronology', note: 'n' })]),
+    { newId: contador() },
+  ).features[0].properties;
+  ok('las muestras juntadas con «; » se vuelven a separar',
+     fd.samples.length === 2 && fd.samples[1].sampleId === 'M2' && fd.samples[1].purpose === 'geochronology');
+  ok('la columna note de FieldDraw también es la nota', fd.note === 'n');
 }
 
 console.log('== lo que la carta traía y no es nuestro ==');

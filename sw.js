@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v84';
+const VERSION = 'v85';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -154,6 +154,7 @@ const SHELL = [
   './src/styles/app.css',
   './src/gpkg/index.js',
   './src/gpkg/qml.js',
+  './src/gpkg/text.js',
   './src/gpkg/wkb.js',
 
   './vendor/maplibre-gl.js',

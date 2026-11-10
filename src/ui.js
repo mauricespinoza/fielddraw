@@ -2876,11 +2876,14 @@ function adoptLayerInto(layer) {
   if (r.stats.lines) partes.push(`${r.stats.lines} line(s)`);
   if (r.stats.polygons) partes.push(`${r.stats.polygons} polygon(s)`);
   if (r.stats.points) partes.push(`${r.stats.points} measurement(s)`);
+  if (r.stats.controlPoints) partes.push(`${r.stats.controlPoints} control point(s) with their notes`);
   const resumen = `${partes.join(', ')} from "${layer.label}" are now editable.`;
   showBanner(r.warnings.length ? `${resumen} ${r.warnings.join(' ')}` : resumen, 'info');
 }
 
 /* ---------- atributos de una capa importada ---------- */
+
+const LONG_IMPORTED_KEY = /^(notes?|notas?|spot[ _]notes|observaci[oó]n(es)?|comments?|.*description|descripci[oó]n)$/i;
 
 /** Pulsación sostenida sobre una capa importada: sus campos, en solo lectura. */
 export function openImportedAttrs(hit, screen) {
@@ -2890,6 +2893,8 @@ export function openImportedAttrs(hit, screen) {
     entries: importedEntries(feature),
     screen,
     empty: 'This feature carries no attributes in the GeoPackage.',
+    // Las notas (Notes de StraboSpot) son párrafos: a ancho completo siempre.
+    isLong: (k) => LONG_IMPORTED_KEY.test(k),
     // Se dice cuando el resalte no es fiable, en vez de dejar creer que lo es.
     note: exact ? null : 'Imported layer · the highlight may be clipped',
   });

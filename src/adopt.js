@@ -29,6 +29,13 @@ import {
   faultLineTypeFrom,
 } from './symbology.js';
 import { LINE_KIND_BY_STRUCTURE, lineOnPlane, sanitizeQuality } from './structure.js';
+import {
+  CONTROL_POINT_KIND,
+  PURPOSE_BY_ID,
+  SAMPLE_SEPARATOR,
+  SAMPLING_PURPOSES,
+  withSamples,
+} from './controlPoints.js';
 
 /** Certezas admitidas. Cualquier otra cosa cae a «observado». */
 const CERTAINTY_IDS = new Set(['observed', 'inferred', 'covered']);
@@ -246,14 +253,148 @@ function faultSenseOf(props) {
   return s ? s.id : '';
 }
 
-function extras(props) {
+/**
+ * Dónde trae las notas un elemento ajeno, en orden de preferencia.
+ *
+ * `Notes` es la columna del GeoPackage de StraboSpot y la de su planilla, y es
+ * ahí donde va la descripción del afloramiento; `note` es la que escribe la
+ * propia exportación de FieldDraw. Las otras son las de una carta o una
+ * libreta en castellano.
+ */
+const NOTE_FIELDS = [
+  'notes', 'note', 'spot_notes', 'spot notes', 'notas', 'nota',
+  'observaciones', 'observacion', 'comments', 'comment', 'comentarios',
+];
+
+/** Campos de notas que, en un PUNTO, también son la descripción. */
+const POINT_NOTE_FALLBACK = ['description', 'descripcion'];
+
+const textoDe = (v) => (v === undefined || v === null ? '' : String(v).trim());
+
+/** Primer campo con texto, y cómo se llamaba de verdad en la tabla. */
+function firstText(props, nombres) {
+  for (const n of nombres) {
+    const objetivo = normalizeText(n);
+    const clave = Object.keys(props).find((k) => normalizeText(k) === objetivo);
+    if (clave === undefined) continue;
+    const v = textoDe(props[clave]);
+    if (v) return { value: v, key: clave };
+  }
+  return { value: '', key: null };
+}
+
+/**
+ * Las notas del elemento, y las claves consumidas para no duplicarlas en los
+ * extras: si `Notes` pasa a ser la nota del punto, dejarla además como
+ * atributo suelto haría que editar la nota en la app no cambiara lo que se lee
+ * en el visor.
+ */
+function notesOf(props, nombres = NOTE_FIELDS) {
+  const r = firstText(props, nombres);
+  return { note: r.value, used: r.key ? [r.key] : [] };
+}
+
+function extras(props, consumidas = []) {
   const out = {};
+  const fuera = new Set(consumidas);
   for (const [k, v] of Object.entries(props)) {
+    if (fuera.has(k)) continue;
     if (OWN_KEYS.has(normalizeText(k))) continue;
     if (v instanceof Uint8Array) continue;
     out[k] = v;
   }
   return out;
+}
+
+/** Propósito de muestreo: id o etiqueta de la lista cerrada, o nada. */
+function purposeOf(v) {
+  const t = normalizeText(v);
+  if (!t) return '';
+  if (PURPOSE_BY_ID.has(t)) return t;
+  const p = SAMPLING_PURPOSES.find((x) => normalizeText(x.label) === t);
+  return p ? p.id : '';
+}
+
+/** Claves de un punto de StraboSpot / FieldDraw que pasan a campos propios. */
+const CP_NAME_FIELDS = ['name', 'nombre', 'spot_name', 'estacion', 'station'];
+const CP_SAMPLE_FIELDS = ['sample_id', 'sample code', 'sample_code', 'sample_id_name', 'sample sample id name', 'codigo_muestra', 'muestra'];
+const CP_SAMPLE_DESC_FIELDS = ['sample_description', 'sample description', 'sample sample description'];
+const CP_PURPOSE_FIELDS = ['purpose', 'main_sampling_purpose', 'sample main sampling purpose', 'proposito'];
+const CP_UNIT_FIELDS = ['unit', 'unidad', 'geologic_unit', 'formacion', 'formation'];
+const CP_ALT_FIELDS = ['altitude', 'altitud', 'altitude(m)', 'elevation', 'elevacion', 'z'];
+const CP_DATE_FIELDS = ['date', 'fecha', 'time', 'created_at', 'createdat'];
+
+/**
+ * Un punto sin rumbo ni manteo, como punto de control.
+ *
+ * Es lo que es casi todo un GeoPackage de StraboSpot: estaciones y muestras con
+ * su descripción en Notes. Descartarlas —lo que se hacía antes, para no dibujar
+ * un símbolo de rumbo que nadie midió— perdía justamente las descripciones; un
+ * punto de control no afirma ninguna orientación, así que es su sitio.
+ *
+ * @returns {object|null} las propiedades, o null si el punto no trae nada
+ */
+function controlPointProps(props, geometry, buscarUnidad) {
+  const usadas = [];
+  const tomar = (nombres) => {
+    const r = firstText(props, nombres);
+    if (r.key) usadas.push(r.key);
+    return r.value;
+  };
+  const name = tomar(CP_NAME_FIELDS);
+  let { note, used } = notesOf(props);
+  if (!note) ({ note, used } = notesOf(props, POINT_NOTE_FALLBACK));
+  usadas.push(...used);
+  const sampleId = tomar(CP_SAMPLE_FIELDS);
+  const sampleDescription = tomar(CP_SAMPLE_DESC_FIELDS);
+  const purpose = purposeOf(tomar(CP_PURPOSE_FIELDS));
+  const unitName = tomar(CP_UNIT_FIELDS);
+  if (!name && !note && !sampleId && !sampleDescription && !unitName) return null;
+
+  const altCampo = Number(textoDe(firstText(props, CP_ALT_FIELDS).value) || NaN);
+  const z = geometry.coordinates && geometry.coordinates[2];
+  const altitude = Number.isFinite(altCampo) ? altCampo : Number.isFinite(z) ? z : undefined;
+  const fecha = Date.parse(firstText(props, CP_DATE_FIELDS).value);
+
+  const unidad = unitName ? buscarUnidad(unitName, props) : null;
+  const base = {
+    ...extras(props, usadas),
+    kind: 'point',
+    geomKind: CONTROL_POINT_KIND,
+    name,
+    note,
+    certainty: 'observed',
+    opacity: 1,
+    ...(unidad ? { unitId: unidad.id, unit: unidad.name, code: unidad.code } : {}),
+    ...(Number.isFinite(altitude) ? { altitude } : {}),
+    ...(Number.isFinite(fecha) ? { createdAt: fecha } : {}),
+  };
+  return withSamples(base, splitSamples(sampleId, sampleDescription, tomarCrudo(props, CP_PURPOSE_FIELDS), purpose));
+}
+
+const tomarCrudo = (props, nombres) => firstText(props, nombres).value;
+
+/**
+ * Las muestras de un punto. La exportación de FieldDraw junta las de un mismo
+ * punto con «; » en cada columna; si los códigos vienen así y las otras
+ * columnas cuadran, se vuelven a separar. Si no cuadran, va una sola muestra
+ * con el texto entero: partirlo mal sería peor que no partirlo.
+ */
+function splitSamples(sampleId, sampleDescription, purposeRaw, purpose) {
+  if (!sampleId && !sampleDescription && !purpose) return [];
+  const ids = sampleId.split(SAMPLE_SEPARATOR.trim()).map((x) => x.trim());
+  if (ids.length > 1) {
+    const descs = sampleDescription ? sampleDescription.split(SAMPLE_SEPARATOR.trim()).map((x) => x.trim()) : [];
+    const props = purposeRaw ? purposeRaw.split(SAMPLE_SEPARATOR.trim()).map((x) => purposeOf(x)) : [];
+    if ((descs.length === 0 || descs.length === ids.length) && (props.length === 0 || props.length <= ids.length)) {
+      return ids.map((id, i) => ({
+        sampleId: id,
+        sampleDescription: descs[i] || '',
+        purpose: props.length === ids.length ? props[i] : i === 0 ? purpose : '',
+      }));
+    }
+  }
+  return [{ sampleId, sampleDescription, purpose }];
 }
 
 /**
@@ -271,12 +412,28 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
 
   const unidades = units.map((u) => ({ ...u }));
   const porNombre = new Map(unidades.map((u) => [normalizeText(u.name), u]));
+  /** Unidad de un punto de control: la existente con ese nombre, o una nueva. */
+  const unidadDePunto = (nombre, props) => {
+    let u = porNombre.get(normalizeText(nombre));
+    if (u) return u;
+    u = {
+      id: genId(),
+      name: nombre,
+      code: String(field(props, 'code') || field(props, 'codigo') || '').trim(),
+      color: '#9e9e9e',
+    };
+    unidades.push(u);
+    porNombre.set(normalizeText(nombre), u);
+    stats.newUnits++;
+    return u;
+  };
   const features = [];
   const warnings = [];
   const stats = {
     lines: 0,
     polygons: 0,
     points: 0,
+    controlPoints: 0,
     skipped: 0,
     exploded: 0,
     newUnits: 0,
@@ -294,7 +451,15 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
 
     for (const geometry of partes) {
       const id = genId();
-      const comun = { ...extras(props), id, createdAt: Date.now() };
+      // Notes (StraboSpot) / note (FieldDraw) pasa a la nota propia, la que
+      // se edita en la app y sale en la columna `note` del GeoPackage.
+      const notaComun = notesOf(props);
+      const comun = {
+        ...extras(props, notaComun.used),
+        id,
+        createdAt: Date.now(),
+        ...(notaComun.note ? { note: notaComun.note } : {}),
+      };
 
       if (geometry.type === 'Point') {
         /*
@@ -302,21 +467,38 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
          * el símbolo de estratificación afirmaría un rumbo que nadie midió, y
          * eso es peor que descartarlo.
          */
-        const strike = Number(field(props, 'strike'));
-        const dip = Number(field(props, 'dip'));
+        const sNum = field(props, 'strike');
+        const dNum = field(props, 'dip');
+        const strike = textoDe(sNum) === '' ? NaN : Number(sNum);
+        const dip = textoDe(dNum) === '' ? NaN : Number(dNum);
         if (!Number.isFinite(strike) || !Number.isFinite(dip)) {
-          stats.skipped++;
+          const cp = controlPointProps(props, geometry, unidadDePunto);
+          if (!cp) {
+            stats.skipped++;
+            continue;
+          }
+          features.push({
+            type: 'Feature',
+            id,
+            properties: { createdAt: Date.now(), ...cp, id },
+            geometry: { type: 'Point', coordinates: [geometry.coordinates[0], geometry.coordinates[1]] },
+          });
+          stats.controlPoints++;
           continue;
         }
+        const notaMedida = notesOf(props);
         const tipoMedida = normalizeText(field(props, 'type')) || 'bedding';
         const sentido = tipoMedida === 'fault-plane' ? faultSenseOf(props) : '';
         features.push({
           type: 'Feature',
           id,
           properties: {
-            ...comun,
+            ...extras(props, notaMedida.used),
+            id,
+            createdAt: Date.now(),
             kind: 'point',
             geomKind: 'measurement',
+            note: notaMedida.note,
             type: tipoMedida,
             ...(sentido ? { faultSense: sentido } : {}),
             strike,
@@ -401,7 +583,7 @@ export function adoptLayer(layer, { units = [], newId } = {}) {
 
   if (stats.skipped) {
     warnings.push(
-      `${stats.skipped} feature(s) skipped: no usable geometry, or a point with no strike and dip.`,
+      `${stats.skipped} feature(s) skipped: no usable geometry, or a point with no strike and dip and nothing else to keep (no name, notes, sample or unit).`,
     );
   }
   if (stats.exploded) {
