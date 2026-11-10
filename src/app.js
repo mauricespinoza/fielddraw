@@ -16,6 +16,8 @@ import {
 import { openLockedAttrs, openStraboAttrs } from './strabo/panel.js';
 import {
   loadSavedControlPointPrefix,
+  loadSavedSamplePrefix,
+  saveSamplePrefix,
   loadSavedControlPointStyle,
   loadSavedLayerState,
   loadSavedView,
@@ -107,6 +109,8 @@ const savedControlPointStyle = loadSavedControlPointStyle();
 if (savedControlPointStyle) store.setControlPointStyle(savedControlPointStyle);
 const savedControlPointPrefix = loadSavedControlPointPrefix();
 if (savedControlPointPrefix) store.setControlPointField({ prefix: savedControlPointPrefix });
+const savedSamplePrefix = loadSavedSamplePrefix();
+if (savedSamplePrefix) store.setControlPointField({ samplePrefix: savedSamplePrefix });
 const savedStraboStyle = loadSavedStraboStyle();
 if (savedStraboStyle) store.setStraboStyle(savedStraboStyle);
 const savedImportStyle = loadSavedImportStyle();
@@ -177,6 +181,7 @@ store.subscribe(() => {
   if (store.changed('structureStyle')) saveStructureStyle(store.getState().structureStyle);
   if (store.changed('controlPointStyle')) saveControlPointStyle(store.getState().controlPointStyle);
   if (store.changed('controlPointPrefix')) saveControlPointPrefix(store.getState().controlPointPrefix);
+  if (store.changed('controlPointSamplePrefix')) saveSamplePrefix(store.getState().controlPointSamplePrefix);
   if (store.changed('straboStyle')) saveStraboStyle(store.getState().straboStyle);
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
   // No antes de restaurar las importadas: se pisaría el estado guardado de sus filas.

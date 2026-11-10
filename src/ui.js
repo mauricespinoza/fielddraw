@@ -74,7 +74,9 @@ import {
   controlPointsCSV,
   formatCaptureDate,
   isControlPoint,
+  listSamples,
   purposeLabel,
+  samplesOf,
 } from './controlPoints.js';
 import { closeStereogram, initStereogramPanel, isStereogramOpen } from './stereogramPanel.js';
 import { chaikin, simplifyDP } from './simplify.js';
@@ -238,6 +240,73 @@ function qualityChips(row, value, onPick) {
 }
 
 /** Grupo etiquetado dentro de la paleta; devuelve el contenedor de los chips. */
+/**
+ * Las filas de muestras de un punto de control: código, descripción y
+ * propósito de cada una, y una ✕ para quitarla. Lo usan el formulario del
+ * punto nuevo y el menú de propiedades de uno ya puesto; cambia solo de dónde
+ * salen las filas y a dónde va lo escrito.
+ *
+ * @param {HTMLElement} host  se vacía y se rellena
+ * @param {Array<{sampleId, sampleDescription, purpose}>} rows
+ * @param {{event: string, onField: Function, onRemove: Function, focus?: number}} opts
+ */
+function sampleRowsEditor(host, rows, { event, onField, onRemove, focus = -1 }) {
+  host.replaceChildren();
+  if (rows.length === 0) {
+    const vacio = document.createElement('p');
+    vacio.className = 'hint cp-samples-empty';
+    vacio.textContent = 'No samples at this point.';
+    host.appendChild(vacio);
+    return;
+  }
+  rows.forEach((m, i) => {
+    const card = document.createElement('div');
+    card.className = 'cp-sample';
+    const head = document.createElement('div');
+    head.className = 'cp-sample-head';
+    const titulo = document.createElement('span');
+    titulo.className = 'palette-label';
+    titulo.textContent = `Sample ${i + 1}`;
+    const quitar = document.createElement('button');
+    quitar.type = 'button';
+    quitar.className = 'icon-btn';
+    quitar.textContent = '✕';
+    quitar.title = 'Remove this sample';
+    quitar.setAttribute('aria-label', `Remove sample ${i + 1}`);
+    quitar.addEventListener('click', () => onRemove(i));
+    head.append(titulo, quitar);
+    const codigo = textField(
+      'Sample ID',
+      m.sampleId,
+      {
+        placeholder: 'e.g. ACRC1',
+        event,
+        title: 'Goes to StraboSpot as the sample’s Specific ID/Name',
+      },
+      (v) => onField(i, { sampleId: v }),
+    );
+    const desc = textField(
+      'Sample Description',
+      m.sampleDescription,
+      { placeholder: 'e.g. CT · AFT AHe', event, title: 'Goes to StraboSpot as the sample description' },
+      (v) => onField(i, { sampleDescription: v }),
+    );
+    const prop = selectField(
+      'Purpose',
+      SAMPLING_PURPOSES,
+      m.purpose,
+      (v) => onField(i, { purpose: v }),
+      { empty: '—' },
+    );
+    card.append(head, codigo, desc, prop);
+    host.appendChild(card);
+    if (i === focus) {
+      const input = codigo.querySelector('input');
+      requestAnimationFrame(() => input.focus());
+    }
+  });
+}
+
 function paletteGroup(parent, label) {
   const group = document.createElement('div');
   group.className = 'palette-group';
@@ -941,26 +1010,50 @@ function buildPalette() {
     );
     punto.append(prefijo, nombre);
 
-    const muestra = paletteGroup(scroll, 'Sample');
+    /*
+     * Muestras: tantas como dé el afloramiento, o ninguna. Cada una con su
+     * código —correlativo si hay prefijo de muestras—, su descripción y su
+     * propósito. Las filas se repintan solas al añadir o quitar una; al
+     * escribir no, para no quitarle el foco al campo.
+     */
+    const muestra = paletteGroup(scroll, 'Samples');
     muestra.appendChild(
       textField(
-        'Sample ID',
-        s.controlPointSampleId,
+        'Sample code prefix',
+        s.controlPointSamplePrefix,
         {
-          placeholder: 'e.g. ACRC1',
-          title: 'Goes to StraboSpot as the sample’s Specific ID/Name. It is cleared after each point: two samples with the same code cannot be told apart later',
+          placeholder: 'e.g. ACRC',
+          title:
+            'Prefix for consecutive sample codes: with “ACRC”, each new sample is coded ACRC01, ACRC02… (the next number after the highest sample already on the map, counting the ones on this form). Kept between points and sessions',
         },
-        (v) => store.setControlPointField({ sampleId: v }),
+        (v) => store.setControlPointField({ samplePrefix: v }),
       ),
     );
-    muestra.appendChild(
-      textField(
-        'Sample Description',
-        s.controlPointSampleDescription,
-        { placeholder: 'e.g. CT · AFT AHe', title: 'Goes to StraboSpot as the sample description' },
-        (v) => store.setControlPointField({ sampleDescription: v }),
-      ),
-    );
+    const filasMuestra = document.createElement('div');
+    filasMuestra.className = 'cp-samples';
+    muestra.appendChild(filasMuestra);
+    const pintarMuestras = (enfocar = -1) => {
+      sampleRowsEditor(filasMuestra, store.getState().controlPointSamples, {
+        event: 'input',
+        onField: (i, patch) => store.updatePendingSample(i, patch),
+        onRemove: (i) => {
+          store.removePendingSample(i);
+          pintarMuestras();
+        },
+        focus: enfocar,
+      });
+    };
+    pintarMuestras();
+    const otraMuestra = document.createElement('button');
+    otraMuestra.type = 'button';
+    otraMuestra.className = 'pill wide';
+    otraMuestra.textContent = '+ Add sample';
+    otraMuestra.title = 'Add another sample taken at this point';
+    otraMuestra.addEventListener('click', () => {
+      store.addPendingSample();
+      pintarMuestras(store.getState().controlPointSamples.length - 1);
+    });
+    muestra.appendChild(otraMuestra);
 
     const unidades = paletteGroup(scroll, 'Unit');
     unitSelect(
@@ -972,17 +1065,6 @@ function buildPalette() {
         const unit = nuevaUnidad();
         if (unit) store.setControlPointField({ unit: unit.id });
       },
-    );
-
-    const proposito = paletteGroup(scroll, 'Purpose');
-    proposito.appendChild(
-      selectField(
-        'Sampling',
-        SAMPLING_PURPOSES,
-        s.controlPointPurpose,
-        (v) => store.setControlPointField({ purpose: v }),
-        { empty: 'Not a sample' },
-      ),
     );
 
     const notas = paletteGroup(scroll, 'Notes');
@@ -1765,6 +1847,109 @@ function renderSelectionPicker() {
   panel.classList.remove('hidden');
 }
 
+/* ---------- lista de muestras ---------- */
+
+/**
+ * El panel «Samples»: una fila por muestra de todo el dibujo, con el punto de
+ * donde salió. Sirve para lo que en terreno se hace con la libreta abierta al
+ * final del día —repasar qué se sacó y dónde— y para encontrar una muestra
+ * por su código sin buscarla punto por punto en el mapa.
+ */
+function renderSamplesPanel() {
+  const panel = $('samples-panel');
+  if (!panel.classList.contains('open')) return;
+  const s = store.getState();
+  const todas = listSamples(s.features);
+  const filtro = $('samples-filter').value.trim().toLowerCase();
+  const filas = filtro
+    ? todas.filter((r) => {
+        const p = r.feature.properties;
+        return [r.sampleId, r.sampleDescription, purposeLabel(r.purpose), p.name, p.unit, p.code, p.note]
+          .filter(Boolean)
+          .some((t) => String(t).toLowerCase().includes(filtro));
+      })
+    : todas;
+  $('samples-count').textContent = filtro ? `${filas.length} / ${todas.length}` : String(todas.length);
+  const list = $('samples-list');
+  list.replaceChildren();
+  if (filas.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'hint samples-empty';
+    li.textContent = todas.length
+      ? 'No sample matches the filter.'
+      : 'No samples yet. Add them to a control point with “+ Add sample”.';
+    list.appendChild(li);
+    return;
+  }
+  for (const r of filas) {
+    const p = r.feature.properties;
+    const unidad = s.units.find((u) => u.id === p.unitId);
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = unidad ? unidad.color : '#9e9e9e';
+    const txt = document.createElement('span');
+    txt.className = 'sp-text';
+    const main = document.createElement('span');
+    main.className = 'sp-main';
+    main.textContent = r.sampleId || '(no code)';
+    const sub = document.createElement('span');
+    sub.className = 'sp-sub';
+    sub.textContent =
+      [p.name ? `Point ${p.name}` : '', p.unit || '', r.purpose ? purposeLabel(r.purpose) : '']
+        .filter(Boolean)
+        .join(' · ') || 'Observation point';
+    txt.append(main, sub);
+    if (r.sampleDescription) {
+      const desc = document.createElement('span');
+      desc.className = 'sp-sub sp-desc';
+      desc.textContent = r.sampleDescription;
+      txt.appendChild(desc);
+    }
+    if (p.note) {
+      const nota = document.createElement('span');
+      nota.className = 'sp-sub sp-note';
+      nota.textContent = p.note;
+      txt.appendChild(nota);
+    }
+    b.append(sw, txt);
+    b.title = p.note
+      ? `${p.note}\n\nTap to go to this sample’s point and open its description`
+      : 'Go to this sample’s point and open its description';
+    b.addEventListener('click', () => goToControlPoint(p.id));
+    li.appendChild(b);
+    list.appendChild(li);
+  }
+}
+
+/**
+ * Lleva el mapa a un punto de control, lo deja seleccionado y abre su ficha
+ * junto a él: la descripción del afloramiento —notas, unidad, muestras— es lo
+ * que se quiere leer al buscar una muestra.
+ */
+function goToControlPoint(id) {
+  const f = store.getState().features.find((x) => x.properties.id === id);
+  if (!f || !mapBridge) return;
+  closeOverlays();
+  const tool = store.getState().tool;
+  if (tool !== 'select' && tool !== 'navigate') store.setTool('select');
+  store.setSelection([id]);
+  const map = mapBridge.map;
+  const ll = f.geometry.coordinates;
+  const abrir = () => {
+    // Si mientras volaba se eligió otra cosa, la ficha ya no es de este punto.
+    const sel = store.getState().selection;
+    if (sel.length !== 1 || sel[0] !== id) return;
+    const pt = map.project(ll);
+    const r = map.getContainer().getBoundingClientRect();
+    openPropsMenu([r.left + pt.x, r.top + pt.y]);
+  };
+  map.once('moveend', abrir);
+  map.flyTo({ center: ll, zoom: Math.max(map.getZoom(), 16), duration: 800 });
+}
+
 /* ---------- menú de propiedades de la selección ---------- */
 
 /** Nombre de la unidad que la paleta tiene activa, para los tooltips. */
@@ -1836,7 +2021,7 @@ export function openPropsMenu(screen) {
   const puntosControl = sel.filter(isControlPoint);
   if (puntosControl.length === 1 && sel.length === 1) {
     const p = puntosControl[0].properties;
-    const titulo = p.name || p.sampleId;
+    const titulo = p.name || (samplesOf(p)[0] || {}).sampleId;
     $('props-title').textContent = titulo ? `Control point ${titulo}` : 'Control point';
     controlPointSection(body, puntosControl[0], () => openPropsMenu(screen));
 
@@ -2272,7 +2457,7 @@ export function closePropsMenu() {
 /* ---------- paneles ---------- */
 
 /** Cajones laterales: solo uno abierto a la vez. */
-const DRAWERS = ['layer-panel', 'units-panel', 'symbology-panel', 'strabo-panel'];
+const DRAWERS = ['layer-panel', 'units-panel', 'samples-panel', 'symbology-panel', 'strabo-panel'];
 /** Paneles flotantes, que se ocultan con `hidden` en vez de con `open`. */
 const POPOVERS = [
   'settings',
@@ -5278,29 +5463,48 @@ function controlPointSection(body, punto, reabrir) {
     ),
   );
 
-  const muestra = section(body, 'Sample');
-  muestra.appendChild(
-    textField('Sample ID', p.sampleId, { placeholder: 'e.g. ACRC1', event: 'change' }, (v) =>
-      store.updateControlPoint({ sampleId: v }),
-    ),
-  );
-  muestra.appendChild(
-    textField(
-      'Sample Description',
-      p.sampleDescription,
-      { placeholder: 'e.g. CT · AFT AHe', event: 'change' },
-      (v) => store.updateControlPoint({ sampleDescription: v }),
-    ),
-  );
-  muestra.appendChild(
-    selectField(
-      'Purpose',
-      SAMPLING_PURPOSES,
-      p.purpose,
-      (v) => store.updateControlPoint({ purpose: v }),
-      { empty: 'Not a sample' },
-    ),
-  );
+  /*
+   * Las muestras se editan sobre una copia local: una fila recién añadida y
+   * todavía vacía no es una muestra para el store —la descartaría—, pero tiene
+   * que seguir en pantalla hasta que se escriba en ella.
+   */
+  const muestra = section(body, 'Samples');
+  const filas = samplesOf(p);
+  const host = document.createElement('div');
+  host.className = 'cp-samples';
+  muestra.appendChild(host);
+  const pintar = (enfocar = -1) =>
+    sampleRowsEditor(host, filas, {
+      event: 'change',
+      onField: (i, patch) => {
+        filas[i] = { ...filas[i], ...patch };
+        store.updateControlPoint({ samples: filas });
+      },
+      onRemove: (i) => {
+        filas.splice(i, 1);
+        store.updateControlPoint({ samples: filas });
+        pintar();
+      },
+      focus: enfocar,
+    });
+  pintar();
+  const otra = document.createElement('button');
+  otra.type = 'button';
+  otra.className = 'pill wide';
+  otra.textContent = '+ Add sample';
+  otra.title = 'Add another sample to this point (coded with the sample prefix, if one is set)';
+  otra.addEventListener('click', () => {
+    const st = store.getState();
+    const fila = {
+      sampleId: store.nextSampleName(filas.map((m) => m.sampleId)),
+      sampleDescription: '',
+      purpose: st.controlPointPurpose,
+    };
+    filas.push(fila);
+    if (fila.sampleId || fila.purpose) store.updateControlPoint({ samples: filas });
+    pintar(filas.length - 1);
+  });
+  muestra.appendChild(otra);
 
   const notas = section(body, 'Notes');
   notas.appendChild(
@@ -7093,6 +7297,12 @@ export function initUI() {
   $('btn-layers').addEventListener('click', () => togglePanel('layer-panel'));
   $('btn-close-layers').addEventListener('click', () => $('layer-panel').classList.remove('open'));
   $('btn-units').addEventListener('click', () => togglePanel('units-panel'));
+  $('btn-samples').addEventListener('click', () => {
+    togglePanel('samples-panel');
+    renderSamplesPanel();
+  });
+  $('btn-close-samples').addEventListener('click', () => $('samples-panel').classList.remove('open'));
+  $('samples-filter').addEventListener('input', () => renderSamplesPanel());
   $('btn-close-units').addEventListener('click', () => $('units-panel').classList.remove('open'));
   $('btn-symbology').addEventListener('click', () => togglePanel('symbology-panel'));
   $('btn-close-symbology').addEventListener('click', () =>
@@ -7442,6 +7652,7 @@ export function initUI() {
       buildPalette();
     }
     if (store.changed('units') || store.changed('unitLabels')) renderUnits();
+    if (store.changed('features') || store.changed('units')) renderSamplesPanel();
     if (store.changed('ornaments')) renderSymbology();
     if (store.changed('importStyle')) syncImportControls();
     if (store.changed('layers') || store.changed('straboDatasets')) renderLayers();

@@ -114,8 +114,8 @@ console.log('== store ==');
 
   const s = St.getState();
   ok('el nombre y el código de muestra NO se heredan al punto siguiente',
-     s.controlPointName === '' && s.controlPointSampleId === '');
-  ok('ni la descripción ni las notas', s.controlPointSampleDescription === '' && s.controlPointNote === '');
+     s.controlPointName === '' && s.controlPointSamples.length === 0);
+  ok('ni la descripción ni las notas', s.controlPointNote === '');
   ok('la unidad y el propósito sí se quedan puestos: se repiten toda la jornada',
      s.controlPointUnit === 'sedimentary-unit' && s.controlPointPurpose === 'geochronology');
 
@@ -380,6 +380,84 @@ console.log('== icono y colocación en dos pasos ==');
   ok('con el Name vacío, guardar usa el correlativo', St.getState().features.at(-1).properties.name === 'DCR02');
   ok('el prefijo se queda puesto', St.getState().controlPointPrefix === 'DCR');
   St.setControlPointField({ prefix: '' });
+}
+
+console.log('== varias muestras por punto ==');
+{
+  ok('un punto antiguo se lee como una lista de una',
+     CP.samplesOf({ sampleId: 'A1', purpose: 'petrology' }).length === 1 &&
+       CP.samplesOf({ sampleId: 'A1' })[0].sampleId === 'A1');
+  ok('uno sin muestra, como lista vacía', CP.samplesOf({ name: 'DCR01' }).length === 0);
+  const resumen = CP.withSamples({ name: 'X' }, [
+    { sampleId: 'A1', sampleDescription: 'CT, litarenita', purpose: '' },
+    { sampleId: '', sampleDescription: '', purpose: '' },
+    { sampleId: 'A2', sampleDescription: 'AFT', purpose: 'geochronology' },
+  ]);
+  ok('las filas vacías se descartan', resumen.samples.length === 2);
+  ok('los campos sueltos resumen la lista',
+     resumen.sampleId === 'A1; A2' && resumen.sampleDescription === 'CT, litarenita; AFT' &&
+       resumen.purpose === 'geochronology', JSON.stringify(resumen));
+
+  St.loadFeatures([]);
+  St.setControlPointField({ samplePrefix: 'ACRC', purpose: 'petrology' });
+  St.setTool('control-point');
+  St.setPendingControlPoint({ lngLat: [-70.5, -33.7], via: 'gps' });
+  const a = St.addPendingSample();
+  St.updatePendingSample(0, { sampleDescription: 'granodiorita' });
+  const b = St.addPendingSample();
+  St.updatePendingSample(1, { purpose: 'geochronology' });
+  ok('las muestras del formulario avanzan correlativas', a.sampleId === 'ACRC01' && b.sampleId === 'ACRC02',
+     `${a.sampleId} ${b.sampleId}`);
+  ok('y heredan el último propósito', b.purpose === 'petrology');
+  St.addPendingSample();
+  St.removePendingSample(2);
+  const f = St.createControlPoint({ lngLat: [-70.5, -33.7] });
+  const ms = CP.samplesOf(f.properties);
+  ok('el punto guarda las dos muestras', ms.length === 2 && ms[0].sampleDescription === 'granodiorita' &&
+     ms[1].purpose === 'geochronology', JSON.stringify(ms));
+  ok('y el formulario se vacía', St.getState().controlPointSamples.length === 0);
+  ok('el último propósito queda para la próxima', St.getState().controlPointPurpose === 'geochronology');
+
+  St.setTool('control-point');
+  St.setPendingControlPoint({ lngLat: [-70.6, -33.8], via: 'gps' });
+  ok('el siguiente punto sigue la cuenta de muestras', St.addPendingSample().sampleId === 'ACRC03');
+  St.createControlPoint({ lngLat: [-70.6, -33.8] });
+  ok('y el prefijo se respeta en mayúsculas o minúsculas',
+     St.nextSampleName() === 'ACRC04' &&
+       CP.nextSampleCode(St.getState().features, 'acrc') === 'acrc04');
+
+  St.setSelection([f.properties.id]);
+  St.updateControlPoint({ samples: [...ms, { sampleId: 'ACRC10', sampleDescription: '', purpose: 'nada' }] });
+  const edit = St.getState().features.find((x) => x.properties.id === f.properties.id).properties;
+  ok('se añade una muestra a un punto ya puesto', CP.samplesOf(edit).length === 3 && edit.sampleId.endsWith('ACRC10'));
+  ok('con un propósito de la lista o ninguno', CP.samplesOf(edit)[2].purpose === '');
+  St.updateControlPoint({ sampleId: 'ACRC01b' });
+  const edit2 = St.getState().features.find((x) => x.properties.id === f.properties.id).properties;
+  ok('el Sample ID suelto corrige la primera sin tocar las demás',
+     CP.samplesOf(edit2)[0].sampleId === 'ACRC01b' && CP.samplesOf(edit2).length === 3);
+
+  const lista = CP.listSamples(St.getState().features);
+  ok('la lista trae una fila por muestra, en orden numérico',
+     lista.length === 4 && lista.map((r) => r.sampleId).join(',') === 'ACRC01b,ACRC02,ACRC03,ACRC10',
+     lista.map((r) => r.sampleId).join(','));
+  ok('cada fila sabe de qué punto salió', lista[0].feature.properties.id === f.properties.id);
+
+  const csv = CP.controlPointsCSV(St.getState().features);
+  ok('el CSV junta las muestras de un punto en una celda', csv.includes('ACRC01b; ACRC02; ACRC10'));
+
+  const U = await import(BASE + 'strabo/upload.js');
+  const r = U.featuresToSpots([St.getState().features.find((x) => x.properties.id === f.properties.id)], {});
+  const spot = r.collection.features[0].properties;
+  ok('a StraboSpot sube una muestra por cada una',
+     spot.samples.length === 3 && spot.samples[1].sample_id_name === 'ACRC02' &&
+       spot.samples[0].id !== spot.samples[1].id);
+
+  const P = await import(BASE + 'project.js');
+  const vuelta = P.parseProject(JSON.stringify(P.serializeProject('t')));
+  const leido = vuelta.project.features.find((x) => x.properties.id === f.properties.id);
+  ok('el proyecto guarda y vuelve a abrir la lista',
+     !!leido && CP.samplesOf(leido.properties).length === 3 && leido.properties.sampleId.startsWith('ACRC01b'));
+  St.setControlPointField({ samplePrefix: '' });
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

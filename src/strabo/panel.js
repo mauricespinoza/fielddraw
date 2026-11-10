@@ -8,7 +8,7 @@ import {
   LINE_TYPE_BY_ID,
   STRUCTURE_TYPE_BY_ID,
 } from '../symbology.js';
-import { CONTROL_POINT_KIND, purposeLabel } from '../controlPoints.js';
+import { CONTROL_POINT_KIND, purposeLabel, samplesOf } from '../controlPoints.js';
 import {
   buildEstructuras,
   buildLineasPoligonos,
@@ -518,9 +518,13 @@ export function lockedEntries(f, units = []) {
     push('Quality', p.quality);
   } else if (p.geomKind === CONTROL_POINT_KIND) {
     push('Name', p.name);
-    push('Sample ID', p.sampleId);
-    push('Sample Description', p.sampleDescription);
-    push('Purpose', p.purpose ? purposeLabel(p.purpose) : '');
+    const muestras = samplesOf(p);
+    muestras.forEach((m, i) => {
+      const n = muestras.length > 1 ? ` ${i + 1}` : '';
+      push(`Sample ID${n}`, m.sampleId);
+      push(`Sample Description${n}`, m.sampleDescription);
+      push(`Purpose${n}`, m.purpose ? purposeLabel(m.purpose) : '');
+    });
   } else if (f.geometry && f.geometry.type === 'Polygon') {
     const unidad = units.find((u) => u.id === p.type);
     push('Unit', (unidad && unidad.name) || p.unit);

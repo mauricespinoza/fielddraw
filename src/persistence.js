@@ -241,6 +241,26 @@ export function loadSavedControlPointPrefix() {
   }
 }
 
+const SAMPLE_PREFIX_KEY = 'fielddraw.samplePrefix.v1';
+
+/** Prefijo del código correlativo de las muestras (ver store). */
+export function saveSamplePrefix(prefix) {
+  try {
+    if (prefix) localStorage.setItem(SAMPLE_PREFIX_KEY, String(prefix));
+    else localStorage.removeItem(SAMPLE_PREFIX_KEY);
+  } catch {
+    /* ignorar */
+  }
+}
+
+export function loadSavedSamplePrefix() {
+  try {
+    return localStorage.getItem(SAMPLE_PREFIX_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function saveControlPointStyle(style) {
   try {
     localStorage.setItem(CONTROL_POINT_STYLE_KEY, JSON.stringify(style));

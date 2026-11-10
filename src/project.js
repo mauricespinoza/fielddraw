@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import { downloadBlob } from './persistence.js';
 import { certaintyFor } from './symbology.js';
-import { CONTROL_POINT_KIND } from './controlPoints.js';
+import { CONTROL_POINT_KIND, withSamples } from './controlPoints.js';
 import { buildZip, readZip } from './zip.js';
 
 /**
@@ -276,6 +276,11 @@ function sanitizeFeatures(list, warnings) {
       if (props.geomKind === CONTROL_POINT_KIND) {
         for (const k of ['name', 'sampleId', 'sampleDescription', 'purpose', 'note']) {
           props[k] = props[k] === undefined || props[k] === null ? '' : String(props[k]);
+        }
+        // La lista de muestras, si la trae, manda: los campos sueltos se
+        // recalculan como su resumen para que no puedan contradecirla.
+        if (props.samples !== undefined) {
+          Object.assign(props, withSamples(props, Array.isArray(props.samples) ? props.samples : []));
         }
         props.certainty = 'observed';
         out.push({ type: 'Feature', id: props.id, properties: props, geometry: g });

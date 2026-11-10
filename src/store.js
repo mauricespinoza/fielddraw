@@ -36,7 +36,11 @@ import {
   PURPOSE_BY_ID,
   defaultControlPointStyle,
   nextControlPointCode,
+  nextSampleCode,
+  samplesOf,
   sanitizeControlPointStyle,
+  sanitizeSample,
+  withSamples,
 } from './controlPoints.js';
 
 /** Unidades sembradas para que la paleta no arranque vacía. */
@@ -338,8 +342,13 @@ let state = {
   controlPointUnit: null,
   controlPointPurpose: '',
   controlPointName: '',
-  controlPointSampleId: '',
-  controlPointSampleDescription: '',
+  /**
+   * Las muestras que lleva escritas el formulario del punto siguiente:
+   * `[{ sampleId, sampleDescription, purpose }]`. Un afloramiento puede dar
+   * varias, o ninguna; la lista arranca vacía y se le añaden filas con
+   * «Add sample». Se vacía al guardar el punto, por lo mismo que el código.
+   */
+  controlPointSamples: [],
   controlPointNote: '',
   /**
    * Prefijo del código correlativo de los puntos (p. ej. «DCR»). Con él, el
@@ -348,6 +357,14 @@ let state = {
    * puesto entre puntos y entre sesiones: es el de la campaña, no el del punto.
    */
   controlPointPrefix: '',
+  /**
+   * Prefijo del código correlativo de las MUESTRAS (p. ej. «ACRC»): cada fila
+   * nueva llega con ACRC01, ACRC02… — el número siguiente al mayor entre las
+   * muestras de todos los puntos y las del formulario abierto
+   * (`nextSampleCode`). Va aparte del de los puntos porque estación y muestra
+   * se numeran por separado: la DCR02 puede dar la ACRC07 y la ACRC08.
+   */
+  controlPointSamplePrefix: '',
   /** Tamaño del punto, zoom mínimo y por qué campo se rotula. */
   controlPointStyle: defaultControlPointStyle(),
   /**
@@ -1676,13 +1693,75 @@ export function setControlPointField(patch = {}) {
     next.controlPointPurpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
   }
   if (patch.name !== undefined) next.controlPointName = texto(patch.name);
-  if (patch.sampleId !== undefined) next.controlPointSampleId = texto(patch.sampleId);
-  if (patch.sampleDescription !== undefined) {
-    next.controlPointSampleDescription = texto(patch.sampleDescription);
+  if (Array.isArray(patch.samples)) {
+    // Sin recortar: es lo que se está escribiendo. Se recorta al guardar.
+    next.controlPointSamples = patch.samples.map((m) => ({
+      sampleId: texto(m && m.sampleId),
+      sampleDescription: texto(m && m.sampleDescription),
+      purpose: m && PURPOSE_BY_ID.has(m.purpose) ? m.purpose : '',
+    }));
+  }
+  /*
+   * `sampleId` y `sampleDescription` sueltos escriben en la PRIMERA muestra
+   * (creándola si no hay ninguna): es la forma de la paleta de cuando solo
+   * cabía una, y la que siguen usando quienes no necesitan más.
+   */
+  if (patch.sampleId !== undefined || patch.sampleDescription !== undefined) {
+    const filas = [...(next.controlPointSamples || state.controlPointSamples)];
+    const primera = filas[0] || {
+      sampleId: '',
+      sampleDescription: '',
+      purpose: next.controlPointPurpose !== undefined ? next.controlPointPurpose : state.controlPointPurpose,
+    };
+    filas[0] = {
+      ...primera,
+      ...(patch.sampleId !== undefined ? { sampleId: texto(patch.sampleId) } : {}),
+      ...(patch.sampleDescription !== undefined ? { sampleDescription: texto(patch.sampleDescription) } : {}),
+    };
+    next.controlPointSamples = filas;
   }
   if (patch.note !== undefined) next.controlPointNote = texto(patch.note);
   if (patch.prefix !== undefined) next.controlPointPrefix = texto(patch.prefix).trim();
+  if (patch.samplePrefix !== undefined) next.controlPointSamplePrefix = texto(patch.samplePrefix).trim();
   set(next);
+}
+
+/**
+ * El código que tocaría a la siguiente muestra con el prefijo de muestras
+ * puesto, contando también las filas del formulario abierto (`extraIds`).
+ */
+export const nextSampleName = (extraIds = state.controlPointSamples.map((m) => m.sampleId)) =>
+  nextSampleCode(state.features, state.controlPointSamplePrefix, extraIds);
+
+/**
+ * Añade una fila de muestra al formulario del punto siguiente, con el código
+ * correlativo si hay prefijo y el último propósito usado.
+ */
+export function addPendingSample() {
+  const fila = { sampleId: nextSampleName(), sampleDescription: '', purpose: state.controlPointPurpose };
+  set({ controlPointSamples: [...state.controlPointSamples, fila] });
+  return fila;
+}
+
+/** Cambia una fila de muestra del formulario. */
+export function updatePendingSample(index, patch = {}) {
+  if (!state.controlPointSamples[index]) return;
+  const next = {};
+  const fila = { ...state.controlPointSamples[index] };
+  if (patch.sampleId !== undefined) fila.sampleId = texto(patch.sampleId);
+  if (patch.sampleDescription !== undefined) fila.sampleDescription = texto(patch.sampleDescription);
+  if (patch.purpose !== undefined) {
+    fila.purpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
+    // El último propósito elegido es el que hereda la próxima fila.
+    next.controlPointPurpose = fila.purpose;
+  }
+  next.controlPointSamples = state.controlPointSamples.map((m, i) => (i === index ? fila : m));
+  set(next);
+}
+
+/** Quita una fila de muestra del formulario. */
+export function removePendingSample(index) {
+  set({ controlPointSamples: state.controlPointSamples.filter((_, i) => i !== index) });
 }
 
 /** El código que tocaría ahora con el prefijo puesto, o '' sin prefijo. */
@@ -1711,6 +1790,7 @@ export function createControlPoint({
   lngLat,
   unitId,
   name,
+  samples,
   sampleId,
   sampleDescription,
   purpose,
@@ -1726,7 +1806,27 @@ export function createControlPoint({
   const unit = state.units.find(
     (u) => u.id === (unitId !== undefined ? unitId : state.controlPointUnit),
   );
-  const proposito = purpose !== undefined ? purpose : state.controlPointPurpose;
+  /*
+   * Las muestras: las que se pasen, o las del formulario. Pasar `sampleId`,
+   * `sampleDescription` o `purpose` sueltos describe un punto de UNA muestra,
+   * como antes de que hubiera lista.
+   */
+  let muestras;
+  if (Array.isArray(samples)) muestras = samples;
+  else if (sampleId !== undefined || sampleDescription !== undefined || purpose !== undefined) {
+    const base = state.controlPointSamples[0] || {};
+    muestras = [
+      {
+        sampleId: sampleId !== undefined ? sampleId : base.sampleId,
+        sampleDescription: sampleDescription !== undefined ? sampleDescription : base.sampleDescription,
+        purpose: purpose !== undefined ? purpose : base.purpose,
+      },
+    ];
+  } else muestras = state.controlPointSamples;
+  muestras = muestras.map((m) => {
+    const limpia = sanitizeSample(m);
+    return { ...limpia, purpose: PURPOSE_BY_ID.has(limpia.purpose) ? limpia.purpose : '' };
+  });
   const feature = {
     type: 'Feature',
     id,
@@ -1739,11 +1839,6 @@ export function createControlPoint({
       name:
         texto(name !== undefined ? name : state.controlPointName).trim() ||
         (name === undefined ? nextControlPointName() : ''),
-      sampleId: texto(sampleId !== undefined ? sampleId : state.controlPointSampleId).trim(),
-      sampleDescription: texto(
-        sampleDescription !== undefined ? sampleDescription : state.controlPointSampleDescription,
-      ).trim(),
-      purpose: PURPOSE_BY_ID.has(proposito) ? proposito : '',
       note: texto(note !== undefined ? note : state.controlPointNote).trim(),
       // Lo que se anota estando ahí es siempre observado; no existe un punto de
       // control inferido.
@@ -1755,16 +1850,16 @@ export function createControlPoint({
     },
     geometry: { type: 'Point', coordinates: [lngLat[0], lngLat[1]] },
   };
+  feature.properties = withSamples(feature.properties, muestras);
   pushHistory();
   set({
     features: [...state.features, feature],
     draft: null,
     selection: [id],
     // Lo propio de ESTE punto se va con él; la unidad y el propósito siguen
-    // puestos para el siguiente (ver `controlPointSampleId` en el estado).
+    // puestos para el siguiente (ver `controlPointSamples` en el estado).
     controlPointName: '',
-    controlPointSampleId: '',
-    controlPointSampleDescription: '',
+    controlPointSamples: [],
     controlPointNote: '',
     pendingControlPoint: null,
     tool: 'select',
@@ -1801,16 +1896,39 @@ export function updateControlPoint(patch = {}) {
   set({
     features: state.features.map((f) => {
       if (!ids.has(f.properties.id) || f.properties.geomKind !== CONTROL_POINT_KIND) return f;
-      const props = { ...f.properties };
+      let props = { ...f.properties };
       if (patch.name !== undefined) props.name = texto(patch.name).trim();
-      if (patch.sampleId !== undefined) props.sampleId = texto(patch.sampleId).trim();
-      if (patch.sampleDescription !== undefined) {
-        props.sampleDescription = texto(patch.sampleDescription).trim();
-      }
-      if (patch.purpose !== undefined) {
-        props.purpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
-      }
       if (patch.note !== undefined) props.note = texto(patch.note).trim();
+      if (Array.isArray(patch.samples)) {
+        // Un propósito que vino de StraboSpot fuera de la lista se respeta
+        // mientras nadie lo cambie; uno puesto aquí tiene que ser de la lista.
+        const antes = samplesOf(f.properties);
+        const muestras = patch.samples.map((m, i) => {
+          const limpia = sanitizeSample(m);
+          const previo = antes[i] && antes[i].purpose;
+          if (limpia.purpose && !PURPOSE_BY_ID.has(limpia.purpose) && limpia.purpose !== previo) {
+            limpia.purpose = '';
+          }
+          return limpia;
+        });
+        props = withSamples(props, muestras);
+      } else if (
+        patch.sampleId !== undefined ||
+        patch.sampleDescription !== undefined ||
+        patch.purpose !== undefined
+      ) {
+        // Los campos sueltos editan la primera muestra (o la crean).
+        const muestras = samplesOf(f.properties);
+        const primera = { ...(muestras[0] || { sampleId: '', sampleDescription: '', purpose: '' }) };
+        if (patch.sampleId !== undefined) primera.sampleId = texto(patch.sampleId).trim();
+        if (patch.sampleDescription !== undefined) {
+          primera.sampleDescription = texto(patch.sampleDescription).trim();
+        }
+        if (patch.purpose !== undefined) {
+          primera.purpose = PURPOSE_BY_ID.has(patch.purpose) ? patch.purpose : '';
+        }
+        props = withSamples(props, [primera, ...muestras.slice(1)]);
+      }
       return { ...f, properties: props };
     }),
   });

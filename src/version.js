@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.58.2';
+export const APP_VERSION = '0.59.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -31,7 +31,7 @@ export const APP_TOOLS = [
   ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
-  ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, sample ID, description, purpose and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
+  ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, one or more samples (ID — also consecutive from a prefix —, description, purpose) and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
@@ -42,6 +42,7 @@ export const APP_TOOLS = [
   ['Profile', 'Topographic profile of a line, from the elevation model.'],
   ['3D', 'Terrain relief to read the slope. Line and Polygon still draw.'],
   ['Scale', 'Pick a working scale, snap the map to it, calibrate the screen.'],
+  ['Samples', 'Every sample on the map in one filterable list; tap one to fly to its point and read its description.'],
   ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
   ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
   ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it, ⟳ to bring in what others changed, ⬆ to send your edits back. Or upload the drawing as a new dataset.'],
@@ -54,6 +55,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.59.0',
+    highlights: [
+      'Several samples per control point: the point form has a Samples group where “+ Add sample” adds as many as the outcrop gave, each with its own Sample ID, description and purpose (✕ removes one). The properties of a point already placed edit, add and remove samples the same way.',
+      'Consecutive sample codes: set a Sample code prefix (e.g. ACRC) and each new sample arrives coded ACRC01, ACRC02… — the next number after the highest sample on the map, counting the ones already on the form. It is separate from the point prefix (DCR01…) and is remembered between sessions.',
+      'New Samples panel (flask button, top right): every sample of every point in one list, sorted by code, with its point, unit, purpose and description, and a filter. Tap one and the map flies to its point, selects it and opens its sheet with the point’s description.',
+      'Exports and StraboSpot: in the CSV and GeoPackage the samples of a point share one cell, separated by “; ”. Uploading to StraboSpot creates one sample per sample, and sending edits back to an existing dataset adds the new ones to the spot without touching the ones already there.',
+    ],
+  },
   {
     version: '0.58.2',
     highlights: [

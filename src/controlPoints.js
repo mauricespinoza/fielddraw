@@ -168,6 +168,136 @@ export function formatCaptureDate(ms) {
   );
 }
 
+/* ---------- varias muestras por punto ---------- */
+
+/**
+ * Separador con el que las muestras de un punto se juntan en una sola celda
+ * (CSV, GeoPackage, rótulo). Punto y coma y no coma: una descripción lleva
+ * comas —«CT, litarenita»— y con coma ya no se sabría dónde empieza la
+ * siguiente.
+ */
+export const SAMPLE_SEPARATOR = '; ';
+
+const limpio = (v) => (v === undefined || v === null ? '' : String(v).trim());
+
+/** Una muestra con sus tres campos como texto recortado. */
+export function sanitizeSample(raw) {
+  const s = raw && typeof raw === 'object' ? raw : {};
+  return {
+    sampleId: limpio(s.sampleId),
+    sampleDescription: limpio(s.sampleDescription),
+    purpose: limpio(s.purpose),
+  };
+}
+
+const sampleVacia = (s) => !s.sampleId && !s.sampleDescription && !s.purpose;
+
+/**
+ * Las muestras de un punto de control, en orden.
+ *
+ * Un afloramiento da a menudo más de una muestra —una para petrografía y otra
+ * para geocronología, o una por cada litología del contacto—, cada una con su
+ * código. La lista vive en `samples`; un punto anterior a la lista (o uno
+ * importado) lleva su única muestra en los campos sueltos `sampleId`,
+ * `sampleDescription` y `purpose`, y se lee como una lista de una. Las filas
+ * enteramente vacías se descartan: una fila que se añadió y no se rellenó no
+ * es una muestra.
+ */
+export function samplesOf(props) {
+  const p = props || {};
+  if (Array.isArray(p.samples)) return p.samples.map(sanitizeSample).filter((s) => !sampleVacia(s));
+  const unica = sanitizeSample(p);
+  return sampleVacia(unica) ? [] : [unica];
+}
+
+/**
+ * Los valores de un campo de todas las muestras, juntos en un texto. Las
+ * vacías no dejan un «; ;» colgando.
+ */
+export function joinSamples(props, campo) {
+  return samplesOf(props)
+    .map((s) => s[campo])
+    .filter(Boolean)
+    .join(SAMPLE_SEPARATOR);
+}
+
+/**
+ * Devuelve las propiedades con la lista de muestras puesta y los campos
+ * sueltos recalculados como su resumen.
+ *
+ * Los sueltos se mantienen —en vez de quitarlos— porque son los que leen el
+ * rótulo del mapa, la columna de QGIS, la lista de selección y el panel de
+ * StraboSpot: con el resumen al día, todos siguen sirviendo sin saber que
+ * ahora puede haber más de una muestra. El propósito suelto es el de la
+ * primera muestra que lo tenga, porque tiene que ser UNO de la lista cerrada.
+ */
+export function withSamples(props, samples) {
+  const lista = (samples || []).map(sanitizeSample).filter((s) => !sampleVacia(s));
+  const primero = lista.find((s) => s.purpose);
+  return {
+    ...props,
+    samples: lista,
+    sampleId: lista.map((s) => s.sampleId).filter(Boolean).join(SAMPLE_SEPARATOR),
+    sampleDescription: lista
+      .map((s) => s.sampleDescription)
+      .filter(Boolean)
+      .join(SAMPLE_SEPARATOR),
+    purpose: primero ? primero.purpose : '',
+  };
+}
+
+/**
+ * Código correlativo de la siguiente MUESTRA: prefijo + número, igual que el
+ * de los puntos (`nextControlPointCode`) pero contando las muestras de todos
+ * los puntos, y además las que ya se llevan escritas en el formulario abierto
+ * (`extraIds`) — si no, añadir dos muestras seguidas al mismo punto les daría
+ * el mismo código.
+ *
+ * @returns {string} '' si no hay prefijo
+ */
+export function nextSampleCode(features, prefix, extraIds = [], pad = 2) {
+  const pre = String(prefix || '').trim();
+  if (!pre) return '';
+  const esc = pre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${esc}(\\d+)$`, 'i');
+  let max = 0;
+  let width = pad;
+  const mirar = (id) => {
+    const m = re.exec(String(id || '').trim());
+    if (!m) return;
+    max = Math.max(max, Number(m[1]));
+    width = Math.max(width, m[1].length);
+  };
+  for (const f of features || []) {
+    if (!isControlPoint(f)) continue;
+    for (const s of samplesOf(f.properties)) mirar(s.sampleId);
+  }
+  for (const id of extraIds || []) mirar(id);
+  return `${pre}${String(max + 1).padStart(width, '0')}`;
+}
+
+/**
+ * Todas las muestras del dibujo, una fila por muestra, con el punto del que
+ * salieron: es la lista del panel «Samples», desde la que se va a cada una.
+ * Ordenadas por código —con números comparados como números, ACRC2 antes que
+ * ACRC10— y las sin código al final, por nombre de punto.
+ */
+export function listSamples(features) {
+  const filas = [];
+  for (const f of features || []) {
+    if (!isControlPoint(f)) continue;
+    samplesOf(f.properties).forEach((s, index) => filas.push({ feature: f, index, ...s }));
+  }
+  const cmp = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  return filas.sort((a, b) => {
+    if (!!a.sampleId !== !!b.sampleId) return a.sampleId ? -1 : 1;
+    return (
+      cmp.compare(a.sampleId, b.sampleId) ||
+      cmp.compare(a.feature.properties.name || '', b.feature.properties.name || '')
+    );
+  });
+}
+
 /**
  * Columnas de la tabla, en el orden en que se leen: primero qué muestra es,
  * después cuándo y de qué unidad, y al final la descripción y las notas, que son
@@ -176,12 +306,16 @@ export function formatCaptureDate(ms) {
  */
 export const CONTROL_POINT_COLUMNS = [
   { csv: 'Name', gpkg: 'name', of: (p) => p.name || '' },
-  { csv: 'Sample ID', gpkg: 'sample_id', of: (p) => p.sampleId || '' },
+  { csv: 'Sample ID', gpkg: 'sample_id', of: (p) => joinSamples(p, 'sampleId') },
   { csv: 'Date', gpkg: 'date', of: (p) => formatCaptureDate(p.createdAt) },
   { csv: 'Unit', gpkg: 'unit', of: (p) => p.unit || '' },
   { csv: 'Code', gpkg: 'code', of: (p) => p.code || '' },
-  { csv: 'Purpose', gpkg: 'purpose', of: (p) => p.purpose || '' },
-  { csv: 'Sample Description', gpkg: 'sample_description', of: (p) => p.sampleDescription || '' },
+  { csv: 'Purpose', gpkg: 'purpose', of: (p) => joinSamples(p, 'purpose') },
+  {
+    csv: 'Sample Description',
+    gpkg: 'sample_description',
+    of: (p) => joinSamples(p, 'sampleDescription'),
+  },
   { csv: 'Notes', gpkg: 'note', of: (p) => p.note || '' },
   {
     csv: 'Altitude',

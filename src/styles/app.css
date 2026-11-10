@@ -4645,3 +4645,63 @@ a.link-pill {
 .sv-chips .sv-swatch:not(.sv-swatch-square) {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45);
 }
+
+/* ---------- muestras de un punto de control ---------- */
+
+.cp-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.cp-sample {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cp-sample-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cp-samples-empty {
+  margin: 0;
+}
+
+/* ---------- panel de muestras ---------- */
+
+.samples-filter {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  margin: 4px 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.samples-list .sp-desc {
+  font-style: italic;
+}
+
+.samples-list .samples-empty {
+  padding: 4px 2px;
+}
+
+.samples-list .sp-note {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
