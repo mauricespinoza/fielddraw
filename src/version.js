@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.59.1';
+export const APP_VERSION = '0.60.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -33,7 +33,7 @@ export const APP_TOOLS = [
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
   ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, one or more samples (ID — also consecutive from a prefix —, description, purpose) and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault.'],
-  ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso.'],
+  ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso. Several selected show up in a list: tap one to open its attributes and edit them, ‹ › to go through the rest.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
   ['Topology · Hole', 'Subtract an area from a polygon, leaving a hole.'],
   ['Topology · Split · Reshape', 'Cut a feature with a line, or redraw part of its outline.'],
@@ -55,6 +55,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.60.0',
+    highlights: [
+      'Lasso selection list: tapping one of the points or structures caught by the lasso now opens its attributes next to it, ready to read and edit — notes, name, unit, samples, strike and dip… If it is off screen, the map pans to it first.',
+      'The list stays open while you edit, with the current one highlighted: tap another to move to it, or use ‹ › in the list header to go to the previous or next one. “Select all again” brings back the whole lasso selection, and ✕ closes the list while leaving the feature you were editing open.',
+    ],
+  },
   {
     version: '0.59.1',
     highlights: [

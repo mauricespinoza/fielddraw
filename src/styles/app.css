@@ -1865,6 +1865,22 @@ input[type='radio'] {
   margin: 0;
 }
 
+.selection-picker header .picker-nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.selection-picker header .picker-nav.hidden {
+  display: none;
+}
+
+.selection-picker header .picker-nav .icon-btn {
+  font-size: 20px;
+  line-height: 1;
+}
+
 .selection-picker-list {
   list-style: none;
   margin: 0;
@@ -1897,6 +1913,11 @@ input[type='radio'] {
 .selection-picker-list button:focus-visible {
   border-color: var(--accent);
   background: rgba(45, 212, 191, 0.1);
+}
+
+.selection-picker-list button.current {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.16);
 }
 
 .selection-picker-list .swatch {

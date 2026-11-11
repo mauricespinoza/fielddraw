@@ -1039,10 +1039,15 @@
       <div class="selection-picker hidden" id="selection-picker" role="dialog" aria-label="Selected features">
         <header>
           <h2 id="selection-picker-title">Selected</h2>
-          <button class="icon-btn close-x" id="btn-close-selection-picker" aria-label="Keep them all selected">✕</button>
+          <span class="picker-nav hidden" id="picker-nav">
+            <button class="icon-btn" id="btn-picker-prev" type="button" aria-label="Previous feature" title="Previous">‹</button>
+            <button class="icon-btn" id="btn-picker-next" type="button" aria-label="Next feature" title="Next">›</button>
+          </span>
+          <button class="icon-btn close-x" id="btn-close-selection-picker" aria-label="Close the list">✕</button>
         </header>
-        <p class="hint footnote">Tap one to keep only that feature selected.</p>
+        <p class="hint footnote" id="selection-picker-hint">Tap one to open its attributes, read and edit them. The list stays so you can go on to the next.</p>
         <ul class="selection-picker-list" id="selection-picker-list"></ul>
+        <button class="pill wide hidden" id="btn-picker-select-all" type="button">Select all again</button>
       </div>
 
       <div class="props-menu hidden" id="props-menu">

@@ -500,6 +500,14 @@ regla:
   entera: es como se le cambia la certeza, la unidad o el tipo a media docena
   de una vez.
 - **La pulsación sostenida** abre ese mismo menú con el dedo.
+- **La lista de lo seleccionado.** Con dos o más elegidos aparece, arriba a la
+  derecha, la lista de todos los puntos y estructuras que cayeron en el lazo.
+  Tocar uno abre **su ficha de atributos** junto a él —notas, nombre, unidad,
+  muestras, rumbo y manteo— para leerla y editarla (si está fuera de la vista,
+  el mapa se desplaza antes). La lista se queda abierta con el actual marcado:
+  se toca otro, o se usan **‹ ›** en su cabecera para pasar al anterior o al
+  siguiente; **Select all again** recupera la selección entera y **✕** cierra
+  solo la lista.
 
 El lazo estuvo quitado una temporada, y por buenos motivos: tal como estaba
 escrito, consumía el puntero **siempre**, y eso rompía tres cosas que solo se
