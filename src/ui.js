@@ -1795,29 +1795,163 @@ function describeFeature(f, s) {
 }
 
 /**
+ * El grupo de la lista: lo que estaba seleccionado cuando apareció.
+ *
+ * Elegir uno de la lista lo deja solo en la selección —es el que se edita—,
+ * pero la lista NO se va: se repasan uno a uno los puntos y estructuras que
+ * cayeron dentro del lazo, leyendo y corrigiendo cada ficha, sin tener que
+ * volver a trazar el lazo para pasar al siguiente. `pickerCurrent` es el que
+ * tiene la ficha abierta.
+ */
+let pickerGroup = null;
+let pickerCurrent = null;
+
+/** Un punto del elemento en pantalla, donde abrirle la ficha. */
+function featureScreenPoint(f) {
+  if (!mapBridge || !f || !f.geometry) return null;
+  const g = f.geometry;
+  let ll = null;
+  if (g.type === 'Point') ll = g.coordinates;
+  else if (g.type === 'LineString') ll = g.coordinates[Math.floor(g.coordinates.length / 2)];
+  else if (g.type === 'Polygon' && g.coordinates[0] && g.coordinates[0].length) {
+    const anillo = g.coordinates[0];
+    const n = anillo.length > 1 ? anillo.length - 1 : 1;
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < n; i++) {
+      x += anillo[i][0];
+      y += anillo[i][1];
+    }
+    ll = [x / n, y / n];
+  }
+  if (!ll) return null;
+  const map = mapBridge.map;
+  const pt = map.project([ll[0], ll[1]]);
+  const r = map.getContainer().getBoundingClientRect();
+  return { ll, screen: [r.left + pt.x, r.top + pt.y], inside: pt.x >= 0 && pt.y >= 0 && pt.x <= r.width && pt.y <= r.height };
+}
+
+/**
+ * Aparta la ficha de la lista si la tapa: la lista tiene que seguir a la vista
+ * para pasar al siguiente. Primero a su izquierda; si no cabe (teléfono en
+ * vertical), debajo de ella; y si tampoco, se queda donde estaba.
+ */
+function clearOfPicker(menu) {
+  const picker = $('selection-picker');
+  if (!menu || menu.classList.contains('hidden') || picker.classList.contains('hidden')) return;
+  const m = menu.getBoundingClientRect();
+  const k = picker.getBoundingClientRect();
+  const solapa = m.left < k.right && m.right > k.left && m.top < k.bottom && m.bottom > k.top;
+  if (!solapa) return;
+  const M = 12;
+  const maxTop = Math.max(M, window.innerHeight - m.height - M);
+  if (k.left - m.width - M >= M) {
+    menu.style.left = `${k.left - m.width - M}px`;
+    menu.style.top = `${Math.min(Math.max(M, m.top), maxTop)}px`;
+  } else if (k.bottom + M + m.height <= window.innerHeight - M) {
+    menu.style.top = `${k.bottom + M}px`;
+  }
+}
+
+/**
+ * Elige uno de la lista: queda solo en la selección y se abre su ficha de
+ * atributos junto a él, para leerla y editarla. Si está fuera de la vista, el
+ * mapa se desplaza hasta él antes de abrirla.
+ */
+function pickFromList(f) {
+  const id = f.properties.id;
+  pickerCurrent = id;
+  store.setSelection([id]);
+  const donde = featureScreenPoint(f);
+  if (!donde) {
+    if (lastPropsScreen) openPropsMenu(lastPropsScreen);
+    clearOfPicker($('props-menu'));
+    return;
+  }
+  const abrir = () => {
+    const sel = store.getState().selection;
+    if (sel.length !== 1 || sel[0] !== id) return;
+    const ahora = featureScreenPoint(f);
+    openPropsMenu(ahora ? ahora.screen : donde.screen);
+    clearOfPicker($('props-menu'));
+  };
+  if (donde.inside) {
+    abrir();
+  } else {
+    mapBridge.map.once('moveend', abrir);
+    mapBridge.map.easeTo({ center: donde.ll, duration: 500 });
+  }
+}
+
+/**
  * Lista de lo seleccionado, cuando es más de uno.
  *
- * Un rectángulo de selección o un toque sobre elementos apilados —un contacto
- * encima del borde de un polígono, dos medidas en el mismo afloramiento—
- * dejan varios elegidos a la vez, y en el mapa no hay forma de decir cuál se
- * quería. Aquí se ven todos con nombre, y un toque deja solo ese.
+ * Un lazo, un rectángulo de selección o un toque sobre elementos apilados —un
+ * contacto encima del borde de un polígono, dos medidas en el mismo
+ * afloramiento— dejan varios elegidos a la vez, y en el mapa no hay forma de
+ * decir cuál se quería. Aquí se ven todos con nombre, y un toque abre la ficha
+ * de ese, con sus atributos para leerlos y editarlos.
  */
 function renderSelectionPicker() {
   const panel = $('selection-picker');
   const s = store.getState();
   const sel = store.selectedFeatures();
-  if (sel.length < 2 || pickerDismissedFor === selectionKey(s.selection)) {
+  const existentes = new Set(s.features.map((f) => f.properties.id));
+
+  if (sel.length >= 2) {
+    // Una selección múltiple nueva es un grupo nuevo.
+    if (pickerDismissedFor === selectionKey(s.selection)) {
+      pickerGroup = null;
+      panel.classList.add('hidden');
+      return;
+    }
+    pickerGroup = s.selection.slice();
+    pickerCurrent = null;
+  } else if (pickerGroup) {
+    const sigue =
+      // Se está editando uno elegido de la lista…
+      (sel.length === 1 && sel[0].properties.id === pickerCurrent && pickerGroup.includes(pickerCurrent)) ||
+      // …o se borró desde su ficha y quedan otros por revisar.
+      (sel.length === 0 && pickerCurrent && !existentes.has(pickerCurrent));
+    if (!sigue) pickerGroup = null;
+  }
+
+  if (!pickerGroup) {
     panel.classList.add('hidden');
     return;
   }
-  $('selection-picker-title').textContent = `${sel.length} features selected`;
+  const grupo = pickerGroup
+    .filter((id) => existentes.has(id))
+    .map((id) => s.features.find((f) => f.properties.id === id));
+  // Un grupo que ya solo tiene el que se está editando no es una lista.
+  if (grupo.length === 0 || (grupo.length === 1 && grupo[0].properties.id === pickerCurrent)) {
+    pickerGroup = null;
+    panel.classList.add('hidden');
+    return;
+  }
+  pickerGroup = grupo.map((f) => f.properties.id);
+
+  $('selection-picker-title').textContent = pickerCurrent
+    ? `${grupo.length} in the selection`
+    : `${grupo.length} features selected`;
+  $('btn-picker-select-all').classList.toggle('hidden', !pickerCurrent);
+  // Editando uno: la ayuda sobra y la lista se acorta, y ‹ › en la cabecera
+  // pasan al anterior o al siguiente aunque la ficha tape parte de la lista
+  // (teléfono en vertical).
+  $('selection-picker-hint').classList.toggle('hidden', !!pickerCurrent);
+  $('picker-nav').classList.toggle('hidden', !pickerCurrent);
+  $('btn-picker-select-all').textContent = `Select all ${grupo.length} again`;
   const list = $('selection-picker-list');
   list.replaceChildren();
-  for (const f of sel) {
+  for (const f of grupo) {
     const d = describeFeature(f, s);
     const li = document.createElement('li');
     const b = document.createElement('button');
     b.type = 'button';
+    const actual = f.properties.id === pickerCurrent;
+    b.classList.toggle('current', actual);
+    if (actual) b.setAttribute('aria-current', 'true');
+    b.title = 'Open its attributes to read and edit them';
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = d.color;
@@ -1834,17 +1968,13 @@ function renderSelectionPicker() {
       txt.appendChild(sub);
     }
     b.append(sw, txt);
-    b.addEventListener('click', () => {
-      const propsAbierto = !$('props-menu').classList.contains('hidden');
-      store.setSelection([f.properties.id]);
-      // Si el menú de propiedades estaba abierto sobre la selección entera,
-      // pasa a describir el elegido en el mismo sitio.
-      if (propsAbierto) openPropsMenu(lastPropsScreen);
-    });
+    b.addEventListener('click', () => pickFromList(f));
     li.appendChild(b);
     list.appendChild(li);
   }
   panel.classList.remove('hidden');
+  const actual = list.querySelector('button.current');
+  if (actual && typeof actual.scrollIntoView === 'function') actual.scrollIntoView({ block: 'nearest' });
 }
 
 /* ---------- lista de muestras ---------- */
@@ -2492,6 +2622,8 @@ const POPOVERS = [
  */
 const CLICK_OUTSIDE_EXEMPT = [
   'toolbar',
+  // Elegir otro de la lista cambia la ficha abierta en vez de cerrarla.
+  'selection-picker',
   'side-actions',
   'palette',
   'profile-sheet',
@@ -7262,8 +7394,28 @@ export function initUI() {
   });
   window.addEventListener('fielddraw:truenorth', renderDevicePanel);
   $('btn-close-selection-picker').addEventListener('click', () => {
-    pickerDismissedFor = selectionKey(store.getState().selection);
+    const sel = store.getState().selection;
+    if (sel.length >= 2) pickerDismissedFor = selectionKey(sel);
+    // Cerrar la lista mientras se edita uno de ella deja ese seleccionado y su
+    // ficha abierta: solo se va la lista.
+    pickerGroup = null;
+    pickerCurrent = null;
     renderSelectionPicker();
+  });
+  const pasoEnLista = (delta) => {
+    if (!pickerGroup || !pickerGroup.length) return;
+    const i = pickerGroup.indexOf(pickerCurrent);
+    const id = pickerGroup[(i + delta + pickerGroup.length) % pickerGroup.length];
+    const f = store.getState().features.find((x) => x.properties.id === id);
+    if (f) pickFromList(f);
+  };
+  $('btn-picker-prev').addEventListener('click', () => pasoEnLista(-1));
+  $('btn-picker-next').addEventListener('click', () => pasoEnLista(1));
+  $('btn-picker-select-all').addEventListener('click', () => {
+    if (!pickerGroup) return;
+    const grupo = pickerGroup.slice();
+    closePropsMenu();
+    store.setSelection(grupo);
   });
   $('device-compass').addEventListener('click', toggleDeviceHold);
   $('device-compass').addEventListener('keydown', (e) => {
