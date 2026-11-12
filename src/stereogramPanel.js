@@ -32,7 +32,7 @@ import { downloadBlob } from './persistence.js';
 import { averageMeasurements } from './average.js';
 import { formatLat, formatLon, formatUTM, toUTM } from './utm.js';
 import { clearFaultLasso, faultLassoSize, renderFaultTab, wireFaultLasso } from './faultKinPanel.js';
-import { lassoHits, wireSvgLasso } from './svgLasso.js';
+import { lassoHits, lockTouchScroll, wireSvgLasso } from './svgLasso.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -470,6 +470,13 @@ function wireLasso() {
     // Un toque sin arrastre, sobre la red pero fuera de todo polo: suelta el lazo.
     onTap: clearHighlight,
   });
+
+  // La red no se mueve: en el teléfono la vista entera desplaza, pero solo
+  // desde lo que queda bajo la red (los controles). Arrastrar sobre la red o
+  // su marco es siempre lazo, nunca desplazamiento.
+  for (const id of ['stereo-panel-plot', 'stereo-panel-faults']) {
+    lockTouchScroll($(id).querySelector('.sv-chart-wrap'));
+  }
 
   // Tocar el margen que rodea la red (el papel del marco, fuera del lienzo del
   // lazo) también lo suelta, igual que tocar afuera en el mapa deselecciona.

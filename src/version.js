@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.62.0';
+export const APP_VERSION = '0.62.1';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.62.1',
+    highlights: [
+      'Stereogram on the phone: dragging a finger on the net now draws the lasso straight away (Plot and Faults), instead of scrolling the view and dropping the lasso.',
+      'The net stays still: the view scrolls only when dragging from the controls below the net (or the header), never from the net itself.',
+    ],
+  },
   {
     version: '0.62.0',
     highlights: [

@@ -4551,6 +4551,9 @@ a.link-pill {
  */
 .stereo-view .sv-chart-wrap {
   container-type: size;
+  /* La red y su marco no desplazan la vista: ahí se arrastra el lazo (ver
+     `lockTouchScroll` en svgLasso.js). Se desplaza desde lo de abajo. */
+  touch-action: none;
 }
 
 .stereo-view .stereo-chart-stack > * {
@@ -4577,7 +4580,9 @@ a.link-pill {
  * entera desplaza: arriba la cabecera compacta y el filtro en una sola fila,
  * luego la red cuadrada al ancho de la pantalla —lo que se mira—, y debajo los
  * controles, a un deslizamiento de distancia. El lazo no compite con ese
- * desplazamiento: su lienzo lleva `touch-action: none`.
+ * desplazamiento: la red y su marco no desplazan nunca (`touch-action: none`
+ * y los toques cancelados en JS); la vista se mueve arrastrando desde los
+ * controles bajo la red, o la cabecera.
  */
 @media (max-width: 860px) and (orientation: portrait) {
   .stereo-view {

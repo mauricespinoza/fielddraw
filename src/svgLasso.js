@@ -122,4 +122,26 @@ export function wireSvgLasso(svg, { mode, enabled = () => true, onLasso, onTap =
   };
   svg.addEventListener('pointerup', finish);
   svg.addEventListener('pointercancel', finish);
+  lockTouchScroll(svg);
+}
+
+/**
+ * Que un arrastre con el dedo sobre `el` no desplace la página.
+ *
+ * `touch-action: none` en el CSS debería bastar, pero Safari de iOS no
+ * siempre lo respeta dentro de un contenedor que desplaza (la vista del
+ * estereograma en un teléfono): empezaba a mover la vista, el navegador
+ * cancelaba el puntero (`pointercancel`) y el lazo se soltaba sin agarrar
+ * nada. Cancelar los `touchstart`/`touchmove` —con `passive: false`, o el
+ * navegador ignora el `preventDefault`— deja el gesto entero al lazo. Los
+ * eventos de puntero siguen llegando igual.
+ */
+export function lockTouchScroll(el) {
+  if (!el || el.dataset.touchLocked) return;
+  el.dataset.touchLocked = '1';
+  const stop = (e) => {
+    if (e.cancelable) e.preventDefault();
+  };
+  el.addEventListener('touchstart', stop, { passive: false });
+  el.addEventListener('touchmove', stop, { passive: false });
 }
