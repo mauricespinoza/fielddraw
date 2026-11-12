@@ -129,9 +129,25 @@ function dipTriangle(ctx, p, dir = 1, largo = TICK + 1.5, base = 3.6) {
   ]);
 }
 
-/** Tic de manteo: una raya en S₀, un triángulo en S₁. */
+/**
+ * Triángulo ABIERTO —solo el contorno—: el tic de la foliación magmática.
+ * Mismo triángulo que S₁ para que se lea como foliación, hueco para que no se
+ * confunda con la tectónica.
+ */
+function dipOpenTriangle(ctx, p, dir = 1, largo = TICK + 1.5, base = 3.6) {
+  prepare(ctx, p, 1.5);
+  ctx.beginPath();
+  ctx.moveTo(CX, CY - base);
+  ctx.lineTo(CX + dir * largo, CY);
+  ctx.lineTo(CX, CY + base);
+  ctx.closePath();
+  ctx.stroke();
+}
+
+/** Tic de manteo: una raya en S₀, un triángulo en S₁, uno hueco en Sm. */
 function tick(ctx, p, estilo, dir = 1, largo = TICK) {
   if (estilo === 'triangle') dipTriangle(ctx, p, dir, largo + 1.5);
+  else if (estilo === 'open-triangle') dipOpenTriangle(ctx, p, dir, largo + 1.5);
   else dipTick(ctx, p, dir, largo);
 }
 
@@ -162,7 +178,7 @@ const DRAWINGS = {
   horizontal: (ctx, p, estilo) => {
     prepare(ctx, p, 1.8);
     ctx.beginPath();
-    if (estilo === 'triangle') ctx.rect(CX - 5.5, CY - 5.5, 11, 11);
+    if (estilo === 'triangle' || estilo === 'open-triangle') ctx.rect(CX - 5.5, CY - 5.5, 11, 11);
     else ctx.arc(CX, CY, 6.5, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
@@ -256,6 +272,9 @@ const FAULT_ORNAMENTS = {
 
 const FAULT_TYPE = 'fault-plane';
 
+/** Estilo del tic por tipo de superficie; lo que no está, raya. */
+const TICK_STYLE = { foliation: 'triangle', 'magmatic-foliation': 'open-triangle' };
+
 /** Claves de sentido de un plano de falla, más la de «sin declarar». */
 const FAULT_SENSE_KEYS = [...FAULT_SENSES.map((f) => f.id), 'none'];
 
@@ -277,7 +296,7 @@ function drawSymbol(ctx, p, key, variant) {
     (FAULT_ORNAMENTS[sentido] || FAULT_ORNAMENTS.none)(ctx, p);
     return;
   }
-  DRAWINGS[variant](ctx, p, key === 'foliation' ? 'triangle' : 'line');
+  DRAWINGS[variant](ctx, p, TICK_STYLE[key] || 'line');
 }
 
 /**

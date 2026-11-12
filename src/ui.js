@@ -96,8 +96,11 @@ import {
   profileCSV,
   profileHeightFor,
   profilePNG,
+  formatSlope,
+  meanSlope,
   profileSVG,
   renderProfileChart,
+  slopeLegend,
   verticalExaggeration,
 } from './profile.js';
 import { drawWalkOverlay, initProfileWalk, isWalkActive } from './profileWalk.js';
@@ -4330,6 +4333,10 @@ function renderProfileStats(result, index) {
   if (m && Number.isFinite(m.elevation)) {
     statChip(box, 'At', formatDistance(m.distance), true);
     statChip(box, '·', formatElevation(m.elevation), true);
+    const g = chart ? chart.slopeAt(index) : NaN;
+    if (Number.isFinite(g)) {
+      statChip(box, '·', formatSlope({ degrees: g, percent: Math.tan((g * Math.PI) / 180) * 100 }), true);
+    }
   }
   statChip(box, 'Length', formatDistance(stats.length));
   statChip(box, 'Min', formatElevation(stats.min));
@@ -4337,6 +4344,34 @@ function renderProfileStats(result, index) {
   statChip(box, 'Relief', formatElevation(stats.max - stats.min));
   statChip(box, 'Ascent', formatElevation(stats.gain));
   statChip(box, 'Descent', formatElevation(stats.loss));
+  // Se calcula una vez por perfil y se guarda en el propio resultado: el
+  // resumen se vuelve a pintar con cada movimiento del cursor.
+  let media = meanSlopeCache.get(result);
+  if (media === undefined) {
+    media = meanSlope(result.samples);
+    meanSlopeCache.set(result, media);
+  }
+  statChip(box, 'Mean slope', formatSlope(media));
+}
+
+const meanSlopeCache = new WeakMap();
+
+/** Leyenda de la paleta de pendiente local, bajo el gráfico. Se arma una vez. */
+function renderSlopeLegend() {
+  const box = $('profile-slope-legend');
+  if (!box || box.childElementCount) return;
+  const t = document.createElement('span');
+  t.className = 'pf-legend-title';
+  t.textContent = 'Local slope (°)';
+  box.appendChild(t);
+  for (const k of slopeLegend()) {
+    const it = document.createElement('span');
+    it.className = 'pf-legend-item';
+    const sw = document.createElement('i');
+    sw.style.background = k.color;
+    it.append(sw, k.label);
+    box.appendChild(it);
+  }
 }
 
 /**
@@ -4392,6 +4427,7 @@ function renderProfilePanel() {
     : `×${profileVE}`;
   drawWalkOverlay();
 
+  renderSlopeLegend();
   renderProfileStats(result, null);
   $('profile-note').textContent = profileNote(result);
 }
@@ -4713,7 +4749,9 @@ function syncDeviceCapture() {
 function renderDevicePanel() {
   if ($('device-panel').classList.contains('hidden')) return;
   const r = deviceReadingNow();
-  if (deviceCompass) deviceCompass.update(r);
+  const stC = store.getState();
+  const kindC = stC.measureLine ? LINE_KIND_BY_STRUCTURE[stC.measureType] : null;
+  if (deviceCompass) deviceCompass.update(r, { line: kindC });
   $('device-compass').classList.toggle('held', !!deviceHeld);
 
   const fix = mapBridge && mapBridge.getGpsFix();
@@ -4731,8 +4769,7 @@ function renderDevicePanel() {
   // El mismo consejo que da la pestaña Compass, palabra por palabra: los dos
   // sitios leen los mismos sensores y no pueden discrepar sobre si la lectura
   // vale (ver `compassHint`).
-  const stL = store.getState();
-  const kindL = stL.measureLine ? LINE_KIND_BY_STRUCTURE[stL.measureType] : null;
+  const kindL = kindC;
   const lineNote = $('device-line-note');
   lineNote.classList.toggle('hidden', !kindL);
   if (kindL) {

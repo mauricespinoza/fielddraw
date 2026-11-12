@@ -494,6 +494,9 @@ export function quadrant(azimuth) {
 export const LINE_KIND_BY_STRUCTURE = {
   'fault-plane': { id: 'striae', short: 'Str', label: 'Striae', help: 'Slickenlines on the fault plane' },
   foliation: { id: 'lineation', short: 'L₁', label: 'Lineation L₁', help: 'Mineral or stretching lineation on S₁' },
+  'magmatic-foliation': {
+    id: 'lineation', short: 'Lm', label: 'Magmatic lineation', help: 'Magmatic (flow) lineation on the magmatic foliation',
+  },
 };
 
 /** La línea es un eje: 0 ≤ plunge ≤ 90, trend en [0, 360). */

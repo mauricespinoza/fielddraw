@@ -75,5 +75,41 @@ ok('sin recorrido no hay factor', Number.isNaN(P.verticalExaggeration({ total: 0
   }
 }
 
+console.log('== pendiente local y media ==');
+{
+  // 100 m de avance: plano, +100 m (45°), hueco, −10 m (≈5.7°).
+  const samples = [
+    { distance: 0, elevation: 500 },
+    { distance: 100, elevation: 500 },
+    { distance: 200, elevation: 600 },
+    { distance: 300, elevation: NaN },
+    { distance: 400, elevation: 600 },
+    { distance: 500, elevation: 590 },
+  ];
+  const g = P.segmentSlopes(samples);
+  ok('un tramo por par de muestras', g.length === 5);
+  ok('plano da 0°', g[0] === 0);
+  ok('subir lo mismo que se avanza da 45°', Math.abs(g[1] - 45) < 1e-4);
+  ok('un tramo que toca un hueco no tiene pendiente', Number.isNaN(g[2]) && Number.isNaN(g[3]));
+  ok('bajar también es pendiente (positiva)', Math.abs(g[4] - 5.7106) < 1e-3, String(g[4]));
+  ok('clases: <2 es la 0', P.slopeClass(0) === 0 && P.slopeClass(1.9) === 0);
+  ok('clases: 45° es la última', P.slopeClass(45) === P.SLOPE_COLORS.length - 1);
+  ok('un color por clase', P.SLOPE_COLORS.length === P.SLOPE_BREAKS.length + 1);
+  const m = P.meanSlope(samples);
+  // desnivel acumulado 110 m sobre 300 m con dato
+  ok('pendiente media = desnivel acumulado / distancia con dato', Math.abs(m.percent - (110 / 300) * 100) < 1e-9, String(m.percent));
+  ok('y su ángulo', Math.abs(m.degrees - (Math.atan(110 / 300) * 180) / Math.PI) < 1e-9);
+  ok('sin dato no hay pendiente media', P.meanSlope([{ distance: 0, elevation: NaN }]) === null);
+  const s = { x: (d) => d, y: (z) => z };
+  const paths = P.profileSlopePaths(samples, s, g);
+  ok('un camino por clase', paths.length === P.SLOPE_COLORS.length);
+  ok('el tramo plano va en la clase fría', paths[0].startsWith('M0.00 500.00L100.00 500.00'));
+  ok('el de 45° en la más cálida', paths[P.SLOPE_COLORS.length - 1] === 'M100.00 500.00L200.00 600.00');
+  ok('el hueco no se une', !paths.join('').includes('L300'));
+  const n = paths.filter(Boolean).length;
+  ok('solo las clases presentes llevan trazo', n === 3, String(n));
+  ok('la leyenda tiene un rótulo por color', P.slopeLegend().length === P.SLOPE_COLORS.length);
+}
+
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);
 process.exit(fails === 0 ? 0 : 1);

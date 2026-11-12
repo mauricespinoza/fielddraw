@@ -112,6 +112,9 @@ export const POLYGON_TYPES = [
 export const STRUCTURE_TYPES = [
   { id: 'bedding', short: 'S₀', label: 'Bedding', color: '#212121' },
   { id: 'foliation', short: 'S₁', label: 'Foliation / cleavage', color: '#2E7D32' },
+  // Foliación magmática (de flujo) en intrusivos: no es S₁ tectónica, y
+  // confundirlas en el mapa es confundir flujo de magma con deformación.
+  { id: 'magmatic-foliation', short: 'Sm', label: 'Magmatic foliation', color: '#AD1457' },
   { id: 'joint', short: 'Jnt', label: 'Joint', color: '#1565C0' },
   { id: 'fault-plane', short: 'Flt', label: 'Fault plane', color: '#D32F2F' },
 ];

@@ -1125,6 +1125,25 @@ arrastrar sobre él, la muestra señalada se marca también en el mapa, que es l
 que permite ver qué quiebre del perfil cae sobre qué contacto. **CSV** descarga
 distancia, coordenadas y cota de cada muestra.
 
+### Pendiente
+
+La línea del perfil va **coloreada por la pendiente local**, tramo a tramo
+entre muestras consecutivas, con una paleta de frío (azul, poca pendiente) a
+cálido (rojo, mucha) y una leyenda bajo el gráfico. Los cortes son fijos —<2,
+2–5, 5–10, 10–15, 15–20, 20–25, 25–30, 30–40 y >40°— y no cuantiles del
+perfil, para que un mismo color diga lo mismo en dos trazas distintas. Un tramo
+que toca un hueco del DEM no se colorea.
+
+El resumen añade la **pendiente media** de la ruta, en grados y en %: el
+desnivel acumulado (subidas más bajadas) sobre la distancia horizontal con
+dato, que es la media de las pendientes locales ponderada por el largo de cada
+tramo. Al arrastrar sobre el gráfico se lee también la pendiente en el punto.
+
+El cálculo es una sola pasada sobre las muestras, y la curva se dibuja con a lo
+sumo un trazo SVG por clase de color —no uno por tramo—, así que colorear el
+perfil no cuesta más que dibujarlo. La figura PNG/SVG lleva la misma paleta,
+su leyenda y la pendiente media.
+
 ### De dónde salen las cotas
 
 | Fuente | Resolución | CORS | Sin señal |
@@ -3206,7 +3225,7 @@ toca el **proyecto** y no solo el dataset nuevo.
 
 | FieldDraw | StraboSpot |
 | --- | --- |
-| Bedding · Foliation · Joint · Fault plane | `feature_type` `bedding` · `foliation` · `fracture` (+`fracture_type: joint`) · `fault` |
+| Bedding · Foliation · Magmatic foliation · Joint · Fault plane | `feature_type` `bedding` · `foliation` · `foliation` (+`foliation_type: magmatic`) · `fracture` (+`fracture_type: joint`) · `fault` |
 | Stratigraphic contact | `contact` + `depositional` + `stratigraphic` |
 | Intrusive contact | `contact` + `intrusive` |
 | Structural contact | `contact` + `other` (+ el término en `other_contact_type`) |

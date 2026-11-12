@@ -33,7 +33,7 @@
 
 import { COMPASS_ACCURACY_WARN_DEG, READY_SPREAD_DEG, lastCompassCheck } from './deviceOrientation.js';
 import { structureVariant } from './symbology.js';
-import { norm360 } from './structure.js';
+import { lineOnPlane, norm360 } from './structure.js';
 import { formatPlane, notationLabel } from './notation.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -50,6 +50,8 @@ const PAPEL = '#f2f5f8';
 const TINTA = '#1b2430';
 const TENUE = '#5b6876';
 const MANTEO = '#c2410c';
+/** La línea (estría, lineación) del modo plano + línea. */
+const LINEA = '#1d4ed8';
 
 /** Cuadrante del acimut, que es como se dicta en terreno. */
 const RUMBOS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -161,6 +163,7 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
    */
   let lubber = null;
   let dipSymbol = null;
+  let lineMark = null;
   const L = R - 14; // qué tan largo es el trazo de rumbo del símbolo
 
   if (style === 'needle') {
@@ -204,6 +207,25 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
     const hub = el('circle', { cx, cy, r: 3, fill: TINTA });
     dipSymbol.append(strikeLine, tickRight, tickLeft, ring, hub);
     svg.appendChild(dipSymbol);
+
+    /*
+     * Plano + línea: la línea del canto largo, en planta. Gira por su TREND
+     * (no por el rumbo, como el símbolo) y se acorta con el plunge —es su
+     * proyección horizontal—, con un mínimo para que una línea casi vertical
+     * siga viéndose hacia dónde cae.
+     */
+    lineMark = el('g', { class: 'line-mark', visibility: 'hidden' });
+    lineMark.append(
+      el('line', {
+        x1: cx, y1: cy, x2: cx, y2: cy - L,
+        stroke: LINEA, 'stroke-width': 3, 'stroke-linecap': 'round',
+      }),
+      el('polygon', {
+        points: `${cx},${cy - L - 6} ${cx - 6},${cy - L + 6} ${cx + 6},${cy - L + 6}`,
+        fill: LINEA,
+      }),
+    );
+    svg.appendChild(lineMark);
   }
 
   const label = el('text', {
@@ -224,6 +246,61 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
   });
   svg.appendChild(sub);
 
+  // Plano + línea: trend/plunge y rake de la línea, en dos renglones que solo
+  // existen (y solo alargan el lienzo) mientras se mide una línea.
+  const LINE_EXTRA = 52;
+  const lineTxt = el('text', {
+    x: cx, y: alto + 22, 'text-anchor': 'middle', 'font-size': 17, 'font-weight': 700,
+    fill: LINEA, 'font-variant-numeric': 'tabular-nums', visibility: 'hidden',
+  });
+  const rakeTxt = el('text', {
+    x: cx, y: alto + 42, 'text-anchor': 'middle', 'font-size': 13, 'font-weight': 600,
+    fill: TINTA, 'font-variant-numeric': 'tabular-nums', visibility: 'hidden',
+  });
+  svg.append(lineTxt, rakeTxt);
+  const fondo = svg.firstChild;
+  let conLinea = false;
+  const setLineRows = (on) => {
+    if (on === conLinea) return;
+    conLinea = on;
+    const h = alto + (on ? LINE_EXTRA : 0);
+    svg.setAttribute('viewBox', `0 0 ${size} ${h}`);
+    svg.setAttribute('height', h);
+    fondo.setAttribute('height', h);
+    lineTxt.setAttribute('visibility', on ? 'visible' : 'hidden');
+    rakeTxt.setAttribute('visibility', on ? 'visible' : 'hidden');
+  };
+
+  /** La línea del modo plano + línea: marca en planta y sus dos renglones. */
+  function updateLine(reading, line) {
+    if (!lineMark) return;
+    setLineRows(!!line);
+    const t = reading && reading.lineTrend;
+    const pl = reading && reading.linePlunge;
+    if (!line || !Number.isFinite(t) || !Number.isFinite(pl)) {
+      lineMark.setAttribute('visibility', 'hidden');
+      if (line) {
+        lineTxt.textContent = `${line.short} — lay the long edge along it`;
+        rakeTxt.textContent = '';
+      }
+      return;
+    }
+    const k = Math.max(0.3, Math.cos((pl * Math.PI) / 180));
+    lineMark.setAttribute('visibility', 'visible');
+    lineMark.setAttribute(
+      'transform',
+      `rotate(${norm360(t)} ${cx} ${cy}) translate(${cx} ${cy}) scale(1 ${k}) translate(${-cx} ${-cy})`,
+    );
+    const ts = String(Math.round(norm360(t)) % 360).padStart(3, '0');
+    lineTxt.textContent = `${line.short} T/P ${ts}/${String(Math.round(pl)).padStart(2, '0')}`;
+    const r = Number.isFinite(reading.strike) && Number.isFinite(reading.dip)
+      ? lineOnPlane(reading.strike, reading.dip, t, pl)
+      : null;
+    rakeTxt.textContent = r
+      ? `Rake ${Math.round(r.rake)}° (RHR)${r.misfit >= 5 ? ` · ${Math.round(r.misfit)}° off plane` : ''}`
+      : '';
+  }
+
   /**
    * Refresca la rosa (o el símbolo) y el texto.
    *
@@ -232,8 +309,14 @@ export function buildCompass(svg, { size = 240, style = 'needle' } = {}) {
    * En `style: 'symbol'` sigue siendo `{strike, dip, dipAzimuth, strikeSd,
    * dipSd}`, la medida completa que toma el panel Device. `null`/`undefined`
    * la deja apagada, sin inventar un cero que no se midió.
+   *
+   * `opts.line` (solo `'symbol'`): `{short}` de la línea que se mide junto
+   * con el plano (estría, lineación). Con él se dibuja la línea en planta y
+   * se leen debajo su trend/plunge (`lineTrend`, `linePlunge` de la lectura)
+   * y el rake dentro del plano.
    */
-  function update(reading) {
+  function update(reading, { line = null } = {}) {
+    if (style !== 'needle') updateLine(reading, line);
     if (style === 'needle') {
       const heading = reading && Number.isFinite(reading.heading) ? norm360(reading.heading) : null;
       if (heading === null) {

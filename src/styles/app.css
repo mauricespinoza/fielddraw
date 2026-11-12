@@ -2551,6 +2551,34 @@ input[type='radio'] {
   stroke-width: 2;
 }
 
+.pf-slope-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 2px 0 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.pf-legend-title {
+  margin-right: 2px;
+}
+
+.pf-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pf-legend-item i {
+  display: inline-block;
+  width: 14px;
+  height: 6px;
+  border-radius: 2px;
+}
+
 .pf-stats {
   display: flex;
   flex-wrap: wrap;

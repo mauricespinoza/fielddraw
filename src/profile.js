@@ -147,6 +147,127 @@ export function profileAreaPath(samples, s) {
   return d;
 }
 
+/* -------------------------------------------------------------- pendiente */
+
+/**
+ * Clases de pendiente local, en grados: límite SUPERIOR de cada clase; la
+ * última clase es «más de 40°». Son cortes fijos, y no cuantiles del perfil,
+ * a propósito: un mismo color tiene que decir la misma pendiente en dos
+ * perfiles distintos, o la paleta no se puede comparar entre trazas.
+ */
+export const SLOPE_BREAKS = [2, 5, 10, 15, 20, 25, 30, 40];
+
+/** Paleta fría → cálida, una entrada por clase (`SLOPE_BREAKS.length + 1`). */
+export const SLOPE_COLORS = [
+  '#2b50c8', '#2f86d6', '#25b0c9', '#3cbf86', '#9ccf3a',
+  '#f2c12e', '#f08a24', '#e34a20', '#b5121b',
+];
+
+/** Clase de una pendiente en grados (0 … `SLOPE_BREAKS.length`). */
+export function slopeClass(deg) {
+  let c = 0;
+  while (c < SLOPE_BREAKS.length && deg >= SLOPE_BREAKS[c]) c++;
+  return c;
+}
+
+const DEG = 180 / Math.PI;
+
+/**
+ * Pendiente local de cada tramo entre dos muestras consecutivas, en grados
+ * (siempre positiva: aquí importa cuán empinado es, no hacia dónde). Un tramo
+ * que toca un hueco del DEM, o sin avance horizontal, queda en `NaN`.
+ *
+ * Una sola pasada y un `Float32Array`: con 600 muestras son 600 restas, que es
+ * todo el costo de colorear la curva.
+ */
+export function segmentSlopes(samples) {
+  const n = Math.max(0, samples.length - 1);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = samples[i];
+    const b = samples[i + 1];
+    const dd = b.distance - a.distance;
+    out[i] = Number.isFinite(a.elevation) && Number.isFinite(b.elevation) && dd > 0
+      ? Math.atan(Math.abs(b.elevation - a.elevation) / dd) * DEG
+      : NaN;
+  }
+  return out;
+}
+
+/**
+ * Pendiente media de la ruta: el desnivel ACUMULADO (subidas más bajadas,
+ * tramo a tramo) sobre la distancia horizontal con dato. Es la media de las
+ * pendientes locales ponderada por el largo de cada tramo, en %, y su ángulo.
+ * No es la pendiente entre los extremos: un perfil que sube y vuelve a bajar
+ * a la misma cota tiene pendiente media, aunque su desnivel neto sea cero.
+ *
+ * @returns {{percent: number, degrees: number}|null}
+ */
+export function meanSlope(samples) {
+  let dz = 0;
+  let dd = 0;
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1];
+    const b = samples[i];
+    const paso = b.distance - a.distance;
+    if (!Number.isFinite(a.elevation) || !Number.isFinite(b.elevation) || !(paso > 0)) continue;
+    dz += Math.abs(b.elevation - a.elevation);
+    dd += paso;
+  }
+  if (!(dd > 0)) return null;
+  const g = dz / dd;
+  return { percent: g * 100, degrees: Math.atan(g) * DEG };
+}
+
+/** Pendiente legible: grados y porcentaje. */
+export function formatSlope(sl) {
+  if (!sl || !Number.isFinite(sl.degrees)) return '—';
+  return `${sl.degrees.toFixed(1)}° (${Math.round(sl.percent)} %)`;
+}
+
+/**
+ * La curva partida por clase de pendiente: un `d` por color.
+ *
+ * Un `<path>` por tramo serían cientos de nodos SVG que el navegador tiene que
+ * mantener y repintar; aquí son a lo sumo nueve, y cada tramo se agrega al de
+ * su clase continuando el trazo cuando el anterior era de la misma clase. Una
+ * sola pasada sobre las muestras.
+ *
+ * @returns {string[]} un camino por clase (vacío si no hay tramos de ella)
+ */
+export function profileSlopePaths(samples, s, slopes = segmentSlopes(samples)) {
+  const d = SLOPE_COLORS.map(() => '');
+  let prev = -1; // clase del tramo anterior, si quedó abierto
+  for (let i = 0; i < slopes.length; i++) {
+    const g = slopes[i];
+    if (!Number.isFinite(g)) {
+      prev = -1;
+      continue;
+    }
+    const c = slopeClass(g);
+    const b = samples[i + 1];
+    if (c !== prev) {
+      const a = samples[i];
+      d[c] += `M${s.x(a.distance).toFixed(2)} ${s.y(a.elevation).toFixed(2)}`;
+    }
+    d[c] += `L${s.x(b.distance).toFixed(2)} ${s.y(b.elevation).toFixed(2)}`;
+    prev = c;
+  }
+  return d;
+}
+
+/** Rótulos de la leyenda: «<2», «2–5», … «>40». */
+export function slopeLegend() {
+  return SLOPE_COLORS.map((color, i) => ({
+    color,
+    label: i === 0
+      ? `<${SLOPE_BREAKS[0]}`
+      : i === SLOPE_BREAKS.length
+        ? `>${SLOPE_BREAKS[i - 1]}`
+        : `${SLOPE_BREAKS[i - 1]}–${SLOPE_BREAKS[i]}`,
+  }));
+}
+
 /** Distancia legible: metros por debajo de 1 km, kilómetros por encima. */
 export function formatDistance(m) {
   if (!Number.isFinite(m)) return '—';
@@ -238,7 +359,12 @@ export function renderProfileChart(svg, result, { width, height }) {
 
   /* --- la curva --- */
   svg.appendChild(el('path', { d: profileAreaPath(result.samples, s), class: 'pf-area' }));
-  svg.appendChild(el('path', { d: profilePath(result.samples, s), class: 'pf-line' }));
+  // La línea va coloreada por la pendiente local de cada tramo (ver
+  // `profileSlopePaths`): a lo sumo un trazo por clase, no uno por tramo.
+  const slopes = segmentSlopes(result.samples);
+  profileSlopePaths(result.samples, s, slopes).forEach((d, c) => {
+    if (d) svg.appendChild(el('path', { d, class: 'pf-line', style: `stroke:${SLOPE_COLORS[c]}` }));
+  });
 
   /* --- cursor --- */
   const cursor = el('g', { class: 'pf-cursor', visibility: 'hidden' });
@@ -251,6 +377,11 @@ export function renderProfileChart(svg, result, { width, height }) {
     scales: s,
     /** Ancho del viewBox, para convertir píxeles de pantalla a coordenadas. */
     width,
+    /** Pendiente local (°) del tramo que llega a la muestra `i`, o el que sale de ella. */
+    slopeAt(i) {
+      const g = i > 0 ? slopes[i - 1] : slopes[0];
+      return Number.isFinite(g) ? g : Number.isFinite(slopes[i]) ? slopes[i] : NaN;
+    },
     setCursor(i) {
       const m = result.samples[i];
       if (!m || !Number.isFinite(m.elevation)) {
@@ -358,7 +489,6 @@ export function profileFigure(result, opts = {}) {
     theme === 'dark'
       ? { bg: '#0d1117', fg: '#e6edf3', muted: '#93a1b0', grid: '#243044' }
       : { bg: '#ffffff', fg: '#111827', muted: '#6b7280', grid: '#e5e7eb' };
-  const curva = theme === 'dark' ? '#ffb300' : '#e08700';
   const relleno = theme === 'dark' ? 'rgba(255,179,0,0.18)' : 'rgba(224,135,0,0.16)';
 
   const svg = el('svg', {
@@ -425,16 +555,19 @@ export function profileFigure(result, opts = {}) {
 
   /* --- la curva --- */
   plot.appendChild(el('path', { d: profileAreaPath(result.samples, s), fill: relleno }));
-  plot.appendChild(
-    el('path', {
-      d: profilePath(result.samples, s),
-      fill: 'none',
-      stroke: curva,
-      'stroke-width': 2.2,
-      'stroke-linejoin': 'round',
-      'stroke-linecap': 'round',
-    }),
-  );
+  profileSlopePaths(result.samples, s).forEach((d, ci) => {
+    if (!d) return;
+    plot.appendChild(
+      el('path', {
+        d,
+        fill: 'none',
+        stroke: SLOPE_COLORS[ci],
+        'stroke-width': 2.4,
+        'stroke-linejoin': 'round',
+        'stroke-linecap': 'round',
+      }),
+    );
+  });
 
   /* --- marco del área de dibujo --- */
   plot.appendChild(
@@ -474,6 +607,25 @@ export function profileFigure(result, opts = {}) {
   der.textContent = endLabel(az);
   plot.append(izq, der);
 
+  /* --- leyenda de la pendiente local, a la derecha bajo el eje --- */
+  const leyenda = slopeLegend();
+  const sw = 34;
+  const lx0 = plotRight - sw * leyenda.length;
+  const ly = plotBottom + 28;
+  const lt = el('text', {
+    x: lx0 - 8, y: ly + 8, fill: c.muted, 'font-size': 11, 'text-anchor': 'end',
+  });
+  lt.textContent = 'Local slope (°)';
+  plot.appendChild(lt);
+  leyenda.forEach((k, i) => {
+    plot.appendChild(el('rect', { x: lx0 + i * sw, y: ly, width: sw - 2, height: 6, fill: k.color }));
+    const t = el('text', {
+      x: lx0 + i * sw + (sw - 2) / 2, y: ly + 16, fill: c.muted, 'font-size': 9.5, 'text-anchor': 'middle',
+    });
+    t.textContent = k.label;
+    plot.appendChild(t);
+  });
+
   svg.appendChild(plot);
 
   /* --- título --- */
@@ -493,6 +645,7 @@ export function profileFigure(result, opts = {}) {
     `Relief ${formatElevation(stats.max - stats.min)}`,
     `Ascent ${formatElevation(stats.gain)}`,
     `Descent ${formatElevation(stats.loss)}`,
+    `Mean slope ${formatSlope(meanSlope(result.samples))}`,
   ];
   if (Number.isFinite(ve)) {
     resumen.push(`Vertical exaggeration x${ve < 10 ? ve.toFixed(1) : Math.round(ve)}`);
