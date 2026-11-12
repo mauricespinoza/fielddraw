@@ -61,6 +61,7 @@ export const TRACE_QUALITY_BY_CERTAINTY = {
 export const PLANAR_BY_STRUCTURE_TYPE = {
   bedding: { feature_type: 'bedding' },
   foliation: { feature_type: 'foliation' },
+  'magmatic-foliation': { feature_type: 'foliation', foliation_type: 'magmatic' },
   joint: { feature_type: 'fracture', fracture_type: 'joint' },
   'fault-plane': { feature_type: 'fault' },
 };
@@ -232,7 +233,11 @@ export function planarOrientation(props, id) {
             rake_calculated: Number.isFinite(props.rake)
               ? props.lineInput === 'rake' ? 'no' : 'yes'
               : undefined,
-            notes: props.type === 'fault-plane' ? 'Striae on the fault plane' : 'Lineation L1 on S1',
+            notes: props.type === 'fault-plane'
+              ? 'Striae on the fault plane'
+              : props.type === 'magmatic-foliation'
+                ? 'Magmatic lineation on the magmatic foliation'
+                : 'Lineation L1 on S1',
           }),
         ]
         : undefined,

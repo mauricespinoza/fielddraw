@@ -102,6 +102,7 @@ export function flattenPointFeatures(features, spotTags = {}) {
         ...base,
         'Planar Orientation Planar Feature Type': planar.feature_type,
         'Planar Orientation Fault Or Sz Type': planar.fault_or_sz_type,
+        'Planar Orientation Foliation Type': planar.foliation_type,
         'Planar Orientation Other Feature': planar.other_feature,
         'Planar Orientation Strike': planar.strike,
         'Planar Orientation Dip': planar.dip,
@@ -145,6 +146,7 @@ export function processType(row) {
   const other = row['Planar Orientation Other Feature'] || '';
 
   if (planar === 'fault' && !isMissing(fault) && fault !== 'other') return `${planar} ${fault}`;
+  if (planar === 'foliation' && row['Planar Orientation Foliation Type'] === 'magmatic') return 'magmatic foliation';
   if (planar === 'other' && !isMissing(other)) return other;
   if (!isMissing(planar)) return planar;
   return '';

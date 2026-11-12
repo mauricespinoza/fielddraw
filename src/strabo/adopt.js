@@ -95,6 +95,7 @@ export const STRABO_LINE_RULES = [
 /** Superficie medida de StraboSpot -> tipo de medida de FieldDraw. */
 export const STRUCTURE_BY_STRABO_TYPE = [
   [['bedding'], 'bedding'],
+  [['magmatic'], 'magmatic-foliation'],
   [['foliation'], 'foliation'],
   [['cleavage'], 'foliation'],
   [['fault'], 'fault-plane'],

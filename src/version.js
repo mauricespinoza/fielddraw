@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.60.0';
+export const APP_VERSION = '0.61.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.61.0',
+    highlights: [
+      'Topographic profile: the line is now coloured by the local slope of each stretch between samples, from cold (blue, gentle) to warm (red, steep), with fixed classes (<2° … >40°) and a legend under the chart. The summary shows the mean slope of the route in degrees and %, and dragging over the chart also reads the slope at that point. The PNG/SVG figure carries the same colours, legend and mean slope.',
+      'Plane + line with Device: the live compass now draws the line (striae or lineation) in plan view and reads its trend/plunge and its rake within the plane right under the strike/dip, warning when the line falls off the plane.',
+      'New structure type: Magmatic foliation (Sm), drawn with an open triangle tick so it is not confused with tectonic foliation S₁. It can carry its magmatic lineation as plane + line, and goes to StraboSpot as foliation with foliation_type magmatic (and comes back as such).',
+    ],
+  },
   {
     version: '0.60.0',
     highlights: [
