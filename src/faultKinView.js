@@ -111,9 +111,14 @@ export function headerLines(sol, { dc = true } = {}) {
  * @param {SVGElement} svg
  * @param {Array} faults todas las fallas (encendidas o no), de `faultSlipData`
  * @param {object} sol de `faultPlaneSolution`
- * @param {{layers?: object, dc?: boolean}} opts
+ * @param {{layers?: object, dc?: boolean, lassoed?: Set<string>}} opts
+ *   `lassoed`: ids de las fallas que el lazo tiene agarradas; sus ejes P/T y
+ *   su plano se marcan y los del resto se atenúan.
+ * @returns {{cx, cy, radius, placed: Array<{id, axis: 'P'|'T', x, y, drawn: boolean}>}}
+ *   `placed` son los ejes P y T de cada falla encendida en coordenadas del
+ *   `viewBox`, para el hit-test del lazo (`drawn`: si su capa está a la vista).
  */
-export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers(), dc = true } = {}) {
+export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers(), dc = true, lassoed = null } = {}) {
   const width = 520;
   const height = 540;
   const radius = 205;
@@ -190,6 +195,8 @@ export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers()
 
   const onSet = new Set(sol.on.map((f) => f.id));
   const visibles = faults.filter((f) => onSet.has(f.id));
+  const hayLazo = !!lassoed && lassoed.size > 0;
+  const enLazo = (f) => hayLazo && lassoed.has(f.id);
 
   /* --- planos de falla --- */
   if (layers.planes) {
@@ -199,9 +206,9 @@ export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers()
         g.appendChild(
           el('polyline', {
             points: seg.map(px).join(' '),
-            stroke: FK_COLORS.plane,
-            'stroke-width': 1.1,
-            opacity: 0.8,
+            stroke: enLazo(f) ? TINTA : FK_COLORS.plane,
+            'stroke-width': enLazo(f) ? 1.8 : 1.1,
+            opacity: hayLazo && !enLazo(f) ? 0.35 : 0.8,
             'data-fid': f.id,
           }),
         );
@@ -291,23 +298,34 @@ export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers()
   }
 
   /* --- ejes P (círculo) y T (cuadrado) de cada falla --- */
+  const placed = [];
+  for (const f of visibles) {
+    for (const [axis, v, drawn] of [
+      ['P', f.P, !!layers.pAxes],
+      ['T', f.T, !!layers.tAxes],
+    ]) {
+      if (!v) continue;
+      const q = proj(v);
+      placed.push({ id: f.id, axis, x: cx + q.x * radius, y: cy + q.y * radius, drawn });
+    }
+  }
   if (layers.pAxes || layers.tAxes) {
     const g = el('g', { class: 'fk-pt' });
-    const r = 4.6;
-    for (const f of visibles) {
-      if (layers.pAxes) {
-        const q = proj(f.P);
+    // Lo lassado va al final, encima de lo atenuado.
+    const orden = hayLazo ? [...placed].sort((a, b) => lassoed.has(a.id) - lassoed.has(b.id)) : placed;
+    for (const d of orden) {
+      if (!d.drawn) continue;
+      const marcado = hayLazo && lassoed.has(d.id);
+      const r = marcado ? 5.6 : 4.6;
+      const estilo = {
+        opacity: hayLazo && !marcado ? 0.25 : marcado ? 1 : 0.8,
+        'data-fid': d.id,
+        ...(marcado ? { stroke: '#000', 'stroke-width': 1.6, class: 'fk-lassoed' } : {}),
+      };
+      if (d.axis === 'P') g.appendChild(el('circle', { cx: d.x, cy: d.y, r, fill: FK_COLORS.p, ...estilo }));
+      else {
         g.appendChild(
-          el('circle', { cx: cx + q.x * radius, cy: cy + q.y * radius, r, fill: FK_COLORS.p, opacity: 0.8, 'data-fid': f.id }),
-        );
-      }
-      if (layers.tAxes) {
-        const q = proj(f.T);
-        g.appendChild(
-          el('rect', {
-            x: cx + q.x * radius - r, y: cy + q.y * radius - r, width: 2 * r, height: 2 * r,
-            fill: FK_COLORS.t, opacity: 0.8, 'data-fid': f.id,
-          }),
+          el('rect', { x: d.x - r, y: d.y - r, width: 2 * r, height: 2 * r, fill: FK_COLORS.t, ...estilo }),
         );
       }
     }
@@ -377,7 +395,7 @@ export function renderFaultSolution(svg, faults, sol, { layers = defaultLayers()
     svg.appendChild(g);
   }
 
-  return { cx, cy, radius };
+  return { cx, cy, radius, placed };
 }
 
 /** Un eje como en la libreta, `12→245` (plunge→trend), igual que las estrías. */

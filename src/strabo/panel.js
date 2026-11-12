@@ -178,9 +178,12 @@ export function toggleStraboLock(key) {
     onMessage(`“${d.datasetName}” locked: it can be viewed, not edited.`, 'info');
     return;
   }
-  const abierto = store.getState().straboDatasets.find((x) => !x.locked);
   const r = store.setStraboLocked(key, false);
-  const cerrado = abierto ? ` “${abierto.datasetName}” was locked.` : '';
+  // Los demás abiertos siguen abiertos: se puede editar más de uno a la vez.
+  const otros = store.getState().straboDatasets.filter((x) => !x.locked && x.key !== key);
+  const cerrado = otros.length
+    ? ` Also open for editing: ${otros.map((x) => `“${x.datasetName}”`).join(', ')}.`
+    : '';
   if (!r) {
     onMessage(`“${d.datasetName}” is open for editing.${cerrado}`, 'info');
     return;

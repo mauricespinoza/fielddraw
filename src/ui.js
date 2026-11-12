@@ -1520,7 +1520,7 @@ function layerRow(layer) {
       eye.classList.toggle('active', l.visible);
       lock.textContent = locked ? '🔒' : '🔓';
       lock.title = locked
-        ? 'Locked: view only. Tap to edit this dataset (locks any other)'
+        ? 'Locked: view only. Tap to edit this dataset (others stay as they are — several can be open at once)'
         : 'Open for editing. Tap to lock it again';
       lock.setAttribute('aria-label', `${locked ? 'Unlock' : 'Lock'} ${l.label}`);
       lock.classList.toggle('active', !locked);

@@ -12,6 +12,7 @@ import { FAULT_SENSE_BY_ID } from './symbology.js';
 import { formatStrikeDip, formatTrendPlunge } from './structure.js';
 import { MICHAEL_MIN_FAULTS, REGIME_STYLE, faultPlaneSolution, faultSlipData } from './faultKin.js';
 import { FK_COLORS, FK_LAYERS, defaultLayers, renderFaultSolution, tp } from './faultKinView.js';
+import { lassoHits, wireSvgLasso } from './svgLasso.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +27,71 @@ const disabled = new Set();
 let layers = defaultLayers();
 let dc = true;
 let wired = false;
+
+/**
+ * Fallas cuyos ejes P o T agarró el lazo, y qué ejes fueron. Sirve para
+ * separar poblaciones: un cúmulo de P en un cuadrante y otro en el opuesto
+ * suelen ser dos eventos, y la solución conjunta no describe ninguno.
+ */
+let lassoed = new Set();
+/** Ejes agarrados, como `id:P` / `id:T`, para contar sin repetir al sumar. */
+let lassoAxes = new Set();
+/** Ejes dibujados en la última pasada, para el hit-test. */
+let lastPlaced = [];
+let lassoHooks = { message: () => {}, onChange: () => {} };
+
+/** Cuántas fallas tiene agarradas el lazo de Faults. */
+export function faultLassoSize() {
+  return lassoed.size;
+}
+
+/** Suelta el lazo de Faults. */
+export function clearFaultLasso({ silent = false } = {}) {
+  if (lassoed.size === 0) return;
+  lassoed = new Set();
+  lassoAxes = new Set();
+  if (!silent) renderFaultTab();
+  lassoHooks.onChange();
+}
+
+/**
+ * Engancha el lazo sobre la red de la solución. Agarra los ejes P y T que
+ * estén a la vista (si las dos capas están apagadas, los dos igual: el lazo
+ * no puede quedarse sin asa) y, con ellos, sus fallas.
+ */
+export function wireFaultLasso({ mode, message, onChange } = {}) {
+  lassoHooks = { message: message || lassoHooks.message, onChange: onChange || lassoHooks.onChange };
+  const svg = $('fault-lasso');
+  if (!svg) return;
+  wireSvgLasso(svg, {
+    mode: mode || (() => 'lasso'),
+    onLasso: (ring, { additive }) => {
+      const dibujados = lastPlaced.filter((d) => d.drawn);
+      const candidatos = dibujados.length ? dibujados : lastPlaced;
+      const hits = lassoHits(candidatos, ring);
+      const ids = new Set(additive ? lassoed : []);
+      const axes = new Set(additive ? lassoAxes : []);
+      for (const d of hits) {
+        ids.add(d.id);
+        axes.add(`${d.id}:${d.axis}`);
+      }
+      lassoed = ids;
+      lassoAxes = axes;
+      renderFaultTab();
+      lassoHooks.onChange();
+      if (hits.length === 0 && !additive) lassoHooks.message('The lasso caught no P or T axes.', 'info');
+    },
+    onTap: () => clearFaultLasso(),
+  });
+  // Tocar el papel alrededor de la red también suelta el lazo.
+  const wrap = svg.closest('.sv-chart-wrap');
+  if (wrap) {
+    wrap.addEventListener('pointerdown', (e) => {
+      if (e.target === svg || svg.contains(e.target)) return;
+      clearFaultLasso();
+    });
+  }
+}
 
 function loadPrefs() {
   try {
@@ -116,6 +182,38 @@ function wire() {
     for (const f of lastFaults) disabled.add(f.id);
     renderFaultTab();
   });
+  $('fk-lasso-only').addEventListener('click', () => {
+    let n = 0;
+    for (const f of lastFaults) {
+      if (lassoed.has(f.id)) disabled.delete(f.id);
+      else if (!disabled.has(f.id)) {
+        disabled.add(f.id);
+        n++;
+      }
+    }
+    lassoHooks.message(`Solution from the ${lassoed.size} lassoed fault(s); ${n} other(s) switched off.`, 'info');
+    renderFaultTab();
+  });
+  $('fk-lasso-exclude').addEventListener('click', () => {
+    const n = lassoed.size;
+    for (const id of lassoed) disabled.add(id);
+    lassoed = new Set();
+    lassoAxes = new Set();
+    lassoHooks.message(`${n} lassoed fault(s) switched off.`, 'info');
+    renderFaultTab();
+    lassoHooks.onChange();
+  });
+  $('fk-lasso-select').addEventListener('click', () => {
+    const ids = [...lassoed];
+    // La red de Faults se dibuja desde la selección del mapa: al cambiarla
+    // quedan solo estas fallas, así que el lazo ya no tiene nada que marcar.
+    lassoed = new Set();
+    lassoAxes = new Set();
+    store.setSelection(ids);
+    lassoHooks.message(`${ids.length} fault(s) selected on the map.`, 'info');
+    lassoHooks.onChange();
+  });
+
   $('fk-invert').addEventListener('click', () => {
     for (const f of lastFaults) {
       if (disabled.has(f.id)) disabled.delete(f.id);
@@ -141,7 +239,20 @@ export function renderFaultTab() {
   const data = faultSlipData(st.features, st.selection);
   lastFaults = data.faults;
   const sol = faultPlaneSolution(data.faults, disabled);
-  renderFaultSolution($('fault-chart'), data.faults, sol, { layers, dc });
+  // Lo lassado que ya no está encendido (o ya no existe) deja de contar: no
+  // se ve en la red, y «Only these» no puede traer de vuelta algo invisible.
+  if (lassoed.size > 0) {
+    const encendidas = new Set(sol.on.map((f) => f.id));
+    const quedan = [...lassoed].filter((id) => encendidas.has(id));
+    if (quedan.length !== lassoed.size) {
+      lassoed = new Set(quedan);
+      if (lassoed.size === 0) lassoAxes = new Set();
+      lassoHooks.onChange();
+    }
+  }
+  const drawn = renderFaultSolution($('fault-chart'), data.faults, sol, { layers, dc, lassoed });
+  lastPlaced = drawn.placed || [];
+  renderLassoBlock(data.faults.length);
 
   /* --- de dónde salen los datos --- */
   const partes = [
@@ -201,7 +312,7 @@ export function renderFaultTab() {
   data.faults.forEach((f, i) => {
     const row = document.createElement('label');
     const on = f.valid && !disabled.has(f.id);
-    row.className = `sv-row sv-filter fk-row${on ? '' : ' off'}`;
+    row.className = `sv-row sv-filter fk-row${on ? '' : ' off'}${lassoed.has(f.id) ? ' lassoed' : ''}`;
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = on;
@@ -266,4 +377,28 @@ export function renderFaultTab() {
     const rs = REGIME_STYLE[sol.regime] || REGIME_STYLE.oblique;
     item(`<rect x="1" y="1" width="14" height="14" fill="${rs.color}" opacity="0.5" stroke="#1b2430"/>`, `${rs.label} quadrants`);
   }
+}
+
+/** El bloque «lassoed» del lateral: cuántas fallas, qué ejes, y qué hacer. */
+function renderLassoBlock(total) {
+  const box = $('fk-lasso');
+  if (!box) return;
+  const n = lassoed.size;
+  box.classList.toggle('hidden', n === 0);
+  if (n === 0) return;
+  const ejes = [];
+  let nP = 0;
+  let nT = 0;
+  for (const k of lassoAxes) {
+    if (!lassoed.has(k.slice(0, k.lastIndexOf(':')))) continue;
+    if (k.endsWith(':P')) nP++;
+    else nT++;
+  }
+  if (nP) ejes.push(`${nP} P`);
+  if (nT) ejes.push(`${nT} T`);
+  $('fk-lasso-note').textContent =
+    `Lasso: ${n} fault(s) of ${total}${ejes.length ? ` — ${ejes.join(' and ')} axes caught` : ''}. ` +
+    'Keep only this population, leave it out, or select it on the map.';
+  const encendidas = lastFaults.filter((f) => f.valid && !disabled.has(f.id)).length;
+  $('fk-lasso-only').disabled = encendidas === n;
 }

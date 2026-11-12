@@ -88,7 +88,7 @@ console.log('== varios datasets entran juntos y cerrados ==');
   ok('con el nombre nuevo', ds(r1.key).datasetName === 'Ana v2');
 }
 
-console.log('== abrir el candado adopta, y solo uno a la vez ==');
+console.log('== abrir el candado adopta, y pueden ser varios a la vez ==');
 const [kA, kB] = store.getState().straboDatasets.map((d) => d.key);
 {
   const r = store.setStraboLocked(kA, false);
@@ -102,11 +102,15 @@ const [kA, kB] = store.getState().straboDatasets.map((d) => d.key);
   ok('la falla inversa entró como cabalgamiento', suyos.some((f) => f.properties.type === 'thrust-fault'));
 
   store.setStraboLocked(kB, false);
-  ok('abrir otro cierra el primero', ds(kA).locked && !ds(kB).locked);
+  ok('abrir otro deja el primero abierto', !ds(kA).locked && !ds(kB).locked);
   ok('el segundo también pasó al dibujo', deDataset(kB).length === 2);
+  const editables2 = new Set(store.unlockedFeatures().map((f) => f.properties.id));
+  ok('los dos se editan a la vez', [...deDataset(kA), ...deDataset(kB)].every((f) => editables2.has(f.properties.id)));
 
+  store.setStraboLocked(kA, true);
+  ok('cerrar uno no toca el otro', ds(kA).locked && !ds(kB).locked);
   store.setStraboLocked(kB, true);
-  ok('se puede cerrar sin abrir otro', store.getState().straboDatasets.every((d) => d.locked));
+  ok('se pueden cerrar todos', store.getState().straboDatasets.every((d) => d.locked));
   ok('cerrar no devuelve nada a la capa de consulta', deDataset(kB).length === 2);
 
   store.setStraboLocked(kA, false);
@@ -197,7 +201,7 @@ console.log('== un dataset sin registro se rehace cerrado ==');
   ok('con su nombre', st.straboDatasets.some((d) => d.datasetName === 'Ana v2'));
 }
 
-console.log('== nunca dos abiertos, aunque el archivo lo diga ==');
+console.log('== varios abiertos se respetan al leer el archivo ==');
 {
   store.loadProject({
     features: [],
@@ -207,7 +211,7 @@ console.log('== nunca dos abiertos, aunque el archivo lo diga ==');
     ],
   });
   const abiertos = store.getState().straboDatasets.filter((d) => !d.locked);
-  ok('solo uno queda abierto', abiertos.length === 1 && abiertos[0].key === '1');
+  ok('los dos quedan abiertos', abiertos.length === 2);
 }
 
 console.log('== deshacer la apertura lo devuelve cerrado y a su capa ==');

@@ -127,6 +127,7 @@
     <link rel="modulepreload" href="./src/stereogram.js" />
     <link rel="modulepreload" href="./src/stereogramPanel.js" />
     <link rel="modulepreload" href="./src/stereogramView.js" />
+    <link rel="modulepreload" href="./src/svgLasso.js" />
     <link rel="modulepreload" href="./src/faultKin.js" />
     <link rel="modulepreload" href="./src/faultKinPanel.js" />
     <link rel="modulepreload" href="./src/faultKinView.js" />
@@ -1703,8 +1704,16 @@
              mano. `stereogramPanel.js` llena `stereo-legend` y la oculta con
              la pestaña. -->
         <div class="sv-filterbar" id="stereo-filterbar">
-          <span class="sv-filterbar-title">Types <span class="sv-count" id="stereo-legend-count"></span></span>
+          <span class="sv-filterbar-title" id="stereo-legend-title">Types <span class="sv-count" id="stereo-legend-count"></span></span>
           <div class="sv-chips" id="stereo-legend" role="group" aria-label="Filter by structure type"></div>
+          <!-- Forma del lazo, la misma para Plot y Faults: a mano alzada o
+               rectángulo, como el Elegir del mapa. -->
+          <div class="sv-seg" id="stereo-lasso-mode" role="group" aria-label="Lasso shape">
+            <button class="pill active" type="button" data-mode="lasso" aria-pressed="true"
+              title="Freehand lasso: drag around the poles or P/T axes to pick them">✎ Lasso</button>
+            <button class="pill" type="button" data-mode="rect" aria-pressed="false"
+              title="Rectangle lasso: drag a box around the poles or P/T axes">▭ Box</button>
+          </div>
           <button class="pill" id="btn-stereo-clear-lasso" disabled
             title="Clear the lasso (or tap outside the net)">Clear lasso</button>
         </div>
@@ -1757,7 +1766,7 @@
               Create average plane
             </button>
             <p class="hint footnote">
-              Drag on the net to lasso a subset of poles — with something lassoed, Mean vector and
+              Drag on the net to lasso a subset of poles (✎ freehand or ▭ box above; hold Shift to add) — with something lassoed, Mean vector and
               Beta axis are computed from just those poles. Tap outside the net to clear the lasso.
               Untick a type above to hide it from the net, the mean vector, the beta axis and the average.
             </p>
@@ -1781,12 +1790,27 @@
           <div class="sv-chart-wrap">
             <div class="stereo-chart-stack fk-chart-stack">
               <svg id="fault-chart" class="sv-chart" aria-label="Fault-plane solution on a Schmidt net"></svg>
+              <svg class="stereo-lasso" id="fault-lasso" viewBox="0 0 520 540" aria-hidden="true">
+                <polygon points=""></polygon>
+              </svg>
             </div>
           </div>
           <aside class="sv-side fk-side">
             <p class="hint footnote" id="fk-source-note"></p>
             <dl class="fk-summary" id="fk-summary"></dl>
             <div class="fk-legend" id="fk-legend"></div>
+            <!-- Lo que el lazo agarró de los ejes P y T. Lo llena faultKinPanel.js. -->
+            <div class="fk-lasso hidden" id="fk-lasso">
+              <p class="hint footnote" id="fk-lasso-note"></p>
+              <div class="fk-lasso-actions">
+                <button class="pill" id="fk-lasso-only" type="button"
+                  title="Switch off every fault that is not lassoed: the solution is computed from just these">Only these</button>
+                <button class="pill" id="fk-lasso-exclude" type="button"
+                  title="Switch off the lassoed faults and keep the rest">Leave these out</button>
+                <button class="pill" id="fk-lasso-select" type="button"
+                  title="Select the lassoed faults on the map">Select on map</button>
+              </div>
+            </div>
             <h3>Faults <span class="sv-count" id="fk-count"></span>
               <button class="sv-mini" id="fk-all-on" type="button">All on</button>
               <button class="sv-mini fk-mini" id="fk-all-off" type="button">All off</button>
@@ -1808,6 +1832,8 @@
               Only fault planes with striae and a sense of slip (normal, inverse, left- or right-lateral) enter.
               Untick a fault to leave it out of the Bingham axes, the Michael inversion and the plot — the regime,
               R and β update at once. Point at a row to highlight that fault on the net.
+              Drag on the net to lasso per-fault P (circles) and T (squares) axes — the faults they belong
+              to are picked, to keep only that population or leave it out. Tap outside the axes to clear the lasso.
               β is the angle between the striae and the shear the stress tensor predicts.
             </p>
           </aside>

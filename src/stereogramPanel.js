@@ -31,7 +31,8 @@ import {
 import { downloadBlob } from './persistence.js';
 import { averageMeasurements } from './average.js';
 import { formatLat, formatLon, formatUTM, toUTM } from './utm.js';
-import { renderFaultTab } from './faultKinPanel.js';
+import { clearFaultLasso, faultLassoSize, renderFaultTab, wireFaultLasso } from './faultKinPanel.js';
+import { lassoHits, wireSvgLasso } from './svgLasso.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -42,6 +43,9 @@ let activeTab = 'plot';
 let lastPlot = null;
 /** Ids resaltados por el lazo, o vacío si no hay ninguno. */
 let highlighted = new Set();
+/** Forma del lazo, común a Plot y Faults: 'lasso' (a mano alzada) o 'rect'. */
+let lassoMode = 'lasso';
+const LASSO_MODE_KEY = 'fielddraw.stereoLassoMode';
 /** Qué familias se dibujan. Las dos encendidas de salida: ver `renderStereogram`. */
 let showPoles = true;
 let showPlanes = true;
@@ -110,7 +114,20 @@ export function initStereogramPanel({ message } = {}) {
     store.setSelection([...highlighted]);
     onMessage(`${highlighted.size} measurement(s) selected on the map.`, 'info');
   });
-  $('btn-stereo-clear-lasso').addEventListener('click', clearHighlight);
+  $('btn-stereo-clear-lasso').addEventListener('click', () => {
+    if (activeTab === 'faults') clearFaultLasso();
+    else clearHighlight();
+  });
+  try {
+    const m = globalThis.localStorage && globalThis.localStorage.getItem(LASSO_MODE_KEY);
+    if (m === 'rect' || m === 'lasso') lassoMode = m;
+  } catch {
+    /* sin almacenamiento: a mano alzada */
+  }
+  for (const b of $('stereo-lasso-mode').querySelectorAll('button[data-mode]')) {
+    b.addEventListener('click', () => setLassoMode(b.dataset.mode));
+  }
+  setLassoMode(lassoMode);
   $('btn-stereo-average').addEventListener('click', createAverage);
 
   $('stereo-show-poles').addEventListener('change', (e) => {
@@ -135,6 +152,11 @@ export function initStereogramPanel({ message } = {}) {
   });
 
   wireLasso();
+  wireFaultLasso({
+    mode: () => lassoMode,
+    message: (...a) => onMessage(...a),
+    onChange: syncClearButton,
+  });
 
   store.subscribe(() => {
     if (!panelOpen) return;
@@ -159,6 +181,7 @@ export function closeStereogram() {
   stopCompass();
   stopPosition();
   clearHighlight();
+  clearFaultLasso({ silent: true });
 }
 
 /** Para el Escape en cascada de `ui.js`: la red tapa la pantalla entera. */
@@ -172,7 +195,11 @@ function showTab(tab) {
   $('stereo-tab-compass').classList.toggle('active', tab === 'compass');
   $('stereo-panel-plot').classList.toggle('hidden', tab !== 'plot');
   $('stereo-panel-compass').classList.toggle('hidden', tab !== 'compass');
-  $('stereo-filterbar').classList.toggle('hidden', tab !== 'plot');
+  // La barra lleva la forma del lazo, que también sirve en Faults; los
+  // tipos (filtro de la red) solo en Plot.
+  $('stereo-filterbar').classList.toggle('hidden', tab !== 'plot' && tab !== 'faults');
+  $('stereo-legend-title').classList.toggle('hidden', tab !== 'plot');
+  $('stereo-legend').classList.toggle('hidden', tab !== 'plot');
   $('stereo-tab-position').classList.toggle('active', tab === 'position');
   $('stereo-panel-position').classList.toggle('hidden', tab !== 'position');
   $('stereo-tab-faults').classList.toggle('active', tab === 'faults');
@@ -183,6 +210,28 @@ function showTab(tab) {
   else stopPosition();
   if (tab === 'plot') renderPlot();
   if (tab === 'faults') drawFaults();
+  syncClearButton();
+}
+
+/** Forma del lazo: los dos botones de la barra, y recordarla. */
+function setLassoMode(mode) {
+  lassoMode = mode === 'rect' ? 'rect' : 'lasso';
+  for (const b of $('stereo-lasso-mode').querySelectorAll('button[data-mode]')) {
+    const on = b.dataset.mode === lassoMode;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  }
+  try {
+    globalThis.localStorage && globalThis.localStorage.setItem(LASSO_MODE_KEY, lassoMode);
+  } catch {
+    /* modo privado: no se recuerda, no es grave */
+  }
+}
+
+/** «Clear lasso» vale para el lazo de la pestaña abierta. */
+function syncClearButton() {
+  const n = activeTab === 'faults' ? faultLassoSize() : highlighted.size;
+  $('btn-stereo-clear-lasso').disabled = n === 0;
 }
 
 /**
@@ -347,7 +396,7 @@ function renderPlot() {
 
   $('btn-stereo-average').disabled = (usandoLazo ? statSource.length : data.points.length) < 2;
   $('btn-stereo-select-map').disabled = highlighted.size === 0;
-  $('btn-stereo-clear-lasso').disabled = highlighted.size === 0;
+  syncClearButton();
 }
 
 /**
@@ -406,63 +455,21 @@ function clearHighlight() {
 
 /* ---------- lazo sobre la red ---------- */
 
-/** Convierte un punto del cliente a coordenadas del `viewBox` del SVG. */
-function toSvgPoint(svg, clientX, clientY) {
-  const rect = svg.getBoundingClientRect();
-  const vb = svg.viewBox.baseVal;
-  return [
-    ((clientX - rect.left) / rect.width) * vb.width + vb.x,
-    ((clientY - rect.top) / rect.height) * vb.height + vb.y,
-  ];
-}
-
-/** Punto en polígono, rayo hacia +x — el de siempre, sin dependencias. */
-function pointInPolygon(pt, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    const cruza = yi > pt[1] !== yj > pt[1] && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi;
-    if (cruza) inside = !inside;
-  }
-  return inside;
-}
-
 function wireLasso() {
   const svg = $('stereo-lasso');
-  const shape = svg.querySelector('polygon');
-  let path = null;
-
-  svg.addEventListener('pointerdown', (e) => {
-    if (!lastPlot) return;
-    svg.setPointerCapture(e.pointerId);
-    path = [toSvgPoint(svg, e.clientX, e.clientY)];
-    shape.setAttribute('points', '');
-  });
-
-  svg.addEventListener('pointermove', (e) => {
-    if (!path) return;
-    const p = toSvgPoint(svg, e.clientX, e.clientY);
-    const last = path[path.length - 1];
-    if (Math.hypot(p[0] - last[0], p[1] - last[1]) < 3) return; // ralo, como el lazo del mapa
-    path.push(p);
-    shape.setAttribute('points', path.map((q) => `${q[0]},${q[1]}`).join(' '));
-  });
-
-  const finish = () => {
-    if (!path) return;
-    if (path.length >= 3 && lastPlot) {
-      highlighted = new Set(lastPlot.placed.filter((d) => pointInPolygon([d.x, d.y], path)).map((d) => d.id));
+  wireSvgLasso(svg, {
+    mode: () => lassoMode,
+    enabled: () => !!lastPlot,
+    onLasso: (ring, { additive }) => {
+      if (!lastPlot) return;
+      const ids = lassoHits(lastPlot.placed, ring).map((d) => d.id);
+      highlighted = additive ? new Set([...highlighted, ...ids]) : new Set(ids);
       renderPlot();
-    } else {
-      // Un toque sin arrastre, sobre la red pero fuera de todo polo: suelta el lazo.
-      clearHighlight();
-    }
-    path = null;
-    shape.setAttribute('points', '');
-  };
-  svg.addEventListener('pointerup', finish);
-  svg.addEventListener('pointercancel', finish);
+      if (ids.length === 0 && !additive) onMessage('The lasso caught no poles.', 'info');
+    },
+    // Un toque sin arrastre, sobre la red pero fuera de todo polo: suelta el lazo.
+    onTap: clearHighlight,
+  });
 
   // Tocar el margen que rodea la red (el papel del marco, fuera del lienzo del
   // lazo) también lo suelta, igual que tocar afuera en el mapa deselecciona.

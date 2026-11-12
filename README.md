@@ -1731,7 +1731,10 @@ sobre blanco. El SVG y el PNG salen del mismo dibujo que está en pantalla, así
 que ninguna de las tres versiones puede desalinearse de las otras.
 
 Un lazo propio sobre la red marca un cúmulo de polos y lo devuelve a la
-selección del mapa. La pestaña **Compass** enseña la brújula en vivo del
+selección del mapa. Tiene las dos formas del Elegir del mapa —**✎ a mano
+alzada** o **▭ rectángulo**, elegidas en la barra sobre la red— y con Mayúsculas
+suma a lo ya lassado. El mismo lazo sirve en la pestaña **Faults** sobre los
+**ejes P y T** de cada falla (ver más abajo). La pestaña **Compass** enseña la brújula en vivo del
 teléfono, de referencia, sin anotar nada: en tonos claros —que es lo único que
 se lee al sol—, dibujada como una AGUJA de verdad —un rombo partido en dos
 mitades de color, la punta apuntando a la dirección de manteo, que es la única
@@ -1772,6 +1775,17 @@ dibujo, y el régimen, R y β se rehacen al instante — así se ve cuánto pesa
 una sola medida. Las casillas siguen al id de la medida (sobreviven a cambiar
 la selección) mientras la app está abierta. Apuntar una fila resalta esa falla
 en la red.
+
+**Lazo sobre los ejes P y T.** Arrastrar sobre la red (✎ a mano alzada o ▭
+rectángulo, la misma barra que Plot; Mayúsculas suma) agarra los ejes P
+(círculos) y T (cuadrados) que estén a la vista —si las dos capas están
+apagadas, los dos igual— y, con ellos, sus fallas: quedan marcadas en la red y
+en la lista, y el resto se atenúa. Es la manera directa de **separar
+poblaciones**: un cúmulo de P en un cuadrante y otro en el opuesto suelen ser
+dos eventos, y la solución conjunta no describe ninguno. Con algo lassado:
+**Only these** apaga las demás fallas (la solución sale solo de esa población),
+**Leave these out** las apaga a ellas, y **Select on map** las deja como
+selección del mapa. Tocar la red fuera de los ejes, o **Clear lasso**, lo suelta.
 
 Capas, como el panel «Stereogram layers» del plugin y con sus mismos valores de
 fábrica: planos de falla, polos, estrías con la flecha del colgante, ejes P y T
@@ -2883,9 +2897,9 @@ entra siempre con el **candado cerrado** 🔒.
 - **Cerrado**: se ve y se toca para leer sus atributos —con el nombre del
   dataset arriba—, pero no entra en la selección, así que no se mueve, no se
   borra, no se corta y la topología no toca sus vértices.
-- **Abierto** 🔓: es el dataset que se edita. **Solo uno a la vez**: abrir otro
-  cierra el anterior, para que nunca haya dos trabajos ajenos abiertos y no se
-  sepa en cuál se está metiendo la mano.
+- **Abierto** 🔓: es un dataset que se edita. **Pueden ser varios a la vez**:
+  abrir otro no cierra el anterior. Cada elemento sigue marcado con su dataset,
+  así que el ⬆ de cada fila sube solo lo suyo y cerrar uno congela solo ese.
 - **Ojo** 👁: enciende y apaga el dataset entero, también lo que ya pasó al
   dibujo.
 

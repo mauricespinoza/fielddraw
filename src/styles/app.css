@@ -3529,6 +3529,67 @@ input[type='radio'] {
   opacity: 0.5;
 }
 
+/* Falla agarrada por el lazo de ejes P/T: el mismo azul de tinta del lazo. */
+.fk-row.lassoed {
+  box-shadow: inset 3px 0 0 #0b5cad;
+  background: rgba(11, 92, 173, 0.14);
+}
+
+.fk-lasso {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #0b5cad;
+  border-radius: 10px;
+  background: rgba(11, 92, 173, 0.1);
+}
+
+.fk-lasso.hidden {
+  display: none;
+}
+
+.fk-lasso .hint {
+  margin: 0;
+}
+
+.fk-lasso-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Forma del lazo del estereograma: dos píldoras pegadas. */
+.sv-seg {
+  display: inline-flex;
+  gap: 0;
+  flex: none;
+  margin-left: auto;
+}
+
+.sv-seg .pill {
+  border-radius: 0;
+}
+
+.sv-seg .pill:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.sv-seg .pill:last-child {
+  border-radius: 0 999px 999px 0;
+  margin-left: -1px;
+}
+
+.sv-seg .pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06201d;
+}
+
+.sv-filterbar .hidden {
+  display: none;
+}
+
 .fk-group {
   margin: 6px 0 0;
   font-size: 11px;

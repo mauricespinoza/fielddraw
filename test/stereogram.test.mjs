@@ -356,5 +356,23 @@ console.log('== línea y flecha del colgante ==');
   ok('una lineación no lleva flecha', lin.arrow === null);
 }
 
+console.log('== lazo sobre la red (svgLasso) ==');
+{
+  const L = await import(BASE + 'svgLasso.js');
+  const pts = [
+    { id: 'a', x: 10, y: 10 },
+    { id: 'b', x: 50, y: 50 },
+    { id: 'c', x: 90, y: 20 },
+  ];
+  const ring = L.rectRing([60, 60], [0, 0]);
+  ok('rectángulo desde esquinas en cualquier orden', ring[0][0] === 0 && ring[2][0] === 60 && ring[2][1] === 60);
+  const dentro = L.lassoHits(pts, ring).map((d) => d.id);
+  ok('el rectángulo agarra los de dentro', dentro.join() === 'a,b', dentro.join());
+  const libre = [[80, 0], [100, 10], [100, 40], [70, 30]];
+  ok('a mano alzada también', L.lassoHits(pts, libre).map((d) => d.id).join() === 'c');
+  ok('un toque (sin área) no agarra nada', L.lassoHits(pts, [[10, 10], [10, 10], [10, 10]]).length === 0);
+  ok('menos de tres puntos no es un anillo', L.lassoHits(pts, [[0, 0], [100, 100]]).length === 0);
+}
+
 console.log(fails ? `\n${fails} FALLADAS` : '\nTODO OK');
 process.exit(fails ? 1 : 0);
