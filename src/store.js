@@ -2660,9 +2660,9 @@ export function setLayerOpacity(id, opacity) {
  *
  * Abrir el candado de uno es elegirlo para editar: sus elementos pasan al
  * dibujo (la misma adopción de siempre, con su simbología traducida) y todas
- * las herramientas trabajan sobre ellos. **Solo uno a la vez**: abrir otro
- * cierra el anterior, para que nunca haya dos trabajos ajenos abiertos y no se
- * sepa en cuál se está metiendo la mano.
+ * las herramientas trabajan sobre ellos. **Pueden ser varios a la vez**: abrir
+ * otro no cierra el anterior, y cada elemento sigue marcado con su dataset,
+ * así que el ⬆ de cada uno sube solo lo suyo.
  *
  * Volver a cerrar el candado NO devuelve los elementos a su capa de consulta:
  * ya son dibujo, quizá editado, y deshacer la traducción perdería ese trabajo.
@@ -2797,12 +2797,8 @@ function straboPatch(list, features, layers) {
   }
   for (const d of out) if (!d.color) d.color = nextStraboColor(out.filter((x) => x.color));
 
-  // Nunca más de uno abierto, aunque el archivo diga otra cosa.
-  let abierto = false;
-  for (const d of out) {
-    if (!d.locked && !abierto) abierto = true;
-    else d.locked = true;
-  }
+  // Varios pueden estar abiertos a la vez: cada uno guarda su candado tal
+  // como venía en el archivo.
 
   const previas = new Map(layers.filter((l) => l.kind === 'strabo').map((l) => [l.straboKey, l]));
   const sinStrabo = layers.filter((l) => l.kind !== 'strabo');
@@ -2948,7 +2944,9 @@ export function removeStraboDataset(key) {
 /**
  * Abre o cierra el candado de un dataset.
  *
- * Abrir uno cierra cualquier otro. La primera vez que se abre, sus elementos
+ * Abrir uno no toca los demás: se pueden editar varios datasets a la vez
+ * (cada elemento sigue marcado con el suyo, y cada uno sube por su ⬆). La
+ * primera vez que se abre, sus elementos
  * pasan de la capa de consulta al dibujo, traduciendo su simbología; eso va
  * al historial en un solo paso, así que deshacer lo devuelve cerrado y en su
  * capa. Abrir y cerrar después no va al historial: es elegir en qué se
@@ -2970,15 +2968,10 @@ export function setStraboLocked(key, locked) {
     return null;
   }
 
-  const cerrarOtros = (x) => (x.key === key ? x : { ...x, locked: true });
   if (d.adopted) {
     set({
-      straboDatasets: state.straboDatasets.map((x) =>
-        x.key === key ? { ...x, locked: false } : cerrarOtros(x),
-      ),
+      straboDatasets: state.straboDatasets.map((x) => (x.key === key ? { ...x, locked: false } : x)),
     });
-    const selection = sinCerrados(state.selection);
-    if (selection.length !== state.selection.length) setSelection(selection);
     return null;
   }
 
@@ -2996,7 +2989,7 @@ export function setStraboLocked(key, locked) {
           observacion: EMPTY_COLLECTION(),
           lineas: EMPTY_COLLECTION(),
         }
-      : cerrarOtros(x),
+      : x,
   );
   set({
     features: [...state.features, ...r.features],

@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.61.0';
+export const APP_VERSION = '0.62.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -32,7 +32,7 @@ export const APP_TOOLS = [
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
   ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
   ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, one or more samples (ID — also consecutive from a prefix —, description, purpose) and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
-  ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso, and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault.'],
+  ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso (freehand or box), and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault and a lasso on the P and T axes to keep or leave out a population.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso. Several selected show up in a list: tap one to open its attributes and edit them, ‹ › to go through the rest.'],
   ['Topology · Edit Nodes', 'Move, add or delete vertices of existing features.'],
   ['Topology · Hole', 'Subtract an area from a polygon, leaving a hole.'],
@@ -45,7 +45,7 @@ export const APP_TOOLS = [
   ['Samples', 'Every sample on the map in one filterable list; tap one to fly to its point and read its description.'],
   ['Layers · Units · Symbols', 'Layer visibility, the unit catalogue, and line styling.'],
   ['Import · Export', 'GeoPackage, Shapefile, GeoJSON, offline maps (MBTiles/PMTiles).'],
-  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one to edit it, ⟳ to bring in what others changed, ⬆ to send your edits back. Or upload the drawing as a new dataset.'],
+  ['StraboSpot', 'Load several datasets of a project, each locked 🔒 and with its eye 👁; unlock one or several to edit them, ⟳ to bring in what others changed, ⬆ to send your edits back. Or upload the drawing as a new dataset.'],
   ['Project', 'Save/open the project, export the map as an SVG/PNG/PDF sheet.'],
 ];
 
@@ -55,6 +55,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.62.0',
+    highlights: [
+      'Stereogram lasso: choose ✎ Lasso (freehand) or ▭ Box in the bar above the net, the same two shapes as Select on the map. Hold Shift to add to what is already lassoed.',
+      'Fault-plane solution (Faults tab): drag a lasso over the per-fault P (circles) and T (squares) axes to pick their faults. They are highlighted on the net and in the list, and the rest is dimmed. “Only these” computes the solution from just that population, “Leave these out” switches them off, and “Select on map” selects them on the map.',
+      'StraboSpot datasets: several can now be unlocked 🔓 and edited at the same time. Opening one no longer locks the others; each row keeps its own ⬆ to upload only its own edits.',
+    ],
+  },
   {
     version: '0.61.0',
     highlights: [
