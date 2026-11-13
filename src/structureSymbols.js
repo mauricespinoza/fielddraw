@@ -69,7 +69,10 @@ function render(w, h, draw) {
   const canvas = document.createElement('canvas');
   canvas.width = w * DPR;
   canvas.height = h * DPR;
-  const ctx = canvas.getContext('2d');
+  // Lienzo que solo existe para leerlo: en CPU. Con aceleración por GPU cada
+  // `getImageData` es una lectura de vuelta de la tarjeta, y el primer lienzo
+  // además arranca el contexto de GPU: ~1 s del arranque se iba en esto.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.scale(DPR, DPR);
   draw(ctx);
   const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);

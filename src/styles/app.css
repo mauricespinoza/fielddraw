@@ -1743,6 +1743,38 @@ input[type='radio'] {
 }
 
 /*
+ * Tap / GPS de un dato manual: en la columna angosta de la paleta del iPad dos
+ * botones lado a lado no caben, así que van uno sobre otro, con su rótulo.
+ */
+.palette-foot.dip-place {
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 6px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+
+.palette-foot.dip-place .pill {
+  flex: 0 0 auto;
+  min-height: 40px;
+}
+
+/* En el teléfono la hoja es ancha y baja: los dos botones caben lado a lado. */
+@media (max-width: 680px), (max-height: 520px) {
+  .palette-foot.dip-place {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .palette-foot.dip-place .palette-label {
+    flex: 1 0 100%;
+  }
+
+  .palette-foot.dip-place .pill {
+    flex: 1 1 0;
+  }
+}
+
+/*
  * En el teléfono el formulario del punto ocupa la pantalla entera: son seis
  * campos y una nota larga, y en la hoja de un tercio de pantalla no se veía ni
  * la mitad. El mapa no hace falta mientras se escribe — el sitio ya se eligió.

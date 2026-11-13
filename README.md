@@ -1496,7 +1496,7 @@ paleta:
 
 | Método | Gesto | De dónde sale el número |
 |---|---|---|
-| **Manual** | un toque | de tu brújula; los valores se escriben en la paleta y se corrigen en el menú de propiedades |
+| **Manual** | elegir **Tap** y tocar el mapa, o **GPS** | de tu brújula; los valores se escriben en la paleta y se corrigen en el menú de propiedades. Cada dato pregunta antes dónde va: en el toque o en la posición del GPS (con su precisión guardada en el dato) |
 | **Tres puntos** | tres toques sobre la misma superficie | el problema clásico: tres cotas del DEM definen un plano exacto |
 | **Ajuste a traza** | dibujar (o trazar a mano alzada) a lo largo del afloramiento | mínimos cuadrados sobre todos los nodos, muestreados en el DEM |
 | **Device** | apoyar el dorso del teléfono contra la roca y pulsar *Add measurement* | los sensores del propio teléfono, promediados mientras está apoyado; la medida se ancla en la posición del GPS |

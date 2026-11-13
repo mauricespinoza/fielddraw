@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.62.2';
+export const APP_VERSION = '0.63.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -30,7 +30,7 @@ export const APP_CONTACT = 'mauricespinoza@udec.cl';
 export const APP_TOOLS = [
   ['Create · Line', 'Contacts, faults, folds, dykes — type and certainty come from the palette.'],
   ['Create · Polygon', 'Map units. Each polygon carries the active unit, colour and code.'],
-  ['Create · Dip', 'Strike/dip by compass, 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
+  ['Create · Dip', 'Strike/dip by compass (placed by tap or at your GPS position), 3 points on the DEM, a drawn plane, live phone sensors, or digitised.'],
   ['Create · Control', 'Observation points: choose tap or GPS, then fill in name (or an automatic consecutive code from a prefix), unit, one or more samples (ID — also consecutive from a prefix —, description, purpose) and notes. Date and time are stamped for you; the colour follows the unit, the icon and label are yours to pick.'],
   ['Stereogram', 'Schmidt net of selected dips, with a mean vector, error cone, lasso (freehand or box), and a beta (fold) axis. The Faults tab gives the fault-plane solution (P/T axes, beachball, σ1–σ3, R) of faults with striae and sense, with a checkbox per fault and a lasso on the P and T axes to keep or leave out a population.'],
   ['Select', 'Tap to pick one, or drag a lasso — freehand or rectangle — to touch several at once. From Navigate, rest a finger or the pencil on an empty spot and drag to start the lasso. Several selected show up in a list: tap one to open its attributes and edit them, ‹ › to go through the rest.'],
@@ -55,6 +55,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.63.0',
+    highlights: [
+      'Dip ▸ Manual asks where each measurement goes before placing it: Tap (the next tap on the map places it) or GPS (it goes at your current position, and the GPS accuracy is stored with it). A tap on the map before choosing no longer creates a measurement by accident; it just shows the question again. Device keeps re-arming itself after each Add measurement, as before.',
+      'Faster start-up: the fault, fold and strike-and-dip symbols are now drawn on the CPU instead of being read back from the graphics card, which took about a second on the first launch.',
+    ],
+  },
   {
     version: '0.62.2',
     highlights: [
