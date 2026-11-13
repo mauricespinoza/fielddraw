@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.62.1';
+export const APP_VERSION = '0.62.2';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.62.2',
+    highlights: [
+      'Large drawings respond faster: an edit (dragging a vertex, adding a line, changing a note, deleting) now sends the map only the element that changed instead of the whole drawing. With thousands of elements, each change used to freeze the app for a fraction of a second.',
+    ],
+  },
   {
     version: '0.62.1',
     highlights: [
