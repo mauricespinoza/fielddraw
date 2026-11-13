@@ -27,7 +27,7 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact; do node test/$f.test.mjs; done
 ```
 
 1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
@@ -69,7 +69,7 @@ sus dieciséis imágenes.
 
 ## Guardar el proyecto
 
-- **Save project** escribe un `.fdproj.json`: dibujo (incluidas las medidas
+- **Save project** escribe un `.fdproj.json.gz` (comprimido, ver abajo): dibujo (incluidas las medidas
   estructurales y los puntos de control propios), unidades, simbología, ajustes,
   datasets de StraboSpot y perfiles guardados. **No** lleva las capas importadas
   de un GeoPackage ni los mapas offline: pesan cientos de MB.
@@ -80,6 +80,26 @@ sus dieciséis imágenes.
   con cualquiera de las tres cosas. **Open project** lee ambos; al abrir el zip
   las capas vuelven con su estilo, visibilidad y opacidad, y una con el mismo id
   ya abierta no se duplica. Un paquete anterior, sin `layers/`, sigue abriéndose.
+
+### Proyectos grandes: tamaño y compresión
+
+- **Coordenadas a 7 decimales** (~1 cm) en el autoguardado y en todo archivo de
+  proyecto. Un double trae quince; los que sobran son nanómetros. Con 3000
+  elementos y ~250 000 vértices el JSON baja de ~10,5 a ~6,8 MB. Solo se
+  redondea lo que está bajo `coordinates`: rumbos, cotas y dispersiones quedan
+  como están. El autoguardado reutiliza la copia redondeada de lo que no
+  cambió, así que es más rápido que antes, no más lento (`src/compact.js`).
+- **Save project** escribe `.fdproj.json.gz`: el mismo JSON comprimido con gzip
+  (`CompressionStream` del navegador, sin librerías), ~¼ del tamaño. Cualquier
+  herramienta lo descomprime. Si el navegador no sabe comprimir, sale el
+  `.fdproj.json` de siempre.
+- **Open project** reconoce el gzip por su firma (`1f 8b`), no por la
+  extensión: un archivo renombrado al mandarlo por correo o chat se abre igual,
+  y los `.fdproj.json` antiguos también.
+- **El paquete `.fdproj.zip`** comprime con deflate (método 8 de ZIP) el JSON
+  del proyecto y cada capa importada; los mapas offline y el DEM siguen
+  guardados tal cual (método 0), porque ya vienen comprimidos y así se leen por
+  rangos sin copiarlos a memoria.
 
 ## Publicar y usar sin señal
 

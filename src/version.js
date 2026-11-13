@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.63.0';
+export const APP_VERSION = '0.64.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.64.0',
+    highlights: [
+      'Smaller projects: coordinates are stored with 7 decimals (about 1 cm), which cuts a large drawing by about a third in every autosave and saved file, and makes the autosave a little faster.',
+      'Save project now writes a compressed .fdproj.json.gz, about a quarter of the size, easier to send by mail or chat. It is still the same JSON inside; Open project reads it and the old .fdproj.json alike.',
+      'The .fdproj.zip package compresses the project and the imported layers; offline maps and the DEM go in as before, uncompressed.',
+    ],
+  },
   {
     version: '0.63.0',
     highlights: [

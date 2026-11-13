@@ -77,6 +77,7 @@
     <link rel="modulepreload" href="./src/attrs.js" />
     <link rel="modulepreload" href="./src/average.js" />
     <link rel="modulepreload" href="./src/basemaps.js" />
+    <link rel="modulepreload" href="./src/compact.js" />
     <link rel="modulepreload" href="./src/compassCheck.js" />
     <link rel="modulepreload" href="./src/geomag.js" />
     <link rel="modulepreload" href="./src/compassWidget.js" />
@@ -592,7 +593,7 @@
         </button>
         <input type="file" id="file-gpkg" accept=".gpkg,.geopackage,.mbtiles,.pmtiles" hidden />
         <input type="file" id="file-dem" accept=".pmtiles,.mbtiles" hidden />
-        <input type="file" id="file-project" accept=".json,.fdproj,.geojson,.zip" hidden />
+        <input type="file" id="file-project" accept=".json,.fdproj,.geojson,.zip,.gz" hidden />
       </div>
 
       <div class="dropdown hidden" id="project-menu">
@@ -616,8 +617,8 @@
         <button class="pill wide" id="btn-map-image">Export the map view…</button>
         <button class="pill danger wide" id="btn-new-project">New project</button>
         <p class="hint">
-          <strong>Save project</strong> writes a <code>.fdproj.json</code> with the drawing, units,
-          symbology and settings, but not the imported GeoPackage layers.
+          <strong>Save project</strong> writes a compressed <code>.fdproj.json.gz</code> with the
+          drawing, units, symbology and settings, but not the imported GeoPackage layers.
           <strong>Save with maps, DEM &amp; layers</strong> writes a <code>.fdproj.zip</code> that
           also carries the imported GeoPackage layers (control points, structural data…), the
           open PMTiles/MBTiles and the elevation model; <strong>Open project</strong> reads either one.

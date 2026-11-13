@@ -146,6 +146,7 @@ import {
   buildProjectPackage,
   openProject,
   packageFilename,
+  readProjectText,
   parseProject,
   readProjectPackage,
   saveProject,
@@ -6143,14 +6144,23 @@ function setProjectStatus(text) {
   $('project-status').textContent = text;
 }
 
-function doSaveProject() {
+/** @returns {Promise<boolean>} si quedó guardado */
+async function doSaveProject() {
   const name = $('project-name').value.trim();
-  const data = saveProject(name);
-  projectDirty = false;
-  setProjectStatus(
-    `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s).`,
-  );
-  showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
+  try {
+    const { data, blob, gzip, plainBytes } = await saveProject(name);
+    projectDirty = false;
+    setProjectStatus(
+      `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s), ${fmtMB(blob.size)}${
+        gzip ? ` (compressed from ${fmtMB(plainBytes)})` : ''
+      }.`,
+    );
+    showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
+    return true;
+  } catch (err) {
+    showBanner(`The project could not be saved: ${err.message}`, 'warn');
+    return false;
+  }
 }
 
 /**
@@ -6186,8 +6196,7 @@ async function doSaveProjectPackage() {
     const imported = store.getState().imported;
     if (!files.length && !imported.length) {
       showBanner('No offline map, elevation model or imported layer is open: saving the plain project instead.', 'warn');
-      doSaveProject();
-      return true;
+      return doSaveProject();
     }
     const { data, blob } = await buildProjectPackage(
       name,
@@ -6311,8 +6320,7 @@ async function confirmCloseProject(text) {
   // dejaría fuera justo lo que el proyecto nuevo va a quitar.
   const st = store.getState();
   if (hasPackageExtras(st)) return doSaveProjectPackage();
-  doSaveProject();
-  return true;
+  return doSaveProject();
 }
 
 /**
@@ -6361,7 +6369,8 @@ async function doOpenProject(file) {
       capasPaquete = pkg.importedLayers;
       avisosPaquete = pkg.warnings;
     } else {
-      text = await file.text();
+      // `.fdproj.json` o `.fdproj.json.gz`: se reconoce por la firma.
+      text = await readProjectText(file);
     }
     const { project, warnings: avisos } = parseProject(text);
     const warnings = [...avisos, ...avisosPaquete];
