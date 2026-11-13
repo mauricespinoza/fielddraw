@@ -72,6 +72,7 @@ import {
   controlPointLayers,
 } from './controlPointSymbols.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
+import { featureDiff, indexFeatures } from './sourceDiff.js';
 import { noteDeclinationPosition } from './geomag.js';
 import {
   addStraboImages,
@@ -643,6 +644,9 @@ export function createMapView({
     map.addSource(GEOLOGY_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
+      // El id del elemento es `properties.id`: es lo que deja a MapLibre
+      // aceptar cambios sueltos con `updateData` (ver `syncGeology`).
+      promoteId: 'id',
     });
     for (const l of geologyLayers()) map.addLayer(l);
 
@@ -1368,11 +1372,31 @@ export function createMapView({
     aplicar(ids);
   }
 
+  /**
+   * Índice de lo último que se le mandó a la fuente del dibujo, para mandar la
+   * próxima vez solo la diferencia (ver `sourceDiff.js`). `null` mientras no
+   * se haya mandado nada que sirva de base.
+   */
+  let geologySent = null;
+
   function syncGeology() {
     if (!ready) return;
     const src = map.getSource(GEOLOGY_SOURCE);
+    if (!src) return;
     // Lo de un dataset de StraboSpot apagado con el ojo no se pinta.
-    if (src) src.setData({ type: 'FeatureCollection', features: store.visibleFeatures() });
+    const features = store.visibleFeatures();
+    const diff = featureDiff(geologySent, features);
+    geologySent = indexFeatures(features);
+    if (!diff) {
+      src.setData({ type: 'FeatureCollection', features });
+      return;
+    }
+    if (diff.remove.length === 0 && diff.add.length === 0) return;
+    // Solo las claves con contenido: una lista vacía no dice nada.
+    const cambio = {};
+    if (diff.remove.length) cambio.remove = diff.remove;
+    if (diff.add.length) cambio.add = diff.add;
+    src.updateData(cambio);
   }
 
   function syncDraft() {
