@@ -3,6 +3,7 @@ import { downloadBlob } from './persistence.js';
 import { certaintyFor } from './symbology.js';
 import { CONTROL_POINT_KIND, withSamples } from './controlPoints.js';
 import { buildZip, readZip } from './zip.js';
+import { gzipText, readMaybeGzipText, stringifyCompact } from './compact.js';
 
 /**
  * Proyectos de FieldDraw: un único JSON con el dibujo, las unidades, la
@@ -59,10 +60,33 @@ export function projectFilename(name = '') {
   return `${slug}-${new Date().toISOString().slice(0, 10)}.fdproj.json`;
 }
 
-export function saveProject(name = '') {
+/**
+ * El proyecto listo para escribir: JSON con las coordenadas a 7 decimales y
+ * comprimido con gzip (`.fdproj.json.gz`, ~¼ del tamaño). Si el navegador no
+ * sabe comprimir, sale el `.fdproj.json` de siempre.
+ *
+ * El `.gz` sigue siendo el mismo JSON: cualquier herramienta lo descomprime,
+ * y «Open project» abre los dos.
+ *
+ * @returns {Promise<{data: object, blob: Blob, filename: string, gzip: boolean, plainBytes: number}>}
+ */
+export async function projectFile(name = '') {
   const data = serializeProject(name);
-  downloadBlob(new Blob([JSON.stringify(data)], { type: 'application/json' }), projectFilename(name));
-  return data;
+  const text = stringifyCompact(data);
+  const { blob, gzip } = await gzipText(text);
+  const filename = projectFilename(name) + (gzip ? '.gz' : '');
+  return { data, blob, filename, gzip, plainBytes: text.length };
+}
+
+export async function saveProject(name = '') {
+  const out = await projectFile(name);
+  downloadBlob(out.blob, out.filename);
+  return out;
+}
+
+/** El texto de un `.fdproj.json`, comprimido o no (se mira la firma, no el nombre). */
+export function readProjectText(file) {
+  return readMaybeGzipText(file);
 }
 
 /** Nombre del JSON dentro del paquete. */
@@ -110,14 +134,19 @@ export async function buildProjectPackage(name, files, onProgress, { imported } 
     path: unico('layers', `${seguro(l.label || l.table || l.id, `layer-${i}`)}.json`),
     id: l.id,
     label: l.label,
-    blob: new Blob([JSON.stringify(l)], { type: 'application/json' }),
+    blob: new Blob([stringifyCompact(l)], { type: 'application/json' }),
   }));
   data.offlineFiles = dentro.map(({ path, role, name: n }) => ({ path, role, name: n }));
   data.importedLayers = capasDentro.map(({ path, id, label }) => ({ path, id, label }));
   const blob = await buildZip(
     [
-      { name: PACKAGE_PROJECT, blob: new Blob([JSON.stringify(data)], { type: 'application/json' }) },
-      ...capasDentro.map((e) => ({ name: e.path, blob: e.blob })),
+      {
+        name: PACKAGE_PROJECT,
+        blob: new Blob([stringifyCompact(data)], { type: 'application/json' }),
+        // El texto va comprimido; los mapas y el DEM, tal cual (ver zip.js).
+        deflate: true,
+      },
+      ...capasDentro.map((e) => ({ name: e.path, blob: e.blob, deflate: true })),
       ...dentro.map((e) => ({ name: e.path, blob: e.file })),
     ],
     onProgress,

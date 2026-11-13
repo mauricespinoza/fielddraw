@@ -314,11 +314,23 @@ console.log('== qué lado se arrastró (Digitize) ==');
 console.log('== flujo en el store ==');
 const store = await import(BASE + 'store.js');
 
-// --- método manual: el toque crea la medida directamente ---
+// --- método manual: primero se elige DÓNDE va el dato ---
 store.setTool('measure');
 store.setMeasureMethod('manual');
 store.setManualStrike(120);
 store.setManualDip(35);
+ok('al entrar, Manual pregunta dónde va el dato', store.getState().measurePlace === null);
+{
+  const antes = store.getState().measurePlaceNudge;
+  store.addVertex([-71.4, -37.2]);
+  ok('sin elegir Tap ni GPS, el toque no crea nada', store.getState().features.length === 0);
+  ok('y pide que se elija', store.getState().measurePlaceNudge === antes + 1);
+  ok('sigue en la herramienta de medir', store.getState().tool === 'measure');
+}
+store.setMeasurePlace('gps');
+store.addVertex([-71.4, -37.2]);
+ok('esperando el GPS, el toque tampoco crea nada', store.getState().features.length === 0);
+store.setMeasurePlace('tap');
 store.addVertex([-71.4, -37.2]);
 {
   const fs = store.getState().features;
@@ -336,6 +348,17 @@ store.addVertex([-71.4, -37.2]);
   // otra vez.
   ok('la herramienta vuelve a Elegir', store.getState().tool === 'select');
 }
+// El siguiente dato vuelve a preguntar: la elección no se arrastra.
+store.setTool('measure');
+ok('volver a Dip pregunta otra vez', store.getState().measurePlace === null);
+store.addVertex([-71.41, -37.21]);
+ok('y un toque sin elegir no crea un segundo dato', store.getState().features.length === 1);
+store.setMeasurePlace('tap');
+store.setMeasureMethod('three-point');
+ok('cambiar de método también olvida la elección', store.getState().measurePlace === null);
+store.setMeasurePlace('bogus');
+ok('un lugar desconocido no se acepta', store.getState().measurePlace === null);
+store.setTool('select');
 
 // El rumbo y el manteo tienen dominio propio: 400° y 120° no existen.
 store.setManualStrike(400);

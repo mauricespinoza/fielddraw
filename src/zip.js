@@ -13,9 +13,16 @@
  * Lo único que obliga a leer los archivos enteros es el CRC-32 que exige el
  * formato, y se calcula por bloques.
  *
+ * SALVO EL TEXTO. El JSON del proyecto y de cada capa importada sí se
+ * comprime (deflate, el método 8 de ZIP, con `CompressionStream` del propio
+ * navegador): es texto muy repetitivo y queda en ~¼. Se pide por entrada
+ * (`deflate: true`), y si el navegador no sabe comprimir, va sin comprimir.
+ *
  * Sin ZIP64: hasta 4 GB en total. Más que eso no cabe en el formato clásico, y
  * se avisa en vez de producir un archivo que otro programa leería roto.
  */
+
+import { deflateRaw, inflateRaw } from './compact.js';
 
 const LIMITE = 0xffffffff;
 const BLOQUE = 8 * 1024 * 1024;
@@ -64,7 +71,7 @@ function dosTime(d) {
 /**
  * Arma el ZIP.
  *
- * @param {{name: string, blob: Blob}[]} entries
+ * @param {{name: string, blob: Blob, deflate?: boolean}[]} entries
  * @param {(hechos: number, total: number) => void} [onProgress]
  * @returns {Promise<Blob>}
  */
@@ -87,37 +94,48 @@ export async function buildZip(entries, onProgress) {
     const nombre = enc.encode(e.name);
     const crc = await crc32Blob(e.blob, avanza);
     const size = e.blob.size;
+    // Comprimido solo si se pidió, si se puede y si de verdad achica.
+    let dato = e.blob;
+    let metodo = 0;
+    if (e.deflate) {
+      const z = await deflateRaw(e.blob);
+      if (z && z.size < size) {
+        dato = z;
+        metodo = 8;
+      }
+    }
+    const comp = dato.size;
 
     const local = new DataView(new ArrayBuffer(30));
     local.setUint32(0, 0x04034b50, true);
     local.setUint16(4, 20, true); // versión necesaria
     local.setUint16(6, 0x0800, true); // nombres en UTF-8
-    local.setUint16(8, 0, true); // sin comprimir
+    local.setUint16(8, metodo, true); // 0: guardado tal cual · 8: deflate
     local.setUint16(10, time, true);
     local.setUint16(12, date, true);
     local.setUint32(14, crc, true);
-    local.setUint32(18, size, true);
+    local.setUint32(18, comp, true);
     local.setUint32(22, size, true);
     local.setUint16(26, nombre.length, true);
     local.setUint16(28, 0, true);
-    partes.push(local.buffer, nombre, e.blob);
+    partes.push(local.buffer, nombre, dato);
 
     const cd = new DataView(new ArrayBuffer(46));
     cd.setUint32(0, 0x02014b50, true);
     cd.setUint16(4, 20, true);
     cd.setUint16(6, 20, true);
     cd.setUint16(8, 0x0800, true);
-    cd.setUint16(10, 0, true);
+    cd.setUint16(10, metodo, true);
     cd.setUint16(12, time, true);
     cd.setUint16(14, date, true);
     cd.setUint32(16, crc, true);
-    cd.setUint32(20, size, true);
+    cd.setUint32(20, comp, true);
     cd.setUint32(24, size, true);
     cd.setUint16(28, nombre.length, true);
     cd.setUint32(42, offset, true);
     central.push(cd.buffer, nombre);
 
-    offset += 30 + nombre.length + size;
+    offset += 30 + nombre.length + comp;
   }
   const cdSize = central.reduce((n, p) => n + p.byteLength, 0);
   const eocd = new DataView(new ArrayBuffer(22));
@@ -137,9 +155,11 @@ export async function isZip(blob) {
 }
 
 /**
- * Lee el índice de un ZIP sin cargarlo: cada entrada vuelve como un `slice`
- * del propio archivo. Solo entradas sin comprimir —las que escribe
- * `buildZip`—; las comprimidas se devuelven marcadas para poder avisar.
+ * Lee el índice de un ZIP sin cargarlo: cada entrada guardada tal cual vuelve
+ * como un `slice` del propio archivo. Las comprimidas con deflate —el texto
+ * que escribe `buildZip`— se descomprimen; las de otro método, o si el
+ * navegador no sabe descomprimir, vuelven marcadas y sin `blob` para poder
+ * avisar.
  *
  * @returns {Promise<{name: string, blob: Blob|null, compressed: boolean}[]>}
  */
@@ -180,11 +200,10 @@ export async function readZip(blob) {
     const lv = new DataView(lh.buffer, lh.byteOffset, 30);
     if (lv.getUint32(0, true) !== 0x04034b50) throw new Error(`damaged ZIP entry ${name}`);
     const inicio = local + 30 + lv.getUint16(26, true) + lv.getUint16(28, true);
-    out.push({
-      name,
-      compressed: metodo !== 0,
-      blob: metodo === 0 ? blob.slice(inicio, inicio + comp) : null,
-    });
+    let dato = null;
+    if (metodo === 0) dato = blob.slice(inicio, inicio + comp);
+    else if (metodo === 8) dato = await inflateRaw(blob.slice(inicio, inicio + comp));
+    out.push({ name, compressed: !dato && metodo !== 0, blob: dato });
   }
   return out;
 }

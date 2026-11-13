@@ -34,7 +34,7 @@ export const MEASURE_METHODS = [
     label: 'Manual',
     short: 'Man',
     glyph: '✎',
-    help: 'Place the point and type the strike and dip you measured with the compass',
+    help: 'Type the strike and dip you measured with the compass, then place it by tapping the map or at your GPS position',
   },
   {
     id: 'three-point',

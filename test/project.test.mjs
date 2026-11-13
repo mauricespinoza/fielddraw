@@ -1,5 +1,5 @@
 import * as store from '../src/store.js';
-import { PROJECT_FORMAT, openProject, parseProject, projectFilename, serializeProject } from '../src/project.js';
+import { PROJECT_FORMAT, openProject, parseProject, projectFile, projectFilename, readProjectText, serializeProject } from '../src/project.js';
 
 let fails = 0;
 const ok = (name, cond, extra = '') => {
@@ -180,6 +180,28 @@ console.log('== el nombre del proyecto se recuerda ==');
   saveProjectName('x');
   ok('con el almacenamiento bloqueado no falla', loadSavedProjectName() === '');
   delete globalThis.localStorage;
+}
+
+console.log('== archivo comprimido ==');
+{
+  store.resetProject();
+  store.loadFeatures([
+    {
+      type: 'Feature',
+      id: 'c1',
+      properties: { id: 'c1', kind: 'line', type: 'contact', certainty: 'observed', opacity: 1 },
+      geometry: { type: 'LineString', coordinates: [[-71.25702961457641, -37.52023316530916], [-71.2, -37.5]] },
+    },
+  ]);
+  const out = await projectFile('Cerro Colorado');
+  ok('sale comprimido', out.gzip && out.filename.endsWith('.fdproj.json.gz'), out.filename);
+  ok('pesa menos que el JSON', out.blob.size < out.plainBytes);
+  const texto = await readProjectText(out.blob);
+  const { project } = parseProject(texto);
+  ok('se vuelve a abrir', project.features.length === 1);
+  const c = project.features[0].geometry.coordinates[0];
+  ok('con las coordenadas a 7 decimales', c[0] === -71.2570296 && c[1] === -37.5202332, JSON.stringify(c));
+  ok('un .fdproj.json plano sigue abriéndose', (await readProjectText(new Blob([texto]))) === texto);
 }
 
 console.log(fails === 0 ? '\nTODO OK' : `\n${fails} FALLOS`);

@@ -274,6 +274,19 @@ let state = {
 
   /** 'manual' | 'three-point' | 'plane-fit' (ver structure.js). */
   measureMethod: 'three-point',
+  /**
+   * Dónde va el próximo dato MANUAL: `null` mientras no se ha elegido —el
+   * toque en el mapa no hace nada todavía—, `'tap'` (el próximo toque lo
+   * coloca) o `'gps'` (se espera una posición del receptor). Se pregunta en
+   * CADA dato: vuelve a `null` al entrar a la herramienta o cambiar de
+   * método. No viaja en el proyecto ni en el historial: es un paso del gesto.
+   */
+  measurePlace: null,
+  /**
+   * Sube cada vez que se toca el mapa con Manual sin haber elegido dónde va
+   * el dato: la interfaz lo usa para volver a enseñar la pregunta.
+   */
+  measurePlaceNudge: 0,
   /** Superficie que se está midiendo: estratificación, foliación, diaclasa… */
   measureType: 'bedding',
   /** Estratos invertidos: cambia el símbolo, no el número. */
@@ -694,7 +707,8 @@ export function setTool(tool) {
   if (!['select', 'vertices', 'cut', 'reshape'].includes(tool) && !extendFrom) {
     set({ selection: [] });
   }
-  set({ tool, extendFrom, pendingControlPoint: null });
+  // Cada entrada a la herramienta de medir vuelve a preguntar dónde va el dato.
+  set({ tool, extendFrom, pendingControlPoint: null, measurePlace: null });
   return true;
 }
 
@@ -828,6 +842,12 @@ export function addVertex(p) {
     // Con brújula no hay nada que muestrear: el toque solo dice dónde va la
     // medida, y los números se escriben después en el menú de propiedades.
     if (state.measureMethod === 'manual') {
+      // Antes de elegir Tap o GPS el toque no coloca nada: solo pide que se
+      // elija. Así un toque para mirar el mapa no crea un dato sin querer.
+      if (state.measurePlace !== 'tap') {
+        set({ measurePlaceNudge: state.measurePlaceNudge + 1 });
+        return;
+      }
       createMeasurement({
         lngLat: p,
         strike: state.manualStrike,
@@ -1472,7 +1492,10 @@ export function clearPendingCut() {
 /* ---------- medidas estructurales ---------- */
 
 export const setMeasureMethod = (measureMethod) =>
-  set({ measureMethod, draft: null, deviceReading: null });
+  set({ measureMethod, draft: null, deviceReading: null, measurePlace: null });
+/** `null` (preguntar), `'tap'` o `'gps'`: ver `measurePlace`. */
+export const setMeasurePlace = (place) =>
+  set({ measurePlace: place === 'tap' || place === 'gps' ? place : null });
 export const setMeasureType = (measureType) => set({ measureType });
 export const setMeasureOverturned = (measureOverturned) => set({ measureOverturned });
 export const setMeasureFaultSense = (sense) =>
@@ -1668,6 +1691,7 @@ export function createMeasurement({
     selection: [id],
     pendingPlane: null,
     tool: 'select',
+    measurePlace: null,
   });
   return feature;
 }

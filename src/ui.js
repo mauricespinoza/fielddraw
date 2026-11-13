@@ -146,6 +146,7 @@ import {
   buildProjectPackage,
   openProject,
   packageFilename,
+  readProjectText,
   parseProject,
   readProjectPackage,
   saveProject,
@@ -723,6 +724,116 @@ function buildControlPointChooser(el) {
   el.appendChild(foot);
 }
 
+/*
+ * DÓNDE VA UN DATO MANUAL: en el toque o en el GPS.
+ *
+ * Con Manual el toque en el mapa colocaba el dato en el acto. En terreno lo
+ * normal es estar parado sobre el afloramiento que se acaba de medir, y ahí el
+ * receptor acierta mejor que el dedo; y un toque para mirar el mapa creaba un
+ * dato sin querer. Ahora cada dato pregunta antes: Tap (el próximo toque lo
+ * coloca) o GPS (va a la posición actual). La elección vive en el store
+ * (`measurePlace`) porque es lo que decide si un toque crea algo.
+ */
+let dipGpsTimer = null;
+const DIP_GPS_WAIT_MS = 30000;
+
+function stopDipGpsWait() {
+  if (dipGpsTimer) clearInterval(dipGpsTimer);
+  dipGpsTimer = null;
+}
+
+/** Crea el dato manual de la paleta en la posición del GPS, si ya hay una. */
+function placeManualDipAtGps() {
+  const tomar = () => {
+    const fix = mapBridge && mapBridge.getGpsFix();
+    if (!fix) return false;
+    stopDipGpsWait();
+    const st = store.getState();
+    store.createMeasurement({
+      lngLat: fix.lngLat,
+      strike: st.manualStrike,
+      dip: st.manualDip,
+      method: 'manual',
+      // Lo que vale la posición: sin esto no se distingue después un dato
+      // anclado a ±3 m de uno a ±40 m.
+      quality: { gpsAccuracy: Math.round(fix.accuracy) },
+    });
+    return true;
+  };
+  if (tomar()) return;
+  if (!mapBridge) return;
+  if (!mapBridge.isGpsActive()) mapBridge.locateMe();
+  store.setMeasurePlace('gps');
+  const desde = Date.now();
+  stopDipGpsWait();
+  dipGpsTimer = setInterval(() => {
+    const st = store.getState();
+    if (st.tool !== 'measure' || st.measureMethod !== 'manual' || st.measurePlace !== 'gps') {
+      stopDipGpsWait();
+      return;
+    }
+    if (tomar()) return;
+    if (Date.now() - desde > DIP_GPS_WAIT_MS) {
+      stopDipGpsWait();
+      showBanner('No GPS fix yet — check location permission, or tap the map instead.', 'warn');
+      store.setMeasurePlace(null);
+    }
+  }, 500);
+}
+
+/** Quita el aviso «elige dónde va el dato» si es el que está puesto. */
+const DIP_PLACE_NUDGE = 'Choose where the dip goes first: Tap on the map, or your GPS position.';
+function dismissDipPlaceNudge() {
+  if ($('banner-text').textContent === DIP_PLACE_NUDGE && !$('banner').classList.contains('hidden')) {
+    $('banner-close').click();
+  }
+}
+
+/** Pie de la paleta de Manual: la pregunta Tap/GPS, o en qué paso se está. */
+function buildDipPlaceFoot(el, s) {
+  const foot = document.createElement('div');
+  foot.className = 'palette-foot dip-place';
+  const label = document.createElement('span');
+  label.className = 'palette-label';
+  const boton = (html, title, onClick, extra = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `pill wide ${extra}`.trim();
+    b.innerHTML = html;
+    b.title = title;
+    b.addEventListener('click', onClick);
+    foot.appendChild(b);
+    return b;
+  };
+  // Sin el rumbo/manteo en el rótulo: la paleta no se repinta al escribirlos
+  // (perdería el foco del campo), y quedaría mostrando el número anterior.
+  if (s.measurePlace === 'tap' || s.measurePlace === 'gps') {
+    label.textContent = s.measurePlace === 'tap' ? 'Now tap the map' : 'Waiting for GPS…';
+    foot.appendChild(label);
+    boton('Back', 'Choose tap or GPS again', () => store.setMeasurePlace(null));
+  } else {
+    label.textContent = 'Place the dip at';
+    foot.appendChild(label);
+    boton(
+      '<span class="cp-glyph">☝</span><span>Tap</span>',
+      'Place the dip where you tap on the map',
+      () => {
+        store.setMeasurePlace('tap');
+        // En el teléfono la hoja tapa medio mapa: se esconde para dejar tocar.
+        if (isCompactLayout()) $('palette').classList.add('hidden');
+      },
+      'cp-method',
+    );
+    boton(
+      '<span class="cp-glyph">⌖</span><span>GPS</span>',
+      'Place the dip at your current GPS position',
+      placeManualDipAtGps,
+      'cp-method',
+    );
+  }
+  el.appendChild(foot);
+}
+
 function buildPalette() {
   const el = $('palette');
   const s = store.getState();
@@ -788,7 +899,9 @@ function buildPalette() {
              * dejaría sin cómo elegir otro sin salir de la herramienta y
              * volver a entrar.
              */
-            if (store.getState().measureMethod === m.id) {
+            // Manual tampoco: lo que sigue es la pregunta Tap/GPS, que vive
+            // en el pie de esta misma paleta.
+            if (store.getState().measureMethod === m.id && m.id !== 'manual') {
               $('palette').classList.add('hidden');
             }
           },
@@ -937,6 +1050,7 @@ function buildPalette() {
     }
 
     el.appendChild(scroll);
+    if (s.measureMethod === 'manual') buildDipPlaceFoot(el, s);
     return;
   }
 
@@ -6030,14 +6144,23 @@ function setProjectStatus(text) {
   $('project-status').textContent = text;
 }
 
-function doSaveProject() {
+/** @returns {Promise<boolean>} si quedó guardado */
+async function doSaveProject() {
   const name = $('project-name').value.trim();
-  const data = saveProject(name);
-  projectDirty = false;
-  setProjectStatus(
-    `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s).`,
-  );
-  showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
+  try {
+    const { data, blob, gzip, plainBytes } = await saveProject(name);
+    projectDirty = false;
+    setProjectStatus(
+      `Saved at ${new Date(data.savedAt).toLocaleTimeString()} · ${data.features.length} feature(s), ${fmtMB(blob.size)}${
+        gzip ? ` (compressed from ${fmtMB(plainBytes)})` : ''
+      }.`,
+    );
+    showBanner('Project saved. On iPadOS it lands in the Files app.', 'info');
+    return true;
+  } catch (err) {
+    showBanner(`The project could not be saved: ${err.message}`, 'warn');
+    return false;
+  }
 }
 
 /**
@@ -6073,8 +6196,7 @@ async function doSaveProjectPackage() {
     const imported = store.getState().imported;
     if (!files.length && !imported.length) {
       showBanner('No offline map, elevation model or imported layer is open: saving the plain project instead.', 'warn');
-      doSaveProject();
-      return true;
+      return doSaveProject();
     }
     const { data, blob } = await buildProjectPackage(
       name,
@@ -6198,8 +6320,7 @@ async function confirmCloseProject(text) {
   // dejaría fuera justo lo que el proyecto nuevo va a quitar.
   const st = store.getState();
   if (hasPackageExtras(st)) return doSaveProjectPackage();
-  doSaveProject();
-  return true;
+  return doSaveProject();
 }
 
 /**
@@ -6248,7 +6369,8 @@ async function doOpenProject(file) {
       capasPaquete = pkg.importedLayers;
       avisosPaquete = pkg.warnings;
     } else {
-      text = await file.text();
+      // `.fdproj.json` o `.fdproj.json.gz`: se reconoce por la firma.
+      text = await readProjectText(file);
     }
     const { project, warnings: avisos } = parseProject(text);
     const warnings = [...avisos, ...avisosPaquete];
@@ -7127,7 +7249,13 @@ function renderStatus() {
     const superficie = STRUCTURE_TYPE_BY_ID.get(s.measureType);
     const que = superficie ? superficie.label.toLowerCase() : 'surface';
     if (s.measureMethod === 'manual') {
-      $('status-text').textContent = `Tap where you measured the ${que} — ${formatStrikeDip(s.manualStrike, s.manualDip)} goes in, and you can correct it right after`;
+      const dato = formatStrikeDip(s.manualStrike, s.manualDip);
+      $('status-text').textContent =
+        s.measurePlace === 'tap'
+          ? `Tap where you measured the ${que} — ${dato} goes in, and you can correct it right after`
+          : s.measurePlace === 'gps'
+            ? `Waiting for a GPS position to place ${dato}…`
+            : `Choose where the ${que} goes: Tap on the map or your GPS position`;
     } else if (s.measureMethod === 'three-point') {
       $('status-text').textContent =
         n === 0
@@ -7825,6 +7953,7 @@ export function initUI() {
       store.changed('polygonType') ||
       store.changed('vertexMode') ||
       store.changed('measureMethod') ||
+      store.changed('measurePlace') ||
       store.changed('measureType') ||
       store.changed('measureOverturned') ||
       store.changed('measureFaultSense') ||
@@ -7843,6 +7972,8 @@ export function initUI() {
         cpMode = 'choose';
         stopCpGpsWait();
       }
+      if (store.getState().measurePlace !== 'gps') stopDipGpsWait();
+      if (store.changed('measurePlace') && store.getState().measurePlace) dismissDipPlaceNudge();
       buildPalette();
     }
     if (store.changed('units') || store.changed('unitLabels')) renderUnits();
@@ -7877,6 +8008,7 @@ export function initUI() {
       store.changed('cutSource') ||
       store.changed('extendFrom') ||
       store.changed('measureMethod') ||
+      store.changed('measurePlace') ||
       store.changed('measureType') ||
       store.changed('manualStrike') ||
       store.changed('manualDip') ||
@@ -7889,6 +8021,12 @@ export function initUI() {
       renderStatus();
     }
     if (store.changed('tool') || store.changed('measureMethod')) syncDeviceCapture();
+    // Un toque en el mapa con Manual antes de elegir Tap o GPS: se vuelve a
+    // enseñar la pregunta, que en el teléfono pudo quedar escondida.
+    if (store.changed('measurePlaceNudge')) {
+      $('palette').classList.remove('hidden');
+      showBanner(DIP_PLACE_NUDGE, 'info');
+    }
     // La línea de corte se publica desde el store; aquí es donde se aplica,
     // porque cargar JSTS es asíncrono y el store se mantiene síncrono.
     if (store.changed('pendingCut')) {

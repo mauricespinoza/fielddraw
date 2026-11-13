@@ -117,7 +117,8 @@ function addSvgImage(map, name, file) {
       const canvas = document.createElement('canvas');
       canvas.width = side;
       canvas.height = side;
-      const ctx = canvas.getContext('2d');
+      // Solo se lee de vuelta: en CPU, sin pasar por la GPU (ver ornaments.js).
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(img, 0, 0, side, side);
       const { data } = ctx.getImageData(0, 0, side, side);
       if (!map.hasImage(name)) {

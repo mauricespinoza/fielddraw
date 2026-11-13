@@ -1,4 +1,5 @@
 import { STORE_DRAWING, STORE_LAYERS, del, get, getAll, put } from './idb.js';
+import { compactFeatures } from './compact.js';
 
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
@@ -108,7 +109,9 @@ const FEATURES_IDB_ID = 'features';
  */
 export function saveFeatures(features) {
   const savedAt = Date.now();
-  const json = JSON.stringify(features);
+  // Coordenadas a 7 decimales (~1 cm): un tercio menos que escribir en cada
+  // autoguardado, y solo se redondea lo que cambió (ver `compact.js`).
+  const json = JSON.stringify(compactFeatures(features));
   let local = false;
   try {
     localStorage.setItem(KEY, json);
