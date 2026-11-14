@@ -92,6 +92,18 @@ view.map.on('moveend', () => {
 });
 addEventListener('pagehide', () => viewTimer !== null && guardarVista());
 
+/*
+ * La pantalla de carga (ver `#splash` en index.html) se va cuando el mapa ya
+ * tiene estilo y ha pintado una vez: desde ahí la interfaz responde. No se
+ * espera a las teselas —`idle`—, que con mala señal pueden tardar 15 s cada
+ * una: lo que falte se ve llegar sobre el mapa, como siempre.
+ */
+{
+  const quitar = () => window.fdHideSplash && window.fdHideSplash();
+  if (view.map.loaded()) quitar();
+  else view.map.once('load', quitar);
+}
+
 wireLocate(() => view.locateMe());
 // La interfaz necesita el mapa para encuadrar la traza de un perfil pedido
 // desde el menú de propiedades; `createMapView` no existe hasta aquí.

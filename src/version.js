@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '0.64.0';
+export const APP_VERSION = '0.65.0';
 
 /** Beta: el formato de proyecto y la subida a StraboSpot todavía se mueven. */
 export const APP_STAGE = 'beta';
@@ -55,6 +55,15 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '0.65.0',
+    highlights: [
+      'Loading screen: while the app starts you now see shaded relief and contour lines of Antuco volcano, with the app icon and the version number, instead of a half-ready interface over an empty map.',
+      'The map buttons (zoom, north, GPS, zoom to data), the scale bar and the map credits now wear the same dark theme as the rest of the app.',
+      'On a phone, the top row of buttons fades at the edge where more buttons are hidden, so it is clear that it slides.',
+      'With a keyboard, the focused button is outlined; buttons respond to the pointer with a short transition.',
+    ],
+  },
   {
     version: '0.64.0',
     highlights: [
