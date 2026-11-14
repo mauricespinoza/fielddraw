@@ -4095,11 +4095,11 @@ function renderAbout() {
 
   const version = document.createElement('p');
   version.className = 'about-version';
-  version.textContent = `v${APP_VERSION} ${APP_STAGE}`;
+  version.textContent = `v${APP_VERSION}${APP_STAGE ? ` ${APP_STAGE}` : ''}`;
   body.appendChild(version);
 
   aboutHint(body, `${APP_AUTHOR} · ${APP_ORG} · 2026`);
-  aboutHint(body, 'Beta — free for academic use, not commercial. Built with AI assistance.');
+  aboutHint(body, 'Free for academic use, not commercial. Built with AI assistance.');
 
   // El correo es lo que se viene a buscar cuando algo falla en terreno, así
   // que va enlazado y no como texto suelto que haya que copiar a mano, y en

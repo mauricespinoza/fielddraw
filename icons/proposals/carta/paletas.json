@@ -1,0 +1,32 @@
+[
+  {
+    "file": "1-original",
+    "name": "Original",
+    "desc": "La A tal cual: pasteles de mapa escolar."
+  },
+  {
+    "file": "2-cronoestratigrafica",
+    "name": "Cronoestratigráfica",
+    "desc": "Colores de la carta cronoestratigráfica (CCGM/ICS): Jurásico, Triásico, Cretácico y Neógeno."
+  },
+  {
+    "file": "3-andina",
+    "name": "Andina",
+    "desc": "Tonos de terreno árido: andesitas, ignimbritas y gravas, con falla y lápiz turquesa de la app."
+  },
+  {
+    "file": "4-sernageomin",
+    "name": "Carta geológica",
+    "desc": "Como una carta geológica impresa: rosa de intrusivos, verde volcánico, ocre sedimentario y amarillo cuaternario."
+  },
+  {
+    "file": "5-nocturna",
+    "name": "Carta nocturna",
+    "desc": "La misma carta en el tema oscuro de FieldDraw: unidades apagadas, falla ámbar."
+  },
+  {
+    "file": "6-alto-contraste",
+    "name": "Alto contraste",
+    "desc": "Pensada para el sol de terreno y los 16 px: tres colores saturados y tinta negra gruesa."
+  }
+]

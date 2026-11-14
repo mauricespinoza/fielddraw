@@ -404,6 +404,10 @@ entre dos unidades. Todas van sobre la misma rejilla de 24×24 del icono actual.
 | `c-sello.svg` | plano, sobre turquesa, falla blanca; el que mejor se lee a 16 px |
 | `d-hoja.svg` | evolución del actual: la tablet pasa a ser una hoja de mapa |
 
+La A tiene además seis paletas en `icons/proposals/carta/` (original,
+cronoestratigráfica, andina, carta geológica, nocturna y alto contraste), con el
+mismo dibujo y solo los colores cambiados.
+
 Son solo propuestas: ninguna está en uso ni en la lista `SHELL` de `sw.js`.
 Adoptar una es cambiar los tres sitios de la tabla de arriba; la pantalla de
 carga la toma sola, porque muestra `icons/favicon.svg`.
@@ -426,7 +430,8 @@ vacío, con botones que todavía no respondían.
 - **El icono** es `icons/favicon.svg`, no otra copia del dibujo.
 - **La versión** va escrita a mano en `index.html`, porque tiene que verse
   antes de que cargue `src/version.js`. `test/shell.test.mjs` falla si no
-  coincide con `APP_VERSION`: al publicar hay que cambiarla en los dos sitios.
+  coincide con `APP_VERSION` (y `APP_STAGE`, vacío desde la 1.0): al publicar
+  hay que cambiarla en los dos sitios.
 - **Se quita** cuando el mapa dispara `load` (`fdHideSplash()` en `app.js`), sin
   esperar a las teselas. Si ningún módulo llega a cargar, un plazo de 10 s
   escrito en línea en `index.html` la quita igual, para no dejar tapado un

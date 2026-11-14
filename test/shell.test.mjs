@@ -51,9 +51,9 @@ console.log('== pantalla de carga ==');
 {
   const ver = readFileSync(join(ROOT, 'src/version.js'), 'utf8');
   const v = /APP_VERSION = '([^']+)'/.exec(ver)[1];
-  const etapa = /APP_STAGE = '([^']+)'/.exec(ver)[1];
+  const etapa = /APP_STAGE = '([^']*)'/.exec(ver)[1];
   const escrito = /id="splash-version">([^<]*)</.exec(html);
-  ok('la versión escrita en index.html es la de version.js', !!escrito && escrito[1] === `v${v} ${etapa}`, escrito ? escrito[1] : 'no está');
+  ok('la versión escrita en index.html es la de version.js', !!escrito && escrito[1] === `v${v}${etapa ? ` ${etapa}` : ''}`, escrito ? escrito[1] : 'no está');
   ok('el fondo está en el shell (se ve sin señal)', shell.includes('icons/splash.webp'));
   ok('el icono es el de siempre, no otra copia', /class="splash-icon" src="\.\/icons\/favicon\.svg"/.test(html));
   ok('hay un plazo que la quita aunque no cargue ningún módulo', /setTimeout\(window\.fdHideSplash, \d+\)/.test(html));
