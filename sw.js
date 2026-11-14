@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v92';
+const VERSION = 'v94';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -71,6 +71,7 @@ const SHELL = [
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/splash.webp',
 
   './src/adopt.js',
   './src/app.js',

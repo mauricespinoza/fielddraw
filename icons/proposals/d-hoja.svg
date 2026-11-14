@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <title>FieldDraw — propuesta D «Hoja»</title>
+  <desc>Evolución del icono actual: sobre el azulejo oscuro, una hoja de mapa geológico a color donde el lápiz coral traza la falla inversa.</desc>
+  <defs><clipPath id="t"><rect width="24" height="24" rx="5.5" /></clipPath></defs>
+  <defs><clipPath id="h"><rect x="2.6" y="7.4" width="14.4" height="14.4" rx="1.7" /></clipPath></defs>
+  <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
+  <rect x="0.6" y="0.6" width="22.8" height="22.8" rx="5" fill="none" stroke="#e6edf3" stroke-opacity="0.16" stroke-width="1.2" />
+  <g clip-path="url(#h)"><g transform="translate(2.6 7.4) scale(0.6)">
+    <rect width="24" height="24" fill="#8fb8de" />
+    <path d="M-1 -1H15.2C12.6 3.6 8.6 8 6.4 16.4L-1 20Z" fill="#9ed08c" />
+    <path d="M-1 19.6C4.6 18.6 9.2 14.6 14.3 10.7C17.2 8.4 20.5 7.2 25 6.6V25H-1Z" fill="#f6dc86" />
+    <path d="M25 13.2C20.6 13.6 16.4 16.6 13.6 25H25Z" fill="#f2a98f" />
+    <path d="M-1 19.6C4.6 18.6 9.2 14.6 14.3 10.7" fill="none" stroke="#111827" stroke-width="2.1" stroke-linecap="round" />
+    <path d="M0.67 19.29L1.19 15.97L3.83 18.04ZM4.95 17.43L4.85 14.07L7.83 15.62ZM9.04 14.73L8.65 11.4L11.75 12.68Z" fill="#111827" />
+  </g></g>
+  <rect x="2.6" y="7.4" width="14.4" height="14.4" rx="1.7" fill="none" stroke="#2dd4bf" stroke-width="1.3" />
+  <g transform="translate(11.18 13.82) rotate(35)"><path d="M0 0L1.3 -3V-10a0.6 0.6 0 0 0 -0.6 -0.6H-0.7000000000000001a0.6 0.6 0 0 0 -0.6 0.6V-3Z" fill="#0b0f14" stroke="#0b0f14" stroke-width="0.9" stroke-linejoin="round" /><path d="M0 0L1.3 -3H-1.3Z" fill="#f1d6ac" /><path d="M0 0L0.52 -1.12H-0.52Z" fill="#111827" /><rect x="-1.3" y="-8" width="2.6" height="5" fill="#f87171" /><rect x="0" y="-8" width="1.3" height="5" fill="#e25555" /><rect x="-1.3" y="-8.9" width="2.6" height="0.9" fill="#cbd5e1" /><path d="M-1.3 -8.9V-10a0.6 0.6 0 0 1 0.6 -0.6H0.7000000000000001a0.6 0.6 0 0 1 0.6 0.6V-8.9Z" fill="#fda4af" /></g>
+</svg>

@@ -30,7 +30,7 @@ al código. Ver **Publicar y usar sin señal**.
 for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact; do node test/$f.test.mjs; done
 ```
 
-1347 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1352 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -364,31 +364,80 @@ la vez siguiente.
 
 #### Un solo icono para todo
 
-El icono de la pestaña, el del manifest, el de *apple-touch-icon* y el que se
-ve DENTRO de la app —arriba a la izquierda, junto al nombre— son el mismo
-dibujo: un lápiz trazando una línea sobre una tablet, que es literalmente lo
-que hace la app.
+El icono es un lápiz que traza una **falla inversa** —línea con dientes llenos
+sobre el bloque colgante— en un mapa geológico simplificado: la falla trunca el
+contacto entre dos unidades del colgante, y por delante de la punta queda el
+resto del contacto en trazos, aún sin repasar. Los colores son los de la carta
+cronoestratigráfica internacional (Jurásico, Triásico, Cretácico y Neógeno).
 
-Antes eran dos. Los archivos de `icons/` traían un contacto turquesa con una
-falla inversa, y la franja de la app llevaba su propio dibujo aparte: quien
-instalaba la app veía un icono en el lanzador y otro al abrirla, y la pestaña
-no se parecía a ninguno de los dos. Ahora manda el de la franja, que es el que
-uno asocia con la app porque lo tiene delante todo el rato.
+Sale de **una sola fuente**, `tools/make-icons.mjs`, que describe la geometría
+una vez y escribe todo lo demás:
 
-Vive en tres sitios, con las MISMAS coordenadas sobre una rejilla de 24×24:
+| Archivo | Para qué |
+| --- | --- |
+| `icons/favicon.svg` | la pestaña; y por referencia, el logo de la franja (`img.brand-logo`), el del panel About y el de la pantalla de carga |
+| `icons/icon-180/192/512.png` | *apple-touch-icon* y el manifest |
 
-| Archivo | Para qué | Cómo |
-| --- | --- | --- |
-| `index.html` → `svg.brand-logo` | la franja de la app | a mano |
-| `icons/favicon.svg` | la pestaña del navegador | a mano, el mismo SVG |
-| `icons/icon-180/192/512.png` | instalación y pantalla de inicio | `node tools/make-icons.mjs` |
+Antes el dibujo estaba copiado a mano en tres sitios —el SVG de la franja en
+`index.html`, `favicon.svg` y las coordenadas del rasterizador— y cambiarlo
+obligaba a tocar los tres sin equivocarse. Ahora se cambia el script y se
+corre:
 
-El favicon va en vector y no como el PNG incrustado que había antes: a 16 px,
-que es donde de verdad se mira, el navegador lo rasteriza a ese tamaño en vez
-de reducir una imagen de 192. Los PNG salen del rasterizador propio de
-`tools/make-icons.mjs` —no hay dependencias: se pinta el buffer RGBA a mano y
-se empaqueta con el zlib de Node—, que trae las mismas coordenadas del SVG.
-Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
+```bash
+node tools/make-icons.mjs
+```
+
+No hay dependencias: los PNG se pintan con un relleno por líneas de barrido
+supermuestreado y se empaquetan con el zlib de Node. Los trazos se rellenan
+como unión de sus piezas —un cuadrilátero por segmento y un disco por
+vértice—, porque como un solo trayecto la regla de no-cero anulaba los
+solapes y el trazo salía agujereado.
+
+#### Propuestas de icono nuevo
+
+En `icons/proposals/` hay cuatro propuestas para reemplazar el icono: un lápiz
+que traza una **falla inversa** —línea con dientes llenos sobre el bloque
+colgante— en un mapa geológico simplificado, donde la falla trunca el contacto
+entre dos unidades. Todas van sobre la misma rejilla de 24×24 del icono actual.
+
+| Archivo | Idea |
+| --- | --- |
+| `a-carta.svg` | el mapa a todo color, falla en tinta negra |
+| `b-nocturno.svg` | el tema oscuro de la app: falla ámbar, lápiz coral |
+| `c-sello.svg` | plano, sobre turquesa, falla blanca; el que mejor se lee a 16 px |
+| `d-hoja.svg` | evolución del actual: la tablet pasa a ser una hoja de mapa |
+
+La A tiene además seis paletas en `icons/proposals/carta/` (original,
+cronoestratigráfica, andina, carta geológica, nocturna y alto contraste), con el
+mismo dibujo y solo los colores cambiados.
+
+Se eligió la **A2** (cronoestratigráfica), que es el icono actual. Las demás
+quedan como registro; ninguna está en la lista `SHELL` de `sw.js`.
+
+### Pantalla de carga
+
+Mientras bajan y arrancan los módulos y MapLibre, `#splash` (en `index.html`)
+tapa la app con un fondo de relieve sombreado y curvas de nivel, el icono al
+centro y el número de versión. Antes se veía la interfaz entera sobre un mapa
+vacío, con botones que todavía no respondían.
+
+- **El fondo** es `icons/splash.webp` (1440 px, ~115 KB): el volcán Antuco y la
+  laguna del Laja, que es donde abre el mapa la primera vez, con el sol al NW y
+  curvas cada 100 m. Sale de `tools/make-splash.html` a partir de las mismas
+  teselas terrarium que usa la app; con el servidor corriendo se abre
+  `http://localhost:5174/tools/make-splash.html` y se guarda el resultado. Es
+  una página y no un script de Node porque hace falta decodificar PNG y
+  codificar WebP, y eso el navegador lo trae sin dependencias. Está en `SHELL`,
+  así que se ve también sin señal.
+- **El icono** es `icons/favicon.svg`, no otra copia del dibujo.
+- **La versión** va escrita a mano en `index.html`, porque tiene que verse
+  antes de que cargue `src/version.js`. `test/shell.test.mjs` falla si no
+  coincide con `APP_VERSION` (y `APP_STAGE`, vacío desde la 1.0): al publicar
+  hay que cambiarla en los dos sitios.
+- **Se quita** cuando el mapa dispara `load` (`fdHideSplash()` en `app.js`), sin
+  esperar a las teselas. Si ningún módulo llega a cargar, un plazo de 10 s
+  escrito en línea en `index.html` la quita igual, para no dejar tapado un
+  aviso de error.
 
 ## Modelo de interacción
 

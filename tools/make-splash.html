@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>FieldDraw — generador del fondo de la pantalla de carga</title>
+    <style>
+      body { margin: 16px; background: #0d1117; color: #e6edf3; font: 14px/1.5 system-ui, sans-serif; }
+      canvas { display: block; max-width: min(100%, 800px); height: auto; border: 1px solid #30363d; margin: 12px 0; }
+      a { color: #2dd4bf; }
+    </style>
+  </head>
+  <body>
+    <!--
+      EL FONDO DE LA PANTALLA DE CARGA: relieve sombreado y curvas de nivel.
+
+      Sale del mismo DEM que usa la app —las teselas terrarium de AWS,
+      `elevation-tiles-prod`, dominio público— y del mismo sitio donde abre el
+      mapa la primera vez (`center: [-71.35, -37.4]` en mapView.js: el volcán
+      Antuco y la Sierra Velluda). Así la pantalla de carga no es un adorno
+      cualquiera: es el mapa que está a punto de aparecer, en penumbra.
+
+      Es una página y no un script de Node porque hace falta decodificar PNG y
+      codificar WebP, y el proyecto no tiene dependencias: el navegador trae
+      las dos cosas. Se usa con el servidor de desarrollo:
+
+          node serve.mjs 5174
+          → http://localhost:5174/tools/make-splash.html
+          → «Guardar icons/splash.webp»
+
+      Solo hace falta volver a correrla si se cambia el encuadre o los colores.
+    -->
+    <p id="estado">Bajando el DEM…</p>
+    <canvas id="lienzo"></canvas>
+    <p><a id="bajar" download="splash.webp" hidden>Guardar icons/splash.webp</a></p>
+
+    <script type="module">
+      const CENTRO = [-71.35, -37.4]; // el de mapView.js
+      const Z = 13;
+      const LADO = 5;          // teselas por lado: 5 × 256 px ≈ 19 km
+      const SALIDA = 1440;     // px del lado de la imagen final
+      const CALIDAD = 0.5;     // WebP: oscuro y de poco contraste, comprime bien
+      const EQUIDISTANCIA = 100; // m entre curvas
+      const MAESTRA = 500;       // m entre curvas maestras
+
+      // Los colores del tema (ver `:root` en app.css) y el de las curvas del mapa.
+      const FONDO = [13, 17, 23];      // --bg
+      const LUZ = [52, 66, 86];        // la ladera iluminada, azul pizarra
+      const CURVA = '194, 130, 74';    // el siena de las curvas de nivel
+
+      const estado = document.getElementById('estado');
+      const n = 2 ** Z;
+      const tx = Math.floor(((CENTRO[0] + 180) / 360) * n);
+      const latR = (CENTRO[1] * Math.PI) / 180;
+      const ty = Math.floor(((1 - Math.asinh(Math.tan(latR)) / Math.PI) / 2) * n);
+      const x0 = tx - (LADO >> 1);
+      const y0 = ty - (LADO >> 1);
+
+      const cargar = (x, y) =>
+        new Promise((ok, mal) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => ok(img);
+          img.onerror = () => mal(new Error(`tesela ${Z}/${x}/${y}`));
+          img.src = `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${Z}/${x}/${y}.png`;
+        });
+
+      const N = LADO * 256;
+      const tmp = new OffscreenCanvas(N, N);
+      const tctx = tmp.getContext('2d', { willReadFrequently: true });
+      const tareas = [];
+      for (let j = 0; j < LADO; j++)
+        for (let i = 0; i < LADO; i++)
+          tareas.push(cargar(x0 + i, y0 + j).then((img) => tctx.drawImage(img, i * 256, j * 256)));
+      await Promise.all(tareas);
+      estado.textContent = 'Calculando…';
+
+      // Cotas: terrarium = R·256 + G + B/256 − 32768.
+      const px = tctx.getImageData(0, 0, N, N).data;
+      let dem = new Float32Array(N * N);
+      for (let i = 0; i < N * N; i++) dem[i] = px[i * 4] * 256 + px[i * 4 + 1] + px[i * 4 + 2] / 256 - 32768;
+
+      // Remuestreo bilineal al tamaño de salida.
+      const W = SALIDA;
+      const alto = new Float32Array(W * W);
+      const k = (N - 1) / (W - 1);
+      for (let y = 0; y < W; y++) {
+        const fy = y * k, iy = Math.min(N - 2, fy | 0), dy = fy - iy;
+        for (let x = 0; x < W; x++) {
+          const fx = x * k, ix = Math.min(N - 2, fx | 0), dx = fx - ix;
+          const a = dem[iy * N + ix], b = dem[iy * N + ix + 1];
+          const c = dem[(iy + 1) * N + ix], d = dem[(iy + 1) * N + ix + 1];
+          alto[y * W + x] = (a * (1 - dx) + b * dx) * (1 - dy) + (c * (1 - dx) + d * dx) * dy;
+        }
+      }
+
+      // Suavizado separable (caja, tres pasadas ≈ gaussiana): sin él las curvas
+      // heredan el escalonado del SRTM y salen con dientes.
+      const suavizar = (src, r, veces) => {
+        let a = src, b = new Float32Array(W * W);
+        for (let v = 0; v < veces; v++) {
+          for (let y = 0; y < W; y++)
+            for (let x = 0; x < W; x++) {
+              let s = 0, c = 0;
+              for (let d = -r; d <= r; d++) { const xx = x + d; if (xx >= 0 && xx < W) { s += a[y * W + xx]; c++; } }
+              b[y * W + x] = s / c;
+            }
+          for (let y = 0; y < W; y++)
+            for (let x = 0; x < W; x++) {
+              let s = 0, c = 0;
+              for (let d = -r; d <= r; d++) { const yy = y + d; if (yy >= 0 && yy < W) { s += b[yy * W + x]; c++; } }
+              a[y * W + x] = s / c;
+            }
+        }
+        return a;
+      };
+      const liso = suavizar(alto, 3, 3);
+
+      // Relieve sombreado: sol al NW a 45°, con un segundo foco tenue desde el
+      // W para que las laderas de cara al SE no queden planas.
+      const metrosPx = (40075016.686 * Math.cos(latR)) / n / 256 * k;
+      const EXAG = 1.0;
+      const sol = (az, alt) => {
+        const a = (az * Math.PI) / 180, h = (alt * Math.PI) / 180;
+        return [Math.sin(a) * Math.cos(h), -Math.cos(a) * Math.cos(h), Math.sin(h)];
+      };
+      const S1 = sol(315, 45), S2 = sol(260, 35);
+      const LLANO = 0.72 * S1[2] + 0.28 * S2[2];
+      const lienzo = document.getElementById('lienzo');
+      lienzo.width = lienzo.height = W;
+      const ctx = lienzo.getContext('2d');
+      const out = ctx.createImageData(W, W);
+      for (let y = 0; y < W; y++) {
+        for (let x = 0; x < W; x++) {
+          const xm = Math.max(0, x - 1), xp = Math.min(W - 1, x + 1);
+          const ym = Math.max(0, y - 1), yp = Math.min(W - 1, y + 1);
+          const gx = ((liso[y * W + xp] - liso[y * W + xm]) / ((xp - xm) * metrosPx)) * EXAG;
+          const gy = ((liso[yp * W + x] - liso[ym * W + x]) / ((yp - ym) * metrosPx)) * EXAG;
+          const l = Math.hypot(gx, gy, 1);
+          const nx = -gx / l, ny = -gy / l, nz = 1 / l;
+          const i1 = Math.max(0, nx * S1[0] + ny * S1[1] + nz * S1[2]);
+          const i2 = Math.max(0, nx * S2[0] + ny * S2[1] + nz * S2[2]);
+          // Centrado en el llano: lo horizontal queda a media luz (0,42) y
+          // las laderas se aclaran o se oscurecen desde ahí, sin llegar al
+          // negro — es un fondo, no un mapa de sombras.
+          const luz = 0.72 * i1 + 0.28 * i2;
+          const t = Math.min(1, Math.max(0.06, 0.42 + (luz - LLANO) * 1.15));
+          const i = (y * W + x) * 4;
+          out.data[i] = FONDO[0] + (LUZ[0] - FONDO[0]) * t;
+          out.data[i + 1] = FONDO[1] + (LUZ[1] - FONDO[1]) * t;
+          out.data[i + 2] = FONDO[2] + (LUZ[2] - FONDO[2]) * t;
+          out.data[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(out, 0, 0);
+
+      // Curvas de nivel por cuadrados en marcha, interpolando en cada arista.
+      const trazar = (nivel, path) => {
+        for (let y = 0; y < W - 1; y++) {
+          for (let x = 0; x < W - 1; x++) {
+            const a = liso[y * W + x], b = liso[y * W + x + 1];
+            const c = liso[(y + 1) * W + x + 1], d = liso[(y + 1) * W + x];
+            const caso = (a > nivel ? 8 : 0) | (b > nivel ? 4 : 0) | (c > nivel ? 2 : 0) | (d > nivel ? 1 : 0);
+            if (caso === 0 || caso === 15) continue;
+            const f = (p, q) => (nivel - p) / (q - p);
+            const T = [x + f(a, b), y], R = [x + 1, y + f(b, c)];
+            const B = [x + f(d, c), y + 1], L = [x, y + f(a, d)];
+            const seg = (p, q) => { path.moveTo(p[0] + 0.5, p[1] + 0.5); path.lineTo(q[0] + 0.5, q[1] + 0.5); };
+            switch (caso) {
+              case 1: case 14: seg(L, B); break;
+              case 2: case 13: seg(B, R); break;
+              case 3: case 12: seg(L, R); break;
+              case 4: case 11: seg(T, R); break;
+              case 6: case 9: seg(T, B); break;
+              case 7: case 8: seg(L, T); break;
+              case 5: seg(L, T); seg(B, R); break;
+              case 10: seg(L, B); seg(T, R); break;
+            }
+          }
+        }
+      };
+      let min = Infinity, max = -Infinity;
+      for (const v of liso) { if (v < min) min = v; if (v > max) max = v; }
+      const finas = new Path2D(), maestras = new Path2D();
+      for (let h = Math.ceil(min / EQUIDISTANCIA) * EQUIDISTANCIA; h < max; h += EQUIDISTANCIA)
+        trazar(h + 0.01, h % MAESTRA === 0 ? maestras : finas);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = `rgba(${CURVA}, 0.34)`;
+      ctx.lineWidth = 1;
+      ctx.stroke(finas);
+      ctx.strokeStyle = `rgba(${CURVA}, 0.62)`;
+      ctx.lineWidth = 1.6;
+      ctx.stroke(maestras);
+
+      lienzo.toBlob((blob) => {
+        const a = document.getElementById('bajar');
+        a.href = URL.createObjectURL(blob);
+        a.hidden = false;
+        estado.textContent = `Listo: ${W} × ${W} px, ${(blob.size / 1024).toFixed(0)} KB · cotas ${Math.round(min)}–${Math.round(max)} m`;
+        document.body.dataset.listo = '1';
+      }, 'image/webp', CALIDAD);
+    </script>
+  </body>
+</html>

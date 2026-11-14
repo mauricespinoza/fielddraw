@@ -17,21 +17,16 @@
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
 
     <!--
-      UN SOLO ICONO PARA TODO: el de la pestaña, el del manifest, el de
-      apple-touch-icon y el que se ve DENTRO de la app en la franja de arriba
-      a la izquierda (.brand-logo, más abajo) son el mismo dibujo.
+      UN SOLO ICONO PARA TODO, DE UNA SOLA FUENTE: un lápiz que traza una falla
+      inversa en un mapa geológico simplificado, con los colores de la carta
+      cronoestratigráfica.
 
-      Antes eran dos. Los archivos de icons/ traían un contacto turquesa con
-      una falla inversa, y la franja de la app una tablet con un lápiz: quien
-      instalaba la app veía un icono en el lanzador y otro al abrirla, y la
-      pestaña no se parecía a ninguno de los dos. Ahora manda el de la franja,
-      que es el que la gente asocia con la app porque lo tiene delante todo el
-      rato.
-
-      favicon.svg es ese mismo SVG en vector —a 16 px el navegador lo
-      rasteriza a ese tamaño, en vez de reducir un PNG de 192— y los PNG salen
-      de tools/make-icons.mjs, que lleva las mismas coordenadas. Si se cambia
-      el dibujo hay que tocar los tres y correr `node tools/make-icons.mjs`.
+      `node tools/make-icons.mjs` describe el dibujo una vez y escribe
+      icons/favicon.svg y los PNG de icons/. La pestaña, la franja de arriba a
+      la izquierda (`img.brand-logo`, más abajo), el panel About y la pantalla
+      de carga muestran favicon.svg; el manifest y apple-touch-icon, los PNG.
+      Ninguno lleva el dibujo copiado a mano: cambiarlo es tocar el script y
+      volver a correrlo.
     -->
     <link rel="icon" type="image/svg+xml" href="./icons/favicon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
@@ -63,6 +58,9 @@
 
     <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
     <link rel="stylesheet" href="./src/styles/app.css" />
+    <!-- El fondo de la pantalla de carga se pide ya, sin esperar a que el CSS
+         lo descubra: es lo primero que se ve. -->
+    <link rel="preload" as="image" href="./icons/splash.webp" type="image/webp" />
 
     <!--
       Precarga de módulos: sin esto el navegador descubre los ~75 módulos de
@@ -160,6 +158,49 @@
   </head>
 
   <body>
+    <!--
+      PANTALLA DE CARGA.
+
+      Tapa la app mientras bajan y arrancan los ~75 módulos y MapLibre: antes
+      se veía la interfaz entera sobre un mapa vacío, con botones que todavía
+      no respondían. El fondo es relieve sombreado con curvas de nivel del
+      volcán Antuco —donde abre el mapa la primera vez—, hecho con
+      tools/make-splash.html a partir del mismo DEM que usa la app.
+
+      El icono es icons/favicon.svg y no una cuarta copia del dibujo: el día
+      que cambie el icono, este cambia solo.
+
+      El número de versión va escrito aquí a mano porque tiene que verse antes
+      de que cargue ningún módulo, y `src/version.js` es un módulo.
+      `test/shell.test.mjs` falla si no coincide con `APP_VERSION`/`APP_STAGE`.
+
+      La quita `app.js` cuando el mapa está listo (`fdHideSplash`). El script de
+      abajo es clásico y va en línea a propósito: si un módulo no llega nunca,
+      la pantalla se va sola a los 10 s en vez de dejar la app tapada para
+      siempre — debajo puede haber un aviso que leer.
+    -->
+    <div class="splash" id="splash" role="status" aria-label="Loading FieldDraw">
+      <div class="splash-card">
+        <img class="splash-icon" src="./icons/favicon.svg" width="112" height="112" alt="" />
+        <div class="splash-name"><span class="brand-name-a">Field</span><span class="brand-name-b">Draw</span></div>
+        <div class="splash-version" id="splash-version">v1.0.0</div>
+        <div class="splash-bar" aria-hidden="true"><i></i></div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var el = document.getElementById('splash');
+        var fuera = false;
+        window.fdHideSplash = function () {
+          if (fuera) return;
+          fuera = true;
+          el.classList.add('out');
+          setTimeout(function () { el.remove(); }, 450);
+        };
+        setTimeout(window.fdHideSplash, 10000);
+      })();
+    </script>
+
     <div class="app">
       <div class="map-host" id="map-host">
         <div class="map-container" id="map-container"></div>
@@ -481,17 +522,9 @@
       <!-- Solo el logo: quién lo hizo y la universidad viven en el panel
            About (botón "i"), no repetidos aquí encima del mapa. -->
       <div class="brand" aria-hidden="false">
-        <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true">
-          <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
-          <rect x="0.6" y="0.6" width="22.8" height="22.8" rx="5" fill="none" stroke="#e6edf3" stroke-opacity="0.16" stroke-width="1.2" />
-          <!-- la tablet -->
-          <rect x="3.6" y="8.8" width="12.6" height="10.2" rx="1.6" fill="none" stroke="#2dd4bf" stroke-width="1.4" />
-          <!-- el contacto que se está dibujando en su pantalla -->
-          <path d="M5.6 15.9 8.6 12.7 10.9 15 13.3 11.6" fill="none" stroke="#ffb300" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-          <!-- el lápiz, con la mina tocando el extremo del trazo -->
-          <line x1="20.2" y1="2.6" x2="15.1" y2="10" stroke="#f87171" stroke-width="2.3" stroke-linecap="round" />
-          <path d="M15.1 10 13.1 11.9 14.3 9.3z" fill="#e6edf3" />
-        </svg>
+        <!-- El logo es icons/favicon.svg, el mismo archivo de la pestaña: ver
+             tools/make-icons.mjs, que es de donde sale el dibujo. -->
+        <img class="brand-logo" src="./icons/favicon.svg" width="40" height="40" alt="" />
         <!-- El nombre, a la derecha del logo. «Field» liviano y «Draw» con
              peso y en el turquesa de la tablet del icono: se lee como una
              sola palabra y la segunda mitad —lo que la app hace— es la que
