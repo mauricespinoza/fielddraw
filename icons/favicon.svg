@@ -1,29 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <!--
-    EL ICONO DE LA PESTAÑA ES EL MISMO QUE SE VE DENTRO DE LA APP.
+    GENERADO POR tools/make-icons.mjs — no se edita a mano.
 
-    Este archivo es, trazo por trazo, el `<svg class="brand-logo">` de la
-    franja superior de index.html, sobre su misma rejilla de 24×24. Antes no
-    coincidían: la pestaña y el icono del sistema traían un contacto turquesa
-    con una falla inversa, y arriba a la izquierda de la app se veía otra cosa
-    —una tablet con un lápiz—, así que quien la instalaba tenía un icono en el
-    lanzador y otro al abrirla.
-
-    Va en vector y no como el PNG incrustado que había antes: a 16 px, que es
-    donde de verdad se mira un favicon, el navegador lo rasteriza a ese tamaño
-    en vez de reducir una imagen de 192.
-
-    Los tres archivos salen del mismo dibujo: aquí a mano, y en
-    icons/icon-180/192/512.png a través de `node tools/make-icons.mjs`, que
-    lleva las mismas coordenadas. Si se cambia uno hay que cambiar los tres.
+    El icono de FieldDraw: un lápiz que traza una falla inversa en un mapa
+    geológico simplificado, con los colores de la carta cronoestratigráfica.
+    Este archivo es la pestaña del navegador y, por referencia, el logo de la
+    franja de la app, el del panel About y el de la pantalla de carga. Los PNG
+    de icons/ salen de la misma geometría.
   -->
-  <rect width="24" height="24" rx="5.5" fill="#0b0f14" />
-  <rect x="0.6" y="0.6" width="22.8" height="22.8" rx="5" fill="none" stroke="#e6edf3" stroke-opacity="0.16" stroke-width="1.2" />
-  <!-- la tablet -->
-  <rect x="3.6" y="8.8" width="12.6" height="10.2" rx="1.6" fill="none" stroke="#2dd4bf" stroke-width="1.4" />
-  <!-- el contacto que se está dibujando en su pantalla -->
-  <path d="M5.6 15.9 8.6 12.7 10.9 15 13.3 11.6" fill="none" stroke="#ffb300" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-  <!-- el lápiz, con la mina tocando el extremo del trazo -->
-  <line x1="20.2" y1="2.6" x2="15.1" y2="10" stroke="#f87171" stroke-width="2.3" stroke-linecap="round" />
-  <path d="M15.1 10 13.1 11.9 14.3 9.3z" fill="#e6edf3" />
+  <title>FieldDraw</title>
+  <defs><clipPath id="azulejo"><path d="M5.5 0L18.5 0C21.54 0 24 2.46 24 5.5L24 18.5C24 21.54 21.54 24 18.5 24L5.5 24C2.46 24 0 21.54 0 18.5L0 5.5C0 2.46 2.46 0 5.5 0Z" /></clipPath></defs>
+  <g clip-path="url(#azulejo)">
+    <path d="M-1 -1L25 -1L25 25L-1 25Z" fill="#9a5ea8" />
+    <path d="M-1 -1L15.2 -1C12.6 3.6 8.6 8 6.4 16.4L-1 20Z" fill="#34b2c9" />
+    <path d="M-1 19.6C4.6 18.6 9.2 14.6 14.3 10.7C17.2 8.4 20.5 7.2 25 6.6L25 25L-1 25Z" fill="#8fd16a" />
+    <path d="M25 13.2C20.6 13.6 16.4 16.6 13.6 25L25 25Z" fill="#ffe619" />
+    <path d="M15.2 -1C12.6 3.6 8.6 8 6.2 15.9" fill="none" stroke="#1f2937" stroke-width="0.5" stroke-opacity="0.5" />
+    <path d="M25 13.2C20.6 13.6 16.4 16.6 13.6 25" fill="none" stroke="#1f2937" stroke-width="0.5" stroke-opacity="0.5" />
+    <path d="M14.3 10.7C17.2 8.4 20.5 7.2 25 6.6" fill="none" stroke="#1f2937" stroke-width="0.5" stroke-opacity="0.5" stroke-dasharray="1.1 0.9" />
+    <path d="M-1 19.6C4.6 18.6 9.2 14.6 14.3 10.7" fill="none" stroke="#111827" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M1.09 19.12L1.48 16.71L3.41 18.21ZM5.33 17.19L5.27 14.75L7.45 15.86ZM9.4 14.46L9.13 12.03L11.39 12.95Z" fill="#111827" />
+  </g>
+  <path d="M14.3 10.7L17.17 9.05L21.64 2.66C21.83 2.38 21.77 2.01 21.49 1.82L20.18 0.9C19.91 0.71 19.54 0.78 19.35 1.05L14.87 7.44Z" fill="none" stroke="#111827" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M14.3 10.7L17.17 9.05L21.64 2.66C21.83 2.38 21.77 2.01 21.49 1.82L20.18 0.9C19.91 0.71 19.54 0.78 19.35 1.05L14.87 7.44Z" fill="#111827" />
+  <path d="M14.3 10.7L17.17 9.05L14.87 7.44Z" fill="#f1d6ac" />
+  <path d="M14.3 10.7L15.37 10.08L14.52 9.48Z" fill="#1f2937" />
+  <path d="M18.2 2.69L20.49 4.29L17.17 9.05L14.87 7.44Z" fill="#ef4444" />
+  <path d="M19.35 3.49L20.49 4.29L17.17 9.05L16.02 8.24Z" fill="#c81e1e" />
+  <path d="M18.72 1.95L21.01 3.56L20.49 4.29L18.2 2.69Z" fill="#cbd5e1" />
+  <path d="M18.72 1.95L19.35 1.05C19.54 0.78 19.91 0.71 20.18 0.9L21.49 1.82C21.77 2.01 21.83 2.38 21.64 2.66L21.01 3.56Z" fill="#fda4af" />
 </svg>

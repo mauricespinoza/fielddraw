@@ -63,6 +63,7 @@ export const CHANGELOG = [
     version: '1.0.0',
     highlights: [
       'FieldDraw 1.0: the first stable version.',
+      'New icon: a pencil drawing a reverse fault on a simplified geological map, in the colours of the chronostratigraphic chart. The same drawing in the browser tab, the home screen, the app bar, About and the loading screen.',
       'Loading screen: while the app starts you now see shaded relief and contour lines of Antuco volcano, with the app icon and the version number, instead of a half-ready interface over an empty map.',
       'The map buttons (zoom, north, GPS, zoom to data), the scale bar and the map credits now wear the same dark theme as the rest of the app.',
       'On a phone, the top row of buttons fades at the edge where more buttons are hidden, so it is clear that it slides.',

@@ -4083,8 +4083,7 @@ function renderAbout() {
   body.replaceChildren();
 
   // El mismo dibujo que la pestaña del navegador y el icono del lanzador:
-  // referenciado, no reescrito a mano una tercera vez (ver la nota de
-  // `icons/favicon.svg` sobre por qué las tres copias tienen que coincidir).
+  // referenciado, no copiado (sale de `tools/make-icons.mjs`).
   const logo = document.createElement('img');
   logo.className = 'about-logo';
   logo.src = 'icons/favicon.svg';

@@ -364,31 +364,34 @@ la vez siguiente.
 
 #### Un solo icono para todo
 
-El icono de la pestaña, el del manifest, el de *apple-touch-icon* y el que se
-ve DENTRO de la app —arriba a la izquierda, junto al nombre— son el mismo
-dibujo: un lápiz trazando una línea sobre una tablet, que es literalmente lo
-que hace la app.
+El icono es un lápiz que traza una **falla inversa** —línea con dientes llenos
+sobre el bloque colgante— en un mapa geológico simplificado: la falla trunca el
+contacto entre dos unidades del colgante, y por delante de la punta queda el
+resto del contacto en trazos, aún sin repasar. Los colores son los de la carta
+cronoestratigráfica internacional (Jurásico, Triásico, Cretácico y Neógeno).
 
-Antes eran dos. Los archivos de `icons/` traían un contacto turquesa con una
-falla inversa, y la franja de la app llevaba su propio dibujo aparte: quien
-instalaba la app veía un icono en el lanzador y otro al abrirla, y la pestaña
-no se parecía a ninguno de los dos. Ahora manda el de la franja, que es el que
-uno asocia con la app porque lo tiene delante todo el rato.
+Sale de **una sola fuente**, `tools/make-icons.mjs`, que describe la geometría
+una vez y escribe todo lo demás:
 
-Vive en tres sitios, con las MISMAS coordenadas sobre una rejilla de 24×24:
+| Archivo | Para qué |
+| --- | --- |
+| `icons/favicon.svg` | la pestaña; y por referencia, el logo de la franja (`img.brand-logo`), el del panel About y el de la pantalla de carga |
+| `icons/icon-180/192/512.png` | *apple-touch-icon* y el manifest |
 
-| Archivo | Para qué | Cómo |
-| --- | --- | --- |
-| `index.html` → `svg.brand-logo` | la franja de la app | a mano |
-| `icons/favicon.svg` | la pestaña del navegador | a mano, el mismo SVG |
-| `icons/icon-180/192/512.png` | instalación y pantalla de inicio | `node tools/make-icons.mjs` |
+Antes el dibujo estaba copiado a mano en tres sitios —el SVG de la franja en
+`index.html`, `favicon.svg` y las coordenadas del rasterizador— y cambiarlo
+obligaba a tocar los tres sin equivocarse. Ahora se cambia el script y se
+corre:
 
-El favicon va en vector y no como el PNG incrustado que había antes: a 16 px,
-que es donde de verdad se mira, el navegador lo rasteriza a ese tamaño en vez
-de reducir una imagen de 192. Los PNG salen del rasterizador propio de
-`tools/make-icons.mjs` —no hay dependencias: se pinta el buffer RGBA a mano y
-se empaqueta con el zlib de Node—, que trae las mismas coordenadas del SVG.
-Cambiar el dibujo obliga a tocar los tres y volver a correr el generador.
+```bash
+node tools/make-icons.mjs
+```
+
+No hay dependencias: los PNG se pintan con un relleno por líneas de barrido
+supermuestreado y se empaquetan con el zlib de Node. Los trazos se rellenan
+como unión de sus piezas —un cuadrilátero por segmento y un disco por
+vértice—, porque como un solo trayecto la regla de no-cero anulaba los
+solapes y el trazo salía agujereado.
 
 #### Propuestas de icono nuevo
 
@@ -408,9 +411,8 @@ La A tiene además seis paletas en `icons/proposals/carta/` (original,
 cronoestratigráfica, andina, carta geológica, nocturna y alto contraste), con el
 mismo dibujo y solo los colores cambiados.
 
-Son solo propuestas: ninguna está en uso ni en la lista `SHELL` de `sw.js`.
-Adoptar una es cambiar los tres sitios de la tabla de arriba; la pantalla de
-carga la toma sola, porque muestra `icons/favicon.svg`.
+Se eligió la **A2** (cronoestratigráfica), que es el icono actual. Las demás
+quedan como registro; ninguna está en la lista `SHELL` de `sw.js`.
 
 ### Pantalla de carga
 
