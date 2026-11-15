@@ -155,6 +155,11 @@
     <link rel="modulepreload" href="./src/version.js" />
     <link rel="modulepreload" href="./src/vertexEdit.js" />
     <link rel="modulepreload" href="./src/zip.js" />
+    <link rel="modulepreload" href="./src/autosave.js" />
+    <link rel="modulepreload" href="./src/backup.js" />
+    <link rel="modulepreload" href="./src/snapshots.js" />
+    <link rel="modulepreload" href="./src/drive/api.js" />
+    <link rel="modulepreload" href="./src/drive/auth.js" />
   </head>
 
   <body>
@@ -183,7 +188,7 @@
       <div class="splash-card">
         <img class="splash-icon" src="./icons/favicon.svg" width="112" height="112" alt="" />
         <div class="splash-name"><span class="brand-name-a">Field</span><span class="brand-name-b">Draw</span></div>
-        <div class="splash-version" id="splash-version">v1.0.0</div>
+        <div class="splash-version" id="splash-version">v1.1.0</div>
         <div class="splash-bar" aria-hidden="true"><i></i></div>
       </div>
     </div>
@@ -649,6 +654,37 @@
              en momentos distintos. -->
         <button class="pill wide" id="btn-map-image">Export the map view…</button>
         <button class="pill danger wide" id="btn-new-project">New project</button>
+
+        <!-- Respaldo: historial local (src/snapshots.js) y Google Drive
+             (src/backup.js). Guardan los DATOS; el paquete con mapas se sube a mano. -->
+        <h3 class="sub">Backups</h3>
+        <button class="pill wide" id="btn-history" title="Versions of this project saved automatically on this device: the last 30, plus one per day for two weeks">
+          Version history…
+        </button>
+        <h3 class="sub">Google Drive</h3>
+        <p class="hint" id="drive-status">Not connected.</p>
+        <button class="pill accent wide" id="btn-drive-connect">Connect Google Drive</button>
+        <label class="check">
+          <input type="checkbox" id="drive-autosave" />
+          Autosave the project data to Drive
+        </label>
+        <button class="pill wide" id="btn-drive-backup" title="Upload the full package — project, imported layers, offline maps and elevation model — to the FieldDraw folder of your Drive">
+          Back up everything to Drive (.zip)…
+        </button>
+        <button class="pill wide" id="btn-drive-open">Open from Drive…</button>
+        <details class="drive-setup" id="drive-setup">
+          <summary>Google Cloud Client ID</summary>
+          <label class="field">
+            <span>OAuth Client ID (web)</span>
+            <input type="text" id="drive-client-id" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false" />
+          </label>
+          <button class="pill wide" id="btn-drive-client-save">Save Client ID</button>
+          <p class="hint">
+            FieldDraw only sees the files it creates, in a <code>FieldDraw</code> folder. The
+            Client ID comes from a Google Cloud project whose authorized origin is this site,
+            with <code>oauth.html</code> as redirect URI (see the README, “Google Drive”).
+          </p>
+        </details>
         <p class="hint">
           <strong>Save project</strong> writes a compressed <code>.fdproj.json.gz</code> with the
           drawing, units, symbology and settings, but not the imported GeoPackage layers.
@@ -1956,6 +1992,16 @@
         <button class="pill accent" id="save-prompt-save">Save</button>
         <button class="pill danger" id="save-prompt-discard">Don't save</button>
         <button class="pill" id="save-prompt-cancel">Cancel</button>
+      </div>
+    </dialog>
+
+    <!-- Listas del respaldo: historial de versiones y archivos de Drive. -->
+    <dialog class="save-prompt list-dialog" id="list-dialog" aria-labelledby="list-dialog-title">
+      <h3 id="list-dialog-title">Version history</h3>
+      <p class="hint" id="list-dialog-text"></p>
+      <ul class="list-dialog-items" id="list-dialog-items"></ul>
+      <div class="save-prompt-actions">
+        <button class="pill" id="list-dialog-close">Close</button>
       </div>
     </dialog>
 

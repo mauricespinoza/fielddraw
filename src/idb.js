@@ -17,14 +17,16 @@ const DB_NAME = 'fielddraw';
 
 /**
  * Sube con cada almacén nuevo. v1 traía solo los archivos importados; v2
- * añade el manifiesto de áreas descargadas; v3, la copia del dibujo; v4, las capas importadas (GeoPackage).
+ * añade el manifiesto de áreas descargadas; v3, la copia del dibujo; v4, las capas importadas (GeoPackage); v5, el
+ * historial de versiones del proyecto (`snapshots.js`).
  */
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORE_FILES = 'imported-files';
 export const STORE_AREAS = 'offline-areas';
 export const STORE_DRAWING = 'drawing';
 export const STORE_LAYERS = 'imported-layers';
+export const STORE_SNAPSHOTS = 'snapshots';
 
 let dbPromise = null;
 
@@ -51,6 +53,9 @@ function openDb() {
         }
         if (!db.objectStoreNames.contains(STORE_LAYERS)) {
           db.createObjectStore(STORE_LAYERS, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_SNAPSHOTS)) {
+          db.createObjectStore(STORE_SNAPSHOTS, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
