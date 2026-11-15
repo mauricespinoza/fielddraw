@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v95';
+const VERSION = 'v96';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -149,6 +149,7 @@ const SHELL = [
   './src/vertexEdit.js',
   './src/zip.js',
   './src/autosave.js',
+  './src/installHint.js',
   './src/backup.js',
   './src/snapshots.js',
   './src/drive/api.js',

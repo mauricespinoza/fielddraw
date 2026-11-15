@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact backup; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact backup installHint; do node test/$f.test.mjs; done
 ```
 
-1418 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1453 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -2418,6 +2418,26 @@ que no los traiga) y avisa de que no era un proyecto.
 El autosave en localStorage sigue como estaba, para no perder el trabajo si se
 cierra Safari; el proyecto es para llevárselo, versionarlo o pasarlo a otro
 equipo.
+
+## Añadir a la pantalla de inicio
+
+La primera vez que se abre FieldDraw **en el navegador de un teléfono o tablet**
+aparece una guía corta para añadirla a Inicio (`src/installHint.js`). Instalada
+abre a pantalla completa, funciona mejor sin señal y, en iOS, conserva el
+trabajo: Safari puede borrar lo que un sitio guardó —autoguardado, historial de
+versiones, mapas offline— tras 7 días sin abrirlo, y las apps de Inicio quedan
+exentas.
+
+- Los pasos dependen de dónde se abre: Safari (con el menú ••• de iOS 26),
+  Chrome en iOS, otros navegadores de iOS, Chrome, Samsung Internet o Firefox
+  en Android, y el navegador metido dentro de otra app (WhatsApp, Instagram,
+  Gmail…), que no puede instalar y manda a abrirla en Safari/Chrome.
+- En Android, si el navegador entrega `beforeinstallprompt`, aparece un botón
+  **Install** que instala sin buscar en menús. iOS no permite instalar desde
+  código: solo se explican los toques.
+- **Got it** no lo vuelve a mostrar; **Remind me later** (o cerrarlo) lo repite
+  a la semana. En escritorio y en la app ya instalada no sale solo. **About →
+  Add FieldDraw to the Home screen…** lo abre cuando se quiera.
 
 ## Respaldo: historial de versiones y Google Drive
 

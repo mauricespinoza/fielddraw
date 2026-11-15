@@ -5141,3 +5141,25 @@ a.link-pill {
   opacity: 0.8;
   padding: 4px 0;
 }
+
+/* ---------- aviso: añadir a la pantalla de inicio ---------- */
+
+.install-hint {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.install-hint p {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.install-hint-steps {
+  margin: 0 0 18px;
+  padding-left: 22px;
+  display: grid;
+  gap: 8px;
+}
+
+#about #btn-install-hint {
+  margin-bottom: 12px;
+}

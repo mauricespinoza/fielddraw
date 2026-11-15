@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 
 /**
  * Etapa de la versión, detrás del número: «beta», «rc»… Vacía desde la 1.0,
@@ -59,6 +59,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '1.2.0',
+    highlights: [
+      'The first time FieldDraw is opened in the browser of a phone or tablet, a short guide shows how to add it to the Home screen — with the right steps for Safari, Chrome, Samsung Internet or Firefox, and an Install button where Android offers one. Installed, it opens full screen, works best without signal and, on iOS, keeps your work: Safari can erase a website’s saved data after 7 days without opening it. About → Add FieldDraw to the Home screen shows it again.',
+    ],
+  },
   {
     version: '1.1.0',
     highlights: [
