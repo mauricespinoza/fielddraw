@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import { initInstallHint } from './installHint.js';
 import { createMapView } from './mapView.js';
 import {
   allowUnload,
@@ -99,7 +100,11 @@ addEventListener('pagehide', () => viewTimer !== null && guardarVista());
  * una: lo que falte se ve llegar sobre el mapa, como siempre.
  */
 {
-  const quitar = () => window.fdHideSplash && window.fdHideSplash();
+  const quitar = () => {
+    if (window.fdHideSplash) window.fdHideSplash();
+    // Con la app ya a la vista: el aviso de añadirla a Inicio, si toca.
+    initInstallHint();
+  };
   if (view.map.loaded()) quitar();
   else view.map.once('load', quitar);
 }

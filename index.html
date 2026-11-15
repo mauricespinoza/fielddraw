@@ -156,6 +156,7 @@
     <link rel="modulepreload" href="./src/vertexEdit.js" />
     <link rel="modulepreload" href="./src/zip.js" />
     <link rel="modulepreload" href="./src/autosave.js" />
+    <link rel="modulepreload" href="./src/installHint.js" />
     <link rel="modulepreload" href="./src/backup.js" />
     <link rel="modulepreload" href="./src/snapshots.js" />
     <link rel="modulepreload" href="./src/drive/api.js" />
@@ -188,7 +189,7 @@
       <div class="splash-card">
         <img class="splash-icon" src="./icons/favicon.svg" width="112" height="112" alt="" />
         <div class="splash-name"><span class="brand-name-a">Field</span><span class="brand-name-b">Draw</span></div>
-        <div class="splash-version" id="splash-version">v1.1.0</div>
+        <div class="splash-version" id="splash-version">v1.2.0</div>
         <div class="splash-bar" aria-hidden="true"><i></i></div>
       </div>
     </div>
@@ -1048,6 +1049,8 @@
           <h2>About FieldDraw</h2>
           <button class="icon-btn close-x" id="btn-close-about" aria-label="Close">✕</button>
         </header>
+        <!-- Fuera del navegador (app instalada) se oculta: ver src/installHint.js. -->
+        <button class="pill wide" id="btn-install-hint" hidden>Add FieldDraw to the Home screen…</button>
         <div id="about-body"></div>
       </div>
 
@@ -2002,6 +2005,18 @@
       <ul class="list-dialog-items" id="list-dialog-items"></ul>
       <div class="save-prompt-actions">
         <button class="pill" id="list-dialog-close">Close</button>
+      </div>
+    </dialog>
+
+    <!-- Primera visita desde el navegador: cómo añadirla a Inicio (src/installHint.js). -->
+    <dialog class="save-prompt install-hint" id="install-hint" aria-labelledby="install-hint-title">
+      <h3 id="install-hint-title">Add FieldDraw to your Home screen</h3>
+      <p id="install-hint-why"></p>
+      <ol class="install-hint-steps" id="install-hint-steps"></ol>
+      <div class="save-prompt-actions">
+        <button class="pill accent" id="install-hint-install" hidden>Install</button>
+        <button class="pill" id="install-hint-later">Remind me later</button>
+        <button class="pill" id="install-hint-ok">Got it</button>
       </div>
     </dialog>
 
