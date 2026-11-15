@@ -1,6 +1,6 @@
-import maplibregl from 'maplibre-gl';
+import maplibregl from '../vendor/esm/maplibre-gl.js';
 import { LEVELS, walkPathLngLat } from './hiking.js';
-import mlcontour from 'maplibre-contour';
+import mlcontour from '../vendor/esm/maplibre-contour.js';
 
 import { BASEMAPS, TERRARIUM_URL, rasterTileSize } from './basemaps.js';
 import { haversine } from './dem.js';

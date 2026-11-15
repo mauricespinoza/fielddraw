@@ -17,7 +17,8 @@ estando en la misma red. Para usarla de verdad en terreno —desde cualquier
 dispositivo y sin señal— hay que publicarla en un hosting con HTTPS: ver
 **Publicar y usar sin señal**.
 
-No hay bundler ni `node_modules`: el proyecto usa ESM nativo con un import map.
+No hay bundler ni `node_modules`: el proyecto usa ESM nativo con rutas relativas
+(sin import map: Safari no los entiende antes de iPadOS 16.4).
 Es deliberado — `G:\Mi unidad` es Google Drive y npm falla ahí con `EPERM`
 porque el sincronizador bloquea archivos.
 
@@ -184,8 +185,11 @@ esm.sh o de jsdelivr no es un archivo único, sino un módulo que a su vez impor
 rutas del propio CDN. Copiarlo deja imports colgando contra un origen que en
 terreno no existe. El UMD sí es autocontenido y el service worker puede
 precachearlo entero. `index.html` carga los dos que hacen falta al arranque como
-scripts clásicos —que corren antes que los `type="module"`, diferidos— y el
-import map apunta a los puentes de `vendor/esm/`, que solo reexportan el global.
+scripts clásicos —que corren antes que los `type="module"`, diferidos— y los
+módulos importan por ruta relativa los puentes de `vendor/esm/`, que solo
+reexportan el global. Nada de import map ni de imports desnudos (`'maplibre-gl'`):
+en un iPad con iPadOS anterior a 16.4 no se resolvían y la app no arrancaba;
+`test/shell.test.mjs` lo vigila.
 Las pesadas (JSTS, sql.js, PMTiles) se siguen pidiendo bajo demanda, ahora desde
 `vendor/`.
 

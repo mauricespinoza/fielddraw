@@ -47,14 +47,13 @@
     -->
     <script src="./vendor/maplibre-gl.js" defer></script>
     <script src="./vendor/maplibre-contour.js" defer></script>
-    <script type="importmap">
-      {
-        "imports": {
-          "maplibre-gl": "./vendor/esm/maplibre-gl.js",
-          "maplibre-contour": "./vendor/esm/maplibre-contour.js"
-        }
-      }
-    </script>
+    <!--
+      Sin import map, a propósito: los módulos importan los puentes de
+      vendor/esm/ por ruta relativa. Safari solo entiende import maps desde
+      iPadOS/iOS 16.4; en un iPad con un sistema anterior el import desnudo
+      'maplibre-gl' no se resolvía, no arrancaba ningún módulo y quedaba el
+      mapa negro con todos los botones muertos (StraboSpot incluido).
+    -->
 
     <link rel="stylesheet" href="./vendor/maplibre-gl.css" />
     <link rel="stylesheet" href="./src/styles/app.css" />
@@ -183,21 +182,112 @@
       <div class="splash-card">
         <img class="splash-icon" src="./icons/favicon.svg" width="112" height="112" alt="" />
         <div class="splash-name"><span class="brand-name-a">Field</span><span class="brand-name-b">Draw</span></div>
-        <div class="splash-version" id="splash-version">v1.0.0</div>
+        <div class="splash-version" id="splash-version">v1.0.1</div>
         <div class="splash-bar" aria-hidden="true"><i></i></div>
       </div>
     </div>
     <script>
+      /*
+       * Pantalla de carga y GUARDIA DE ARRANQUE.
+       *
+       * Este script es clásico y en ES5 a propósito: tiene que correr incluso
+       * en el navegador donde los módulos de la app NO arrancan, que es
+       * justamente cuando hace falta. Antes, si algo fallaba al cargar los
+       * módulos (en Safari de un iPad con un iPadOS viejo, por ejemplo), la
+       * pantalla de carga se iba a los 10 s y quedaba el mapa negro con todos
+       * los botones muertos, sin un solo mensaje. Ahora se enseña el error.
+       *
+       * `app.js` llama a `fdBootOk()` al terminar de evaluarse.
+       */
       (function () {
         var el = document.getElementById('splash');
         var fuera = false;
+        var arrancada = false;
+        var errores = [];
         window.fdHideSplash = function () {
           if (fuera) return;
           fuera = true;
           el.classList.add('out');
           setTimeout(function () { el.remove(); }, 450);
         };
-        setTimeout(window.fdHideSplash, 10000);
+        window.fdBootOk = function () {
+          arrancada = true;
+          window.fdBooted = true;
+          // Arrancó tarde, con el aviso ya puesto: fuera el aviso.
+          var box = document.getElementById('boot-error');
+          if (box) { box.remove(); window.fdHideSplash(); }
+        };
+        function anotar(msg) {
+          if (arrancada || !msg) return;
+          errores.push(String(msg));
+          // Un error de arranque se enseña ya, sin esperar el plazo.
+          setTimeout(mostrarFallo, 1500);
+        }
+        window.addEventListener('error', function (e) {
+          // Los fallos de carga de un <script>/<img> llegan sin `message`.
+          var t = e && e.target;
+          if (t && t !== window && t.src) anotar('Could not load ' + t.src);
+          else anotar((e && e.message) || 'Unknown error');
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          anotar((r && (r.message || r)) || 'Unhandled promise rejection');
+        });
+        function versionIOS() {
+          var m = /OS (\d+)[_.](\d+)/.exec(navigator.userAgent);
+          if (m && /iPhone|iPad|iPod/.test(navigator.userAgent)) return m[1] + '.' + m[2];
+          // iPadOS se presenta como Mac; la versión de Safari es la del sistema.
+          m = /Version\/(\d+)\.(\d+)/.exec(navigator.userAgent);
+          if (m && navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)) return m[1] + '.' + m[2];
+          return null;
+        }
+        function mostrarFallo() {
+          if (arrancada || document.getElementById('boot-error')) return;
+          var sinModulos = !('noModule' in document.createElement('script'));
+          var ios = versionIOS();
+          var viejo = ios && parseFloat(ios) < 15.4;
+          var box = document.createElement('div');
+          box.id = 'boot-error';
+          box.className = 'boot-error';
+          box.setAttribute('role', 'alert');
+          var h = document.createElement('strong');
+          h.textContent = 'FieldDraw could not start on this browser.';
+          box.appendChild(h);
+          var p = document.createElement('p');
+          p.textContent = sinModulos || viejo
+            ? 'This browser is too old for FieldDraw' + (ios ? ' (iPadOS/iOS ' + ios + ')' : '') +
+              '. Update the device in Settings → General → Software Update (iPadOS 15.4 or later), or use a current Chrome, Edge or Safari.'
+            : errores.length
+              ? 'Try reloading. If it keeps happening, send this message to the developer:'
+              : 'It is taking too long to load. Check the connection and reload.';
+          box.appendChild(p);
+          if (errores.length) {
+            var pre = document.createElement('pre');
+            pre.textContent = errores.slice(0, 3).join('\n') + '\n' + navigator.userAgent;
+            box.appendChild(pre);
+          }
+          var b = document.createElement('button');
+          b.className = 'pill';
+          b.textContent = 'Reload';
+          b.onclick = function () { location.reload(); };
+          box.appendChild(b);
+          el.querySelector('.splash-card').appendChild(box);
+          var bar = el.querySelector('.splash-bar');
+          if (bar) bar.style.display = 'none';
+        }
+        /*
+         * El plazo de siempre: a los 10 s la pantalla se va aunque el mapa no
+         * haya pintado (con mala señal las teselas tardan), PERO solo si la app
+         * arrancó. Si no arrancó, se queda y explica por qué, en vez de
+         * destapar una interfaz que no responde. Con señal muy mala el
+         * arranque puede pasar de 10 s: se espera hasta 30 antes de rendirse.
+         */
+        function plazo() {
+          if (arrancada) window.fdHideSplash();
+          else if (errores.length) mostrarFallo();
+          else setTimeout(function () { if (arrancada) window.fdHideSplash(); else mostrarFallo(); }, 20000);
+        }
+        setTimeout(plazo, 10000);
       })();
     </script>
 

@@ -4939,6 +4939,43 @@ a.link-pill {
   to { transform: translateX(260%); }
 }
 
+/*
+ * Aviso de arranque fallido (ver la guardia en index.html). Colores con
+ * respaldo literal: tiene que leerse en el navegador viejo que no arrancó.
+ */
+.boot-error {
+  max-width: 460px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.92);
+  border: 1px solid #f87171;
+  border: 1px solid var(--danger, #f87171);
+  color: #e6edf3;
+  font-size: 15px;
+  line-height: 1.45;
+  text-align: left;
+}
+.boot-error strong {
+  display: block;
+  color: #f87171;
+  margin-bottom: 6px;
+}
+.boot-error p {
+  margin: 0 0 10px;
+}
+.boot-error pre {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0 0 10px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #000;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ---------- controles de MapLibre con el tema de la app ---------- */
 /*
  * El zoom, el norte, el GPS, el encuadre, la escala gráfica y los créditos

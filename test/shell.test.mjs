@@ -45,7 +45,22 @@ const pre = [...html.matchAll(/<link rel="modulepreload" href="\.\/([^"]+)"/g)].
 const js = modules.filter((m) => m.endsWith('.js'));
 ok('cada módulo de src/ se precarga', js.every((m) => pre.includes(m)), js.filter((m) => !pre.includes(m)).join(', '));
 ok('no se precarga nada que no exista', pre.every((p) => existsSync(join(ROOT, p))));
-ok('la precarga va después del import map', html.indexOf('type="importmap"') < html.indexOf('rel="modulepreload"'));
+// Safari no entiende import maps antes de iPadOS/iOS 16.4: con uno, un iPad
+// algo viejo no arrancaba ningún módulo y quedaba el mapa negro.
+ok('sin import map', !html.includes('type="importmap"'));
+{
+  const desnudos = [];
+  for (const m of js) {
+    const src = readFileSync(join(ROOT, m), 'utf8');
+    for (const [, spec] of src.matchAll(/(?:^|\n)\s*(?:import|export)\b[^'"]*?from\s*['"]([^'"]+)['"]/g)) {
+      if (!/^\.{1,2}\//.test(spec)) desnudos.push(`${m}: ${spec}`);
+    }
+    for (const [, spec] of src.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      if (!/^\.{1,2}\//.test(spec)) desnudos.push(`${m}: ${spec}`);
+    }
+  }
+  ok('ningún módulo usa un import desnudo (sin import map no se resolvería)', desnudos.length === 0, desnudos.join(', '));
+}
 
 console.log('== pantalla de carga ==');
 {
@@ -56,7 +71,15 @@ console.log('== pantalla de carga ==');
   ok('la versión escrita en index.html es la de version.js', !!escrito && escrito[1] === `v${v}${etapa ? ` ${etapa}` : ''}`, escrito ? escrito[1] : 'no está');
   ok('el fondo está en el shell (se ve sin señal)', shell.includes('icons/splash.webp'));
   ok('el icono es el de siempre, no otra copia', /class="splash-icon" src="\.\/icons\/favicon\.svg"/.test(html));
-  ok('hay un plazo que la quita aunque no cargue ningún módulo', /setTimeout\(window\.fdHideSplash, \d+\)/.test(html));
+  ok('hay un plazo que la quita aunque el mapa no pinte', /setTimeout\(plazo, \d+\)/.test(html) && /if \(arrancada\) window\.fdHideSplash\(\)/.test(html));
+  ok('si la app no arranca, se enseña el error en vez de un mapa muerto', html.includes("box.id = 'boot-error'") && html.includes("addEventListener('error'"));
+  ok('app.js avisa que arrancó', readFileSync(join(ROOT, 'src/app.js'), 'utf8').includes('window.fdBootOk()'));
+  {
+    // La guardia tiene que correr en el navegador viejo que NO arranca la app: ES5.
+    const guardia = /<script>\s*\/\*[\s\S]*?GUARDIA DE ARRANQUE[\s\S]*?<\/script>/.exec(html);
+    const code = guardia ? guardia[0] : '';
+    ok('la guardia de arranque está escrita en ES5', !!code && !/=>|\blet\b|\bconst\b|`|\?\.|\?\?/.test(code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')));
+  }
   ok('app.js la quita cuando el mapa está listo', readFileSync(join(ROOT, 'src/app.js'), 'utf8').includes('fdHideSplash'));
 }
 

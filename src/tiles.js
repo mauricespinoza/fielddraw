@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+import maplibregl from '../vendor/esm/maplibre-gl.js';
 import { loadSql } from './gpkg/index.js';
 import { loadVendorScript } from './vendorPaths.js';
 
