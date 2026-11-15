@@ -53,7 +53,9 @@ console.log('== preferencia y posición ==');
 ok('sin posición: NaN', Number.isNaN(G.declinationHere()));
 ok('sin posición: no corrige', G.activeDeclination() === 0);
 G.noteDeclinationPosition(-53.16, -70.9);
-ok('con posición: corrige', Math.abs(G.activeDeclination() - G.declinationHere()) < 1e-12 && G.activeDeclination() > 10);
+// Las dos llamadas leen la hora por separado: la variación secular entre ellas
+// (~6e-12° por ms) bastaba para pasar un umbral de 1e-12 de vez en cuando.
+ok('con posición: corrige', Math.abs(G.activeDeclination() - G.declinationHere()) < 1e-6 && G.activeDeclination() > 10);
 G.setTrueNorth(false);
 ok('norte magnético: no corrige', G.activeDeclination() === 0);
 G.setTrueNorth(true);
