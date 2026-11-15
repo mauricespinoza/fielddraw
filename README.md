@@ -27,10 +27,10 @@ al código. Ver **Publicar y usar sin señal**.
 ## Pruebas
 
 ```bash
-for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact; do node test/$f.test.mjs; done
+for f in logic draw stroke gpkg snapping edit vertex topology project ornaments strabo straboDatasets straboSync straboPush average reshape dem structure shortcuts scale hole attrs split adopt thickness section hiking planeTrace stereogram faultKin deviceOrientation geomag profile mapFrame zip geotiff utm shell view sourceDiff compact backup; do node test/$f.test.mjs; done
 ```
 
-1352 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
+1418 comprobaciones sin dependencias: simplificación, simbología, estilo, store,
 comportamiento del lápiz y de los dedos (con un DOM simulado),
 WKB/GeoPackageBinary, parsers de color y de filtros de QGIS, índice de snapping,
 camino más corto del trace, punto-en-polígono, selección, flujo de la línea de
@@ -2418,6 +2418,86 @@ que no los traiga) y avisa de que no era un proyecto.
 El autosave en localStorage sigue como estaba, para no perder el trabajo si se
 cierra Safari; el proyecto es para llevárselo, versionarlo o pasarlo a otro
 equipo.
+
+## Respaldo: historial de versiones y Google Drive
+
+Tres capas de protección, de la más inmediata a la más lejana:
+
+| Qué | Dónde | Cuándo | Protege de |
+|---|---|---|---|
+| Autosave del dibujo | localStorage + IndexedDB | 0,5 s tras cada cambio | cerrar la app de golpe |
+| **Historial de versiones** | IndexedDB (`snapshots`) | 60 s sin cambios, como mucho cada 5 min | un error de edición descubierto tarde |
+| **Google Drive** | carpeta `FieldDraw` del Drive | 20 s sin cambios, como mucho cada 2 min, con señal | perder o borrar el dispositivo |
+
+Las tres guardan los **datos** del proyecto (lo mismo que `.fdproj.json.gz`). El
+paquete completo con mapas y DEM pesa cientos de MB y **no** se autoguarda: se
+sube a mano con **Back up everything to Drive (.zip)**.
+
+**Eficiencia** (`src/autosave.js`, `src/backup.js`):
+
+- Un reloj espera a que la edición pare, con un tope para que una sesión sin
+  pausas también quede respaldada; si falla, reintenta cada vez más espaciado
+  (30 s, 1, 2, 5 min). Sin señal o sin sesión de Google no reintenta a ciegas:
+  queda pendiente y sale sola con el evento `online` o al reconectar.
+- Historial y Drive comparten **una** serialización y compresión: si los dos
+  relojes caen juntos, el proyecto se convierte a JSON una sola vez.
+- Una huella del contenido (cyrb53, sin la hora de guardado) evita guardar o
+  subir dos veces lo mismo: la app abierta toda la noche no genera copias.
+- Al pasar a segundo plano se guarda lo pendiente; la subida a Drive usa
+  `keepalive` cuando el archivo cabe (< 64 KB, lo normal comprimido), para que
+  termine aunque iOS congele la app.
+
+### Historial de versiones
+
+**Project → Version history…** lista las fotos: las últimas 30, más la última de
+cada día de las últimas dos semanas. Cada una se puede **restaurar** (se abre
+como el proyecto actual), **descargar** como `.fdproj.json.gz` o borrar. Abrir
+otro proyecto, empezar uno nuevo o restaurar una versión toma antes una foto del
+proyecto actual, así que esos tres gestos ya no pueden perder nada.
+
+### Google Drive
+
+**Connect Google Drive** inicia sesión con Google y, desde ahí, los datos se
+autoguardan en `FieldDraw/<proyecto>.fdproj.json.gz`. Siempre el **mismo
+archivo**: Drive conserva las revisiones anteriores (Archivo → Gestionar
+versiones). Abrir otro proyecto o empezar uno nuevo crea un archivo nuevo en vez
+de pisar el anterior; abrir uno con **Open from Drive…** sigue guardando en ese.
+
+- Permiso `drive.file`: la app ve **solo** los archivos que ella creó, nunca el
+  resto del Drive.
+- Sin servidor: OAuth 2.0 implícito directo contra Google (`src/drive/auth.js`).
+  En PC, Android y Safari se abre una ventana; en el iPad/iPhone **instalado en
+  la pantalla de inicio** la app va a Google y vuelve, porque ahí la ventana
+  emergente no devuelve la respuesta. Las dos terminan en `oauth.html`, que está
+  en el shell del service worker (si no, la navegación caería en `index.html`).
+- El acceso dura una hora y sin servidor no se renueva solo: al caducar, el
+  respaldo queda pendiente, se avisa una vez y basta tocar **Reconnect**. Con la
+  cuenta ya recordada, Google no vuelve a preguntar.
+- El paquete `.zip` se sube por trozos de 8 MB con la subida reanudable de Drive:
+  tras un corte se pregunta cuánto llegó y se sigue desde ahí. Más de 50 MB pide
+  confirmación (datos móviles).
+
+**Configurar el Client ID (una vez, quien publica la app):**
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → crear un
+   proyecto (p. ej. «FieldDraw»).
+2. *APIs y servicios → Biblioteca* → habilitar **Google Drive API**.
+3. *Pantalla de consentimiento de OAuth* → tipo **Externo**, nombre de la app,
+   correo de soporte; en *Permisos* agregar `.../auth/drive.file`. Mientras
+   esté en modo *Prueba*, agregar como *usuarios de prueba* las cuentas que la
+   usarán (hasta 100); publicarla quita ese límite y, al ser `drive.file` un
+   permiso no sensible, no exige verificación.
+4. *Credenciales → Crear credenciales → ID de cliente de OAuth* → tipo
+   **Aplicación web**:
+   - *Orígenes de JavaScript autorizados*: `https://<usuario>.github.io` (y
+     `http://localhost:5174` para desarrollar).
+   - *URI de redireccionamiento autorizados*:
+     `https://<usuario>.github.io/fielddraw/oauth.html` (y
+     `http://localhost:5174/oauth.html`).
+5. Copiar el ID (`…apps.googleusercontent.com`) y pegarlo en **Project → Google
+   Drive → Google Cloud Client ID**, o fijarlo para todos en
+   `DEFAULT_CLIENT_ID` de `src/drive/auth.js`. No es un secreto: lo protege la
+   lista de orígenes autorizados.
 
 ## Exportar la vista del mapa como lámina
 

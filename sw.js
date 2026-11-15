@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v94';
+const VERSION = 'v95';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -67,6 +67,9 @@ const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  // Sin esto, volver de Google caería en index.html: toda navegación que no
+  // está en caché se responde con la app (ver `delShell`).
+  './oauth.html',
   './icons/favicon.svg',
   './icons/icon-180.png',
   './icons/icon-192.png',
@@ -145,6 +148,11 @@ const SHELL = [
   './src/version.js',
   './src/vertexEdit.js',
   './src/zip.js',
+  './src/autosave.js',
+  './src/backup.js',
+  './src/snapshots.js',
+  './src/drive/api.js',
+  './src/drive/auth.js',
   './src/strabo/adopt.js',
   './src/strabo/api.js',
   './src/strabo/mapping.js',

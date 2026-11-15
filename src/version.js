@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 /**
  * Etapa de la versión, detrás del número: «beta», «rc»… Vacía desde la 1.0,
@@ -59,6 +59,14 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '1.1.0',
+    highlights: [
+      'Version history: the project is saved automatically on this device every few minutes while you work — the last 30 versions, plus the last one of each day for two weeks. Project → Version history… restores, downloads or deletes any of them. Opening another project, starting a new one or restoring a version first keeps the current one in the list.',
+      'Google Drive: connect your Google account in Project → Google Drive and the project data autosaves to a FieldDraw folder in your Drive, always to the same file (Drive keeps its earlier revisions). With no signal it waits and uploads when the signal returns. FieldDraw only sees the files it creates.',
+      'Back up everything to Drive (.zip): the full package — imported layers, offline maps and elevation model — uploaded in 8 MB pieces that resume after a dropped connection. Open from Drive… lists the projects there and opens them.',
+    ],
+  },
   {
     version: '1.0.0',
     highlights: [

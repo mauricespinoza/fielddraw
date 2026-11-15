@@ -5077,3 +5077,67 @@ a.link-pill {
     opacity: 0.6;
   }
 }
+
+/* ---------- respaldo: historial de versiones y Google Drive ---------- */
+
+.list-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
+}
+
+.list-dialog-items {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.list-dialog-items li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.list-dialog-items li:first-child {
+  border-top: 0;
+}
+
+.list-dialog-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.list-dialog-meta strong {
+  overflow-wrap: anywhere;
+}
+
+.list-dialog-meta span {
+  font-size: 13px;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+}
+
+.list-dialog-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.drive-setup {
+  margin: 8px 0;
+}
+
+.drive-setup summary {
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0.8;
+  padding: 4px 0;
+}

@@ -153,6 +153,32 @@ import {
 } from './project.js';
 import { isZip } from './zip.js';
 import {
+  SNAPSHOT_REASONS,
+  deleteSnapshot,
+  listSnapshots,
+  snapshotFilename,
+} from './snapshots.js';
+import {
+  beforeProjectSwitch,
+  driveBindTo,
+  driveClientId,
+  driveConfigured,
+  driveConnect,
+  driveConnected,
+  driveAutosaveOn,
+  driveDisconnect,
+  driveDownload,
+  driveList,
+  driveStatus,
+  driveUploadPackage,
+  initBackups,
+  markProjectChanged,
+  onDriveStatus,
+  setDriveAutosave,
+  setDriveClientId,
+} from './backup.js';
+import { looksLikeClientId } from './drive/auth.js';
+import {
   APP_AUTHOR,
   APP_CONTACT,
   APP_ORG,
@@ -6376,7 +6402,14 @@ async function openPackagedFiles(files) {
   return { hechos, fallos };
 }
 
-async function doOpenProject(file) {
+/**
+ * @param {File} file
+ * @param {{reason?: string, ask?: boolean, driveFile?: {id: string, name: string}}} [opts]
+ *   `reason`: por qué se toma la foto previa del historial; `driveFile`: el
+ *   archivo de Drive del que viene, para seguir autoguardando en él.
+ * @returns {Promise<boolean>} si se abrió
+ */
+async function doOpenProject(file, { reason = 'before-open', driveFile = null } = {}) {
   setBusy(`Opening ${file.name}…`);
   try {
     let text;
@@ -6401,8 +6434,11 @@ async function doOpenProject(file) {
     const seguir = await confirmCloseProject(
       `Opening ${file.name} closes the current project. Save it first?`,
     );
-    if (!seguir) return;
+    if (!seguir) return false;
     setBusy(`Opening ${file.name}…`);
+    // Lo de antes queda en el historial (y en Drive, si había señal), pase lo que pase.
+    await beforeProjectSwitch(reason);
+    if (driveFile) driveBindTo(driveFile);
     const n = openProject(project);
     if (capasPaquete.length) {
       /*
@@ -6440,8 +6476,10 @@ async function doOpenProject(file) {
       [`Project opened: ${n} feature(s).`, ...warnings].join(' '),
       warnings.length ? 'warn' : 'info',
     );
+    return true;
   } catch (err) {
     showBanner(`Could not open the project: ${err.message}`);
+    return false;
   } finally {
     setBusy(null);
   }
@@ -6459,6 +6497,7 @@ async function doNewProject() {
     );
     if (!seguir) return;
   }
+  await beforeProjectSwitch('before-new');
   store.resetProject();
   try {
     for (const rec of await listImportedFiles()) await forgetImportedFile(rec.id);
@@ -6469,6 +6508,284 @@ async function doNewProject() {
   saveProjectName('');
   projectDirty = false;
   setProjectStatus('New project, not saved yet.');
+}
+
+/* ---------- respaldo: historial de versiones y Google Drive ---------- */
+
+/** «14:32» si es de hoy; si no, «12 nov 14:32». */
+function fmtWhen(ms) {
+  const d = new Date(ms);
+  const hora = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (new Date().toDateString() === d.toDateString()) return hora;
+  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${hora}`;
+}
+
+/** Tamaño de un archivo de proyecto: los de datos suelen pesar KB, no MB. */
+function fmtSize(bytes) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : fmtMB(bytes);
+}
+
+/** Abre el diálogo de lista y devuelve su `<ul>` vacía. */
+function openListDialog(title, text) {
+  $('list-dialog-title').textContent = title;
+  $('list-dialog-text').textContent = text;
+  const ul = $('list-dialog-items');
+  ul.replaceChildren();
+  const dlg = $('list-dialog');
+  if (!dlg.open) dlg.showModal();
+  return ul;
+}
+
+function closeListDialog() {
+  const dlg = $('list-dialog');
+  if (dlg.open) dlg.close();
+}
+
+/** Una fila: título, detalle y botones `[texto, fn, clase?]`. */
+function listRow(ul, title, detail, buttons = []) {
+  const li = document.createElement('li');
+  const meta = document.createElement('div');
+  meta.className = 'list-dialog-meta';
+  const t = document.createElement('strong');
+  t.textContent = title;
+  const d = document.createElement('span');
+  d.textContent = detail;
+  meta.append(t, d);
+  li.appendChild(meta);
+  if (buttons.length) {
+    const acts = document.createElement('div');
+    acts.className = 'list-dialog-actions';
+    for (const [txt, fn, cls] of buttons) {
+      const b = document.createElement('button');
+      b.className = `pill${cls ? ` ${cls}` : ''}`;
+      b.textContent = txt;
+      b.addEventListener('click', fn);
+      acts.appendChild(b);
+    }
+    li.appendChild(acts);
+  }
+  ul.appendChild(li);
+  return li;
+}
+
+async function openHistory() {
+  const ul = openListDialog(
+    'Version history',
+    'Saved automatically on this device: the last 30 versions, plus the last one of each day for two weeks. Restoring opens that version as the current project; the current one is kept in this list first.',
+  );
+  const list = await listSnapshots();
+  if (!list.length) {
+    listRow(ul, 'No versions yet', 'The first one is saved a minute after you start drawing.');
+    return;
+  }
+  for (const s of list) {
+    const detalle = [
+      SNAPSHOT_REASONS[s.reason] || s.reason,
+      s.name || 'unnamed',
+      `${s.features} feature(s)`,
+      fmtSize(s.bytes),
+    ].join(' · ');
+    const li = listRow(ul, fmtWhen(s.savedAt), detalle, [
+      [
+        'Restore',
+        async () => {
+          closeListDialog();
+          await doOpenProject(new File([s.blob], snapshotFilename(s)), { reason: 'before-restore' });
+        },
+        'accent',
+      ],
+      ['Download', () => downloadBlob(s.blob, snapshotFilename(s))],
+      [
+        'Delete',
+        async () => {
+          if (!confirm(`Delete the version from ${fmtWhen(s.savedAt)}?`)) return;
+          await deleteSnapshot(s.id);
+          li.remove();
+        },
+        'danger',
+      ],
+    ]);
+  }
+}
+
+/** Se avisa una vez por cada vez que la sesión de Google caduca con cambios pendientes. */
+let driveAuthNoticed = false;
+
+function renderDrive(st = driveStatus()) {
+  const configured = driveConfigured();
+  const connected = driveConnected();
+  const btn = $('btn-drive-connect');
+  btn.disabled = !configured || st.state === 'connecting';
+  btn.textContent = connected ? 'Disconnect Google Drive' : st.email ? 'Reconnect Google Drive' : 'Connect Google Drive';
+  btn.classList.toggle('accent', !connected);
+  const auto = $('drive-autosave');
+  auto.checked = driveAutosaveOn();
+  auto.disabled = !configured;
+  $('btn-drive-backup').disabled = !connected;
+  $('btn-drive-open').disabled = !connected;
+  if (!configured) $('drive-setup').open = true;
+
+  const cuenta = st.email ? ` (${st.email})` : '';
+  const pend = st.pending ? ' Changes are waiting to upload.' : '';
+  let txt;
+  if (!configured) txt = 'Set a Google Cloud Client ID below to use Drive.';
+  else if (st.state === 'connecting') txt = 'Waiting for Google sign-in…';
+  else if (st.state === 'needs-auth') txt = `The Google sign-in expired${cuenta}. Tap Reconnect.${pend}`;
+  else if (st.state === 'offline') txt = `No signal: Drive autosave resumes when it comes back.${pend}`;
+  else if (st.state === 'saving') txt = 'Saving to Drive…';
+  else if (st.state === 'saved') txt = `Saved to Drive at ${fmtWhen(st.at)}${st.fileName ? ` · ${st.fileName}` : ''}${cuenta}.`;
+  else if (st.state === 'error') txt = `Drive: ${st.message}. It will retry on its own.`;
+  else if (connected) txt = `Connected${cuenta}. Autosave ${driveAutosaveOn() ? 'on' : 'off'}.`;
+  else txt = st.message ? `Not connected: ${st.message}.` : 'Not connected. Your work stays on this device.';
+  $('drive-status').textContent = txt;
+
+  if (st.state === 'needs-auth' && st.pending && driveAutosaveOn()) {
+    if (!driveAuthNoticed) {
+      driveAuthNoticed = true;
+      showBanner('Drive autosave is paused: the Google sign-in expired. Project → Reconnect Google Drive.', 'warn');
+    }
+  } else if (st.state !== 'needs-auth') {
+    driveAuthNoticed = false;
+  }
+}
+
+async function doDriveConnect() {
+  if (driveConnected()) {
+    if (!confirm('Disconnect Google Drive? Autosave to Drive stops; the files already in Drive stay there.')) return;
+    await driveDisconnect();
+    renderDrive();
+    return;
+  }
+  try {
+    await driveConnect();
+    showBanner('Google Drive connected. The project data is saved to the FieldDraw folder of your Drive.', 'info');
+  } catch (err) {
+    showBanner(`Could not connect Google Drive: ${err.message}`);
+  }
+  renderDrive();
+}
+
+/** Más de esto pide confirmación antes de subir: con datos móviles se nota. */
+const DRIVE_CONFIRM_BYTES = 50 * 1024 * 1024;
+
+async function doDriveBackup() {
+  const name = $('project-name').value.trim();
+  setBusy('Packing the project…');
+  try {
+    const files = await currentOfflineFiles();
+    const imported = store.getState().imported;
+    const { blob } = await buildProjectPackage(
+      name,
+      files,
+      (hechos, total) => setBusy(`Packing the project… ${total ? Math.round((hechos / total) * 100) : 100}%`),
+      { imported },
+    );
+    if (
+      blob.size > DRIVE_CONFIRM_BYTES &&
+      !confirm(`This uploads ${fmtMB(blob.size)} to Google Drive. Over mobile data that can be slow and costly. Continue?`)
+    ) {
+      return;
+    }
+    setBusy('Uploading to Drive… 0%');
+    const f = await driveUploadPackage(blob, packageFilename(name), {
+      onProgress: (b, t) =>
+        setBusy(`Uploading to Drive… ${t ? Math.round((b / t) * 100) : 100}% (${fmtMB(b)} of ${fmtMB(t)})`),
+    });
+    projectDirty = false;
+    setProjectStatus(`Backed up to Drive at ${new Date().toLocaleTimeString()} · ${f.name}, ${fmtMB(blob.size)}.`);
+    showBanner(`Project backed up to Google Drive as ${f.name} (${fmtMB(blob.size)}).`, 'info');
+  } catch (err) {
+    showBanner(`Could not back up to Drive: ${err.message}`);
+  } finally {
+    setBusy(null);
+    renderDrive();
+  }
+}
+
+const PROJECT_FILE_RE = /\.(fdproj\.json(\.gz)?|fdproj\.zip|fdproj|geojson|json)$/i;
+
+async function openFromDrive() {
+  const ul = openListDialog(
+    'Open from Google Drive',
+    'Projects in the FieldDraw folder of your Drive. The data files (.fdproj.json.gz) keep autosaving to the same file once opened.',
+  );
+  const cargando = listRow(ul, 'Loading…', '');
+  let files;
+  try {
+    files = (await driveList()).filter((f) => PROJECT_FILE_RE.test(f.name));
+  } catch (err) {
+    cargando.remove();
+    listRow(ul, 'Could not list the Drive folder', err.message);
+    renderDrive();
+    return;
+  }
+  cargando.remove();
+  if (!files.length) {
+    listRow(ul, 'The FieldDraw folder is empty', 'Turn on autosave or back up a project first.');
+    return;
+  }
+  for (const f of files) {
+    const esDatos = !/\.zip$/i.test(f.name);
+    const detalle = [
+      esDatos ? 'Project data' : 'Full package',
+      f.modifiedTime ? fmtWhen(Date.parse(f.modifiedTime)) : '',
+      f.size ? fmtSize(Number(f.size)) : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    listRow(ul, f.name, detalle, [
+      [
+        'Open',
+        async () => {
+          closeListDialog();
+          setBusy(`Downloading ${f.name}…`);
+          let blob;
+          try {
+            blob = await driveDownload(f.id);
+          } catch (err) {
+            setBusy(null);
+            showBanner(`Could not download ${f.name}: ${err.message}`);
+            renderDrive();
+            return;
+          }
+          setBusy(null);
+          await doOpenProject(new File([blob], f.name), { driveFile: esDatos ? { id: f.id, name: f.name } : null });
+        },
+        'accent',
+      ],
+    ]);
+  }
+}
+
+function initBackupUI() {
+  const vuelta = initBackups();
+  if (vuelta && vuelta.ok) showBanner('Google Drive connected.', 'info');
+  else if (vuelta) showBanner(`Could not connect Google Drive: ${vuelta.error}`);
+  onDriveStatus(() => renderDrive());
+  $('btn-history').addEventListener('click', openHistory);
+  $('list-dialog-close').addEventListener('click', closeListDialog);
+  $('btn-drive-connect').addEventListener('click', doDriveConnect);
+  $('drive-autosave').addEventListener('change', (e) => {
+    setDriveAutosave(e.target.checked);
+    renderDrive();
+  });
+  $('btn-drive-backup').addEventListener('click', doDriveBackup);
+  $('btn-drive-open').addEventListener('click', openFromDrive);
+  $('drive-client-id').value = driveClientId();
+  $('btn-drive-client-save').addEventListener('click', () => {
+    const id = $('drive-client-id').value.trim();
+    if (id && !looksLikeClientId(id)) {
+      showBanner('That does not look like a Google OAuth Client ID (…apps.googleusercontent.com).');
+      return;
+    }
+    setDriveClientId(id);
+    $('drive-setup').open = !id;
+    renderDrive();
+    showBanner(id ? 'Client ID saved. Now tap Connect Google Drive.' : 'Client ID removed.', 'info');
+  });
+  // Al abrir el panel, la hora «Saved at» y el estado de la sesión al día.
+  $('btn-project').addEventListener('click', () => renderDrive());
+  renderDrive();
 }
 
 async function runMerge() {
@@ -7662,10 +7979,14 @@ export function initUI() {
   // El nombre del proyecto se recuerda entre aperturas: se repone al arrancar y
   // se guarda al teclearlo, al abrir un proyecto y al empezar uno nuevo.
   $('project-name').value = loadSavedProjectName();
-  $('project-name').addEventListener('input', () => saveProjectName($('project-name').value));
+  $('project-name').addEventListener('input', () => {
+    saveProjectName($('project-name').value);
+    markProjectChanged();
+  });
   $('btn-save-project').addEventListener('click', doSaveProject);
   $('btn-save-package').addEventListener('click', doSaveProjectPackage);
   renderPackageButton();
+  initBackupUI();
   store.subscribe(() => {
     if (store.changed('tileSets') || store.changed('demSet') || store.changed('imported')) renderPackageButton();
     if (PROJECT_KEYS.some((k) => store.changed(k))) projectDirty = true;
