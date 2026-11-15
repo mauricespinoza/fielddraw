@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 
 /**
  * Etapa de la versión, detrás del número: «beta», «rc»… Vacía desde la 1.0,
@@ -59,6 +59,13 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '1.0.1',
+    highlights: [
+      'iPad: the app now starts in Safari on iPadOS older than 16.4. It used to stop before loading anything, leaving a black map with no satellite image and buttons that did nothing — StraboSpot sign-in included.',
+      'If the app ever fails to start, the loading screen now says why (and offers Reload) instead of uncovering an interface that does not respond.',
+    ],
+  },
   {
     version: '1.0.0',
     highlights: [

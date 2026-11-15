@@ -343,3 +343,10 @@ if (navigator.storage && navigator.storage.persist) {
      * solo sin la garantía. */
   });
 }
+
+/*
+ * Arranque completo: avisa a la guardia de `index.html`. Si este módulo (o
+ * cualquiera de los que importa) no llega a evaluarse entero, la pantalla de
+ * carga enseña el error en vez de destapar una interfaz muerta.
+ */
+if (window.fdBootOk) window.fdBootOk();
