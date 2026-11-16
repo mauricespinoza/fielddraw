@@ -12,6 +12,7 @@ import {
 } from './structure.js';
 import { DEFAULT_SCALES, clampScale, sanitizeScales } from './scale.js';
 import { adoptLayer } from './adopt.js';
+import { isNeutral, sanitizeAdjust, sanitizeAdjustMap } from './rasterAdjust.js';
 import { adoptStrabo } from './strabo/adopt.js';
 import {
   FLIPPABLE_ORNAMENT_TYPES,
@@ -195,6 +196,12 @@ let state = {
   imported: [],
   /** Mapas offline MBTiles/PMTiles: descriptores de ./tiles.js */
   tileSets: [],
+  /**
+   * Ajustes de imagen de las capas raster (basemaps y mapas offline raster),
+   * id de capa → ajuste de `rasterAdjust.js`. Del dispositivo: no viaja en el
+   * proyecto ni se vacía al abrir otro. Solo guarda los que no son neutros.
+   */
+  rasterAdjust: {},
   /** Ids de elementos seleccionados, para cortar y unir. */
   selection: [],
   /** Línea de corte recién terminada, a la espera de que se aplique. */
@@ -3280,10 +3287,35 @@ export function addTileSet(descriptor) {
 }
 
 export function removeTileSet(id) {
-  set({
+  const patch = {
     tileSets: state.tileSets.filter((t) => t.id !== id),
     layers: state.layers.filter((l) => l.id !== id),
-  });
+  };
+  // Quitar el mapa es decidir que no vuelve: su ajuste tampoco.
+  if (state.rasterAdjust[id]) {
+    const { [id]: _fuera, ...resto } = state.rasterAdjust;
+    patch.rasterAdjust = resto;
+  }
+  set(patch);
+}
+
+/* ---------- ajustes de imagen ---------- */
+
+/** El ajuste de una capa raster; el neutro si no tiene. */
+export function rasterAdjustOf(id) {
+  return sanitizeAdjust(state.rasterAdjust[id]);
+}
+
+/** Fija el ajuste de una capa; uno neutro la deja sin entrada. */
+export function setRasterAdjust(id, adjust) {
+  const a = sanitizeAdjust(adjust);
+  const { [id]: _antes, ...resto } = state.rasterAdjust;
+  set({ rasterAdjust: isNeutral(a) ? resto : { ...resto, [id]: a } });
+}
+
+/** Lo guardado en el dispositivo, al arrancar. */
+export function restoreRasterAdjust(raw) {
+  set({ rasterAdjust: sanitizeAdjustMap(raw) });
 }
 
 export function moveLayer(id, dir) {

@@ -7,6 +7,7 @@ import { haversine } from './dem.js';
 import { destinationPoint, geoAzimuth, geoDistance, resolveDipSide } from './structure.js';
 import { vendorBase } from './vendorPaths.js';
 import * as store from './store.js';
+import { rasterPaint } from './rasterAdjust.js';
 import { denominatorFromMpp, metresPerPixel, scaleDrifted, zoomDelta } from './scale.js';
 import { DrawController } from './drawController.js';
 import { chaikin, processStroke } from './simplify.js';
@@ -205,6 +206,17 @@ function mlIdsFor(layer) {
  */
 const ALWAYS_VISIBLE = new Set(['geology-selected']);
 
+/**
+ * Brillo, contraste, saturación, tono e invertir de una capa raster (ver
+ * `rasterAdjust.js`). Las vectoriales de un mapa offline no tienen de esto y
+ * se saltan; el sombreado tampoco, que es de tipo `hillshade`.
+ */
+function applyRasterAdjust(map, id, adjust) {
+  const layer = map.getLayer(id);
+  if (!layer || layer.type !== 'raster') return;
+  for (const [prop, v] of Object.entries(rasterPaint(adjust))) map.setPaintProperty(id, prop, v);
+}
+
 function applyOpacity(map, id, opacity) {
   const layer = map.getLayer(id);
   if (!layer) return;
@@ -249,6 +261,7 @@ function applyLayerStack(map, layers) {
       const visible = l.visible || ALWAYS_VISIBLE.has(id);
       map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
       applyOpacity(map, id, l.opacity);
+      if (l.kind === 'basemap' || l.kind === 'tiles') applyRasterAdjust(map, id, store.rasterAdjustOf(l.id));
       map.moveLayer(id);
     }
   }
@@ -3846,6 +3859,13 @@ export function createMapView({
     if (store.changed('tileSets')) syncTileSets();
     if (!store.changed('imported') && !store.changed('tileSets') && store.changed('layers')) {
       applyLayerStack(map, store.getState().layers);
+    }
+    if (store.changed('rasterAdjust')) {
+      for (const l of store.getState().layers) {
+        if (l.kind !== 'basemap' && l.kind !== 'tiles') continue;
+        const adjust = store.rasterAdjustOf(l.id);
+        for (const id of mlIdsFor(l)) applyRasterAdjust(map, id, adjust);
+      }
     }
     if (store.changed('features')) {
       syncGeology();

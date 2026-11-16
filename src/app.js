@@ -23,6 +23,8 @@ import {
   loadSavedLayerState,
   loadSavedView,
   saveLayerState,
+  saveRasterAdjust,
+  loadSavedRasterAdjust,
   saveView,
   loadNewerFeatures,
   loadSavedFeatures,
@@ -79,6 +81,7 @@ const view = createMapView({
   if (v) view.map.jumpTo(v);
   const capas = loadSavedLayerState();
   if (capas) store.applyLayerState(capas);
+  store.restoreRasterAdjust(loadSavedRasterAdjust());
 }
 let viewTimer = null;
 const guardarVista = () => {
@@ -203,6 +206,7 @@ store.subscribe(() => {
   if (store.changed('importStyle')) saveImportStyle(store.getState().importStyle);
   // No antes de restaurar las importadas: se pisaría el estado guardado de sus filas.
   if (store.changed('layers') && importedRestored) saveLayerState(store.currentLayerState());
+  if (store.changed('rasterAdjust')) saveRasterAdjust(store.getState().rasterAdjust);
   if (store.changed('imported') && importedRestored) {
     clearTimeout(importedTimer);
     importedTimer = setTimeout(guardarCapasImportadas, 300);
