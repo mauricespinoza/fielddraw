@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 /**
  * Etapa de la versión, detrás del número: «beta», «rc»… Vacía desde la 1.0,
@@ -59,6 +59,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '1.3.0',
+    highlights: [
+      'Image adjustments for basemaps and raster offline maps (PMTiles, MBTiles): the half-filled circle button on the layer row opens brightness, contrast, saturation and hue sliders, an Invert switch and four presets — Mapping base (grey and light, so your units and traces stand out), High contrast, Faded and Inverted (for night work). Each layer keeps its own settings on this device; they do not travel with the project. What you see is what the PNG, PDF and GeoTIFF exports show.',
+    ],
+  },
   {
     version: '1.2.0',
     highlights: [

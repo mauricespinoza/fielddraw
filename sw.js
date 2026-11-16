@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v96';
+const VERSION = 'v97';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -108,6 +108,7 @@ const SHELL = [
   './src/persistence.js',
   './src/profile.js',
   './src/project.js',
+  './src/rasterAdjust.js',
   './src/reshape.js',
   './src/section.js',
   './src/average.js',

@@ -1123,6 +1123,74 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+.layer-adjust-btn.active {
+  color: var(--accent);
+}
+
+/* Ajustes de imagen de una capa raster, plegados bajo la opacidad. */
+.layer-adjust {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 2px;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--border);
+}
+
+.layer-adjust[hidden] {
+  display: none;
+}
+
+.layer-adjust-btn svg {
+  display: block;
+  margin: auto;
+}
+
+.layer-adjust-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.layer-adjust-presets .chip {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.layer-adjust-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.layer-adjust-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layer-adjust-name {
+  flex: none;
+  width: 72px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.layer-adjust-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.layer-adjust-row .opacity-value {
+  width: 40px;
+}
+
+.layer-adjust-invert {
+  font-size: 12.5px;
+  min-height: 32px;
+}
+
 input[type='range'] {
   accent-color: var(--accent);
   height: 28px;

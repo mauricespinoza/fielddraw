@@ -1,5 +1,6 @@
 import { STORE_DRAWING, STORE_LAYERS, del, get, getAll, put } from './idb.js';
 import { compactFeatures } from './compact.js';
+import { sanitizeAdjustMap } from './rasterAdjust.js';
 
 const KEY = 'fielddraw.features.v1';
 const UNITS_KEY = 'fielddraw.units.v1';
@@ -12,6 +13,7 @@ const SECTIONS_KEY = 'fielddraw.sections.v1';
 const IMPORT_STYLE_KEY = 'fielddraw.import-style.v1';
 const VIEW_KEY = 'fielddraw.view.v1';
 const LAYERS_KEY = 'fielddraw.layers.v1';
+const RASTER_ADJUST_KEY = 'fielddraw.raster-adjust.v1';
 
 /**
  * Dónde se estaba mirando, validado.
@@ -69,6 +71,29 @@ export function loadSavedLayerState() {
     return Array.isArray(raw) && raw.length ? raw : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Ajustes de imagen de las capas raster (ver `rasterAdjust.js`). Del
+ * dispositivo, como la vista: dependen de la pantalla y de la luz en que se
+ * mira, no del mapa que se hace, así que no van en el proyecto.
+ */
+export function saveRasterAdjust(map) {
+  try {
+    const limpio = sanitizeAdjustMap(map);
+    if (Object.keys(limpio).length) localStorage.setItem(RASTER_ADJUST_KEY, JSON.stringify(limpio));
+    else localStorage.removeItem(RASTER_ADJUST_KEY);
+  } catch {
+    /* sin storage: las imágenes vuelven sin ajuste */
+  }
+}
+
+export function loadSavedRasterAdjust() {
+  try {
+    return sanitizeAdjustMap(JSON.parse(localStorage.getItem(RASTER_ADJUST_KEY)));
+  } catch {
+    return {};
   }
 }
 

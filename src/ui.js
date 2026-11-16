@@ -1,4 +1,5 @@
 import * as store from './store.js';
+import { NEUTRAL, PRESETS, RANGES, isNeutral, matchPreset } from './rasterAdjust.js';
 import { NOTATION_DIPDIR, NOTATION_RHR, dipDirFromStrike, strikeFromDipDir } from './notation.js';
 import {
   SCREEN_SIZES,
@@ -1704,6 +1705,8 @@ function layerRow(layer) {
    * orden esconde las trazas bajo el relleno de las unidades.
    */
   const fijo = store.DRAWING_KINDS.has(layer.kind);
+  const ajuste = isRasterLayer(layer) ? adjustPanel(layer) : null;
+  if (ajuste) move.appendChild(ajuste.button);
   let up = null;
   let down = null;
   if (!fijo) {
@@ -1741,7 +1744,147 @@ function layerRow(layer) {
   opacity.append(range, pct);
 
   li.append(head, opacity);
+  if (ajuste) li.appendChild(ajuste.panel);
   return { li, cb, range, pct, up, down, sync };
+}
+
+/** ¿La capa es una imagen? Los basemaps siempre; un mapa offline solo si es raster. */
+function isRasterLayer(layer) {
+  if (layer.kind === 'basemap') return true;
+  if (layer.kind !== 'tiles') return false;
+  const d = store.getState().tileSets.find((t) => t.id === layer.id);
+  return !!d && d.tileKind === 'raster';
+}
+
+const ADJUST_SLIDERS = [
+  ['brightness', 'Brightness'],
+  ['contrast', 'Contrast'],
+  ['saturation', 'Saturation'],
+  ['hue', 'Hue'],
+];
+
+const fmtAdjust = (key, v) => {
+  if (key === 'hue') return `${Math.round(v)}°`;
+  const pct = Math.round(v * 100);
+  return pct > 0 ? `+${pct}%` : `${pct}%`;
+};
+
+/**
+ * Ajustes de imagen de una capa raster: un botón en la fila y un panel
+ * plegable debajo del deslizador de opacidad, con los preajustes de terreno,
+ * un deslizador por ajuste, invertir y volver al original.
+ *
+ * El panel no escucha al store: lo único que cambia estos valores es él
+ * mismo, así que se refresca después de cada acción. Los deslizadores se ven
+ * en vivo porque MapLibre solo cambia uniforms de la GPU (ver
+ * `rasterAdjust.js`).
+ */
+function adjustPanel(layer) {
+  const button = document.createElement('button');
+  button.className = 'icon-btn layer-adjust-btn';
+  // Un círculo mitad lleno, el signo habitual de brillo y contraste. En SVG y
+  // no con «◐»: ese carácter no está en todas las fuentes y salía diminuto.
+  button.innerHTML =
+    '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/>' +
+    '<path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg>';
+  button.title = 'Image adjustments: brightness, contrast, saturation, hue';
+  button.setAttribute('aria-label', `Image adjustments of ${layer.label}`);
+  button.setAttribute('aria-expanded', 'false');
+
+  const panel = document.createElement('div');
+  panel.className = 'layer-adjust';
+  panel.hidden = true;
+
+  const actual = () => store.rasterAdjustOf(layer.id);
+  const fijar = (patch) => {
+    store.setRasterAdjust(layer.id, { ...actual(), ...patch });
+    refresh();
+  };
+
+  const presets = document.createElement('div');
+  presets.className = 'layer-adjust-presets';
+  const presetBtns = PRESETS.map((p) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = p.label;
+    b.title = p.title;
+    b.addEventListener('click', () => {
+      // Tocar el preajuste activo lo quita: es la forma natural de "apagarlo".
+      const ya = matchPreset(actual()) === p.id;
+      store.setRasterAdjust(layer.id, ya ? NEUTRAL : p.adjust);
+      refresh();
+    });
+    presets.appendChild(b);
+    return [p.id, b];
+  });
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'chip layer-adjust-reset';
+  reset.textContent = 'Reset';
+  reset.title = 'Back to the original image';
+  reset.addEventListener('click', () => {
+    store.setRasterAdjust(layer.id, NEUTRAL);
+    refresh();
+  });
+  presets.appendChild(reset);
+  panel.appendChild(presets);
+
+  const sliders = ADJUST_SLIDERS.map(([key, label]) => {
+    const r = RANGES[key];
+    const row = document.createElement('label');
+    row.className = 'layer-adjust-row';
+    const name = document.createElement('span');
+    name.className = 'layer-adjust-name';
+    name.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(r.min);
+    input.max = String(r.max);
+    input.step = String(r.step);
+    input.setAttribute('aria-label', `${label} of ${layer.label}`);
+    const val = document.createElement('span');
+    val.className = 'opacity-value';
+    input.addEventListener('input', () => fijar({ [key]: Number(input.value) }));
+    // Doble toque devuelve ese ajuste a cero sin tocar los demás.
+    input.addEventListener('dblclick', () => fijar({ [key]: 0 }));
+    row.append(name, input, val);
+    panel.appendChild(row);
+    return { key, input, val };
+  });
+
+  const inv = document.createElement('label');
+  inv.className = 'layer-adjust-row layer-adjust-invert';
+  const invCb = document.createElement('input');
+  invCb.type = 'checkbox';
+  invCb.addEventListener('change', () => fijar({ invert: invCb.checked }));
+  const invName = document.createElement('span');
+  invName.textContent = 'Invert';
+  inv.append(invCb, invName);
+  panel.appendChild(inv);
+
+  function refresh() {
+    const a = actual();
+    for (const s of sliders) {
+      if (document.activeElement !== s.input) s.input.value = String(a[s.key]);
+      s.val.textContent = fmtAdjust(s.key, a[s.key]);
+    }
+    invCb.checked = a.invert;
+    const activo = matchPreset(a);
+    for (const [id, b] of presetBtns) b.classList.toggle('active', id === activo);
+    const neutro = isNeutral(a);
+    reset.disabled = neutro;
+    button.classList.toggle('active', !neutro);
+  }
+
+  button.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    button.setAttribute('aria-expanded', String(!panel.hidden));
+    refresh();
+  });
+  refresh();
+  return { button, panel };
 }
 
 /**
