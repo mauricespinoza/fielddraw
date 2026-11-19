@@ -16,7 +16,7 @@
  * guarda el mapa en un archivo propio. Aquí solo sobrevive lo ya visitado.
  */
 
-const VERSION = 'v97';
+const VERSION = 'v98';
 const PRECACHE = `fielddraw-shell-${VERSION}`;
 
 /*
@@ -140,6 +140,7 @@ const SHELL = [
   './src/structure.js',
   './src/structureSymbols.js',
   './src/symbology.js',
+  './src/textures.js',
   './src/thickness.js',
   './src/tiles.js',
   './src/topology.js',

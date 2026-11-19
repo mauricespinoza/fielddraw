@@ -6,6 +6,7 @@ import {
   effectiveLineWeight,
   withImportColor,
 } from './symbology.js';
+import { textureImageName, textureOf } from './textures.js';
 
 export const GEOLOGY_SOURCE = 'geology-src';
 export const DRAFT_SOURCE = 'draft-src';
@@ -235,6 +236,35 @@ export function unitOutlineExpr(units, importStyle) {
   );
 }
 
+/**
+ * Textura de roca de cada unidad: el patrón se pinta sobre el color, en su
+ * propia capa, y solo para las unidades que lo llevan. El filtro es lo que
+ * deja fuera al resto; `fill-pattern` no admite «sin patrón» en una expresión.
+ *
+ * @returns {{filter, pattern}} `pattern` es siempre un nombre de imagen válido
+ *   aunque ninguna unidad tenga textura (la capa queda sin nada que pintar).
+ */
+export function unitTextureStyle(units) {
+  const withTexture = (units || [])
+    .filter((u) => u && u.id)
+    .map((u) => [u.id, textureOf(u)])
+    .filter(([, t]) => t);
+  const none = ['==', ['geometry-type'], 'Polygon'];
+  if (!withTexture.length) {
+    return { filter: ['all', none, ['==', ['get', 'type'], '']], pattern: textureImageName('porphyry-plag') };
+  }
+  const first = textureImageName(withTexture[0][1]);
+  return {
+    filter: ['all', none, ['in', ['get', 'type'], ['literal', withTexture.map(([id]) => id)]]],
+    pattern: [
+      'match',
+      ['get', 'type'],
+      ...withTexture.flatMap(([id, t]) => [id, textureImageName(t)]),
+      first,
+    ],
+  };
+}
+
 const fillColorExpr = unitFillExpr(null);
 const outlineColorExpr = unitOutlineExpr(null);
 
@@ -270,6 +300,18 @@ export function geologyLayers() {
     paint: { 'fill-color': fillColorExpr, 'fill-opacity': 0.45 },
   });
   BASE_OPACITY['geology-fill'] = 0.45;
+
+  // Textura de roca encima del color. Arranca sin unidades que la pidan (el
+  // filtro no deja pasar nada) y mapView la reescribe con `unitTextureStyle`.
+  const textura = unitTextureStyle(null);
+  layers.push({
+    id: 'geology-fill-texture',
+    type: 'fill',
+    source: GEOLOGY_SOURCE,
+    filter: textura.filter,
+    paint: { 'fill-pattern': textura.pattern, 'fill-opacity': 0.8 },
+  });
+  BASE_OPACITY['geology-fill-texture'] = 0.8;
 
   // Resalte de selección: va debajo del trazo real para leerse como un halo.
   // El filtro lo reescribe mapView cada vez que cambia la selección.

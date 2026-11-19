@@ -1206,6 +1206,7 @@ input[type='radio'] {
 /* ---------- unidades geológicas ---------- */
 .unit-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px !important;
@@ -1235,6 +1236,21 @@ input[type='radio'] {
 
 .unit-name {
   flex: 1;
+}
+
+/* La textura va en su propia línea, bajo el color, el nombre y el código. */
+.unit-texture {
+  order: 1;
+  flex: 1 0 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
 }
 
 .unit-code {

@@ -180,6 +180,13 @@ import {
 } from './backup.js';
 import { looksLikeClientId } from './drive/auth.js';
 import {
+  TEXTURES,
+  TEXTURE_AUTO,
+  TEXTURE_BY_ID,
+  TEXTURE_NONE,
+  autoTextureFor,
+} from './textures.js';
+import {
   APP_AUTHOR,
   APP_CONTACT,
   APP_ORG,
@@ -1421,7 +1428,27 @@ function renderUnits() {
     del.disabled = s.units.length <= 1;
     del.addEventListener('click', () => store.removeUnit(u.id));
 
-    li.append(color, name, code, del);
+    // Textura de roca: «Auto» la saca del nombre (una andesita lleva la
+    // porfídica sin pedirla) y «None» la quita aunque el nombre la pida.
+    const texture = document.createElement('select');
+    texture.className = 'unit-texture';
+    texture.setAttribute('aria-label', `Texture of ${u.name}`);
+    texture.title = 'Rock texture drawn over the colour';
+    const auto = autoTextureFor(u.name);
+    for (const [value, label] of [
+      [TEXTURE_AUTO, auto ? `Auto (${TEXTURE_BY_ID.get(auto).label})` : 'Auto (none)'],
+      [TEXTURE_NONE, 'No texture'],
+      ...TEXTURES.map((t) => [t.id, t.label]),
+    ]) {
+      const o = document.createElement('option');
+      o.value = value;
+      o.textContent = label;
+      texture.appendChild(o);
+    }
+    texture.value = u.texture === TEXTURE_NONE || TEXTURE_BY_ID.has(u.texture) ? u.texture : TEXTURE_AUTO;
+    texture.addEventListener('change', () => store.updateUnit(u.id, { texture: texture.value }));
+
+    li.append(color, name, code, texture, del);
     list.appendChild(li);
   }
 }
