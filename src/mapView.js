@@ -47,6 +47,7 @@ import {
   unitCodeExpr,
   contactLabelStyle,
   unitFillExpr,
+  unitTextureStyle,
   unitOutlineExpr,
   withFeatureAlpha,
 } from './geologyStyle.js';
@@ -72,6 +73,7 @@ import {
   addControlPointIcons,
   controlPointLayers,
 } from './controlPointSymbols.js';
+import { addTextureImages } from './textures.js';
 import { CONTROL_POINT_KIND } from './controlPoints.js';
 import { featureDiff, indexFeatures } from './sourceDiff.js';
 import { noteDeclinationPosition } from './geomag.js';
@@ -661,6 +663,8 @@ export function createMapView({
       // aceptar cambios sueltos con `updateData` (ver `syncGeology`).
       promoteId: 'id',
     });
+    // Las texturas de roca se generan cuando una capa las pide.
+    addTextureImages(map);
     for (const l of geologyLayers()) map.addLayer(l);
 
     try {
@@ -1201,6 +1205,11 @@ export function createMapView({
     if (!map.getLayer('geology-fill')) return;
     const { units, importStyle } = store.getState();
     map.setPaintProperty('geology-fill', 'fill-color', unitFillExpr(units, importStyle));
+    if (map.getLayer('geology-fill-texture')) {
+      const textura = unitTextureStyle(units);
+      map.setFilter('geology-fill-texture', textura.filter);
+      map.setPaintProperty('geology-fill-texture', 'fill-pattern', textura.pattern);
+    }
     for (const c of ['observed', 'inferred', 'covered']) {
       const id = `geology-outline-${c}`;
       if (map.getLayer(id)) {

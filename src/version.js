@@ -12,7 +12,7 @@
  * no cambie nada visible. Este numera lo que el usuario SÍ nota.
  */
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 /**
  * Etapa de la versión, detrás del número: «beta», «rc»… Vacía desde la 1.0,
@@ -59,6 +59,12 @@ export const APP_TOOLS = [
  * tocó.
  */
 export const CHANGELOG = [
+  {
+    version: '1.4.0',
+    highlights: [
+      'Rock textures for units: andesite units now carry a porphyritic texture — pale plagioclase phenocrysts, roughly aligned, with dark mafic specks over the unit colour. It is picked from the unit name (anything called “andesita”/“andesite”), or choose it yourself from the new Texture menu under each unit in Units; “No texture” turns it off. The colour still tells the unit apart. It follows the Units layer on and off and shows in the PNG, PDF and GeoTIFF exports.',
+    ],
+  },
   {
     version: '1.3.0',
     highlights: [
